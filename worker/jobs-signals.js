@@ -19,6 +19,8 @@ const UPSERT = `INSERT INTO signals (d, id, kind, score, cat, trend, cycle, valu
 
 const r4 = v => (v == null || !isFinite(v) ? null : Math.round(v * 1e4) / 1e4);
 
+export async function ensureSchema(db) { await db.prepare(SCHEMA).run(); }
+
 async function writeRows(db, rows, kind) {
   const stmt = db.prepare(UPSERT);
   for (let i = 0; i < rows.length; i += 100) {
@@ -80,7 +82,7 @@ export const SIGNAL_JOBS = [
       SIG.prepareLive(L, hist ? { gold_usd_m: { f: "M", s: hist.series.gold_usd_m.start, v: hist.series.gold_usd_m.values }, cape: hist.latest.cape } : {});
       const B = SIG.barometer(L);
       if (B.tNow == null) throw new Error("Barometer ohne Stichtag");
-      await db.prepare(SCHEMA).run();
+      await ensureSchema(db);
       const today = SIG.isoOf(B.tNow);
       const live = B.rows.filter(r => r.now).map(r => ({ d: today, id: r.row.id, score: r.now.score, cat: r.now.cat.n, p: Object.fromEntries(PILLARS.map(k => [k, r.now.pillars[k] ? r.now.pillars[k].s : null])) }));
       await writeRows(db, live, "live");

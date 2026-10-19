@@ -6,7 +6,7 @@
    Alles andere liefert die statische Seite aus public/. Der Cron-Trigger ruft scheduled() auf. */
 import { runDueJobs, META_KEY, SNAP_KEY } from "./runner.js";
 import { JOBS } from "./jobs.js";
-import { readHistory } from "./jobs-signals.js";
+import { readHistory, ensureSchema } from "./jobs-signals.js";
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -61,7 +61,14 @@ async function signals(request, env, ctx) {
   const hit = await cache.match(key);
   if (hit) return hit;
   const daily = Math.min(2000, Math.max(0, +(url.searchParams.get("daily") ?? 120) || 0));
-  const res = json(await readHistory(env.DB, { days: 2000, daily }), 200, { "cache-control": "public, max-age=600" });
+  let body;
+  try {
+    await ensureSchema(env.DB);
+    body = await readHistory(env.DB, { days: 2000, daily });
+  } catch (e) {
+    return json({ error: "Signalverlauf nicht lesbar", detail: String((e && e.message) || e).slice(0, 200) }, 500);
+  }
+  const res = json(body, 200, { "cache-control": "public, max-age=600" });
   ctx.waitUntil(cache.put(key, res.clone()));
   return res;
 }
