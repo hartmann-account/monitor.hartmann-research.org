@@ -29,8 +29,9 @@ export function dueJobs(meta, now, jobs = JOBS, env = null) {
     const last = s.okAt ? Date.parse(s.okAt) : 0;
     // 10 % Toleranz, damit ein Job nicht wegen weniger Minuten auf den nächsten Lauf rutscht
     if (now - last >= j.every * HOUR * 0.9) due.push({ job: j, age: last ? (now - last) / (j.every * HOUR) : 1e9 });
-    // ebenso Jobs mit neuer Version (etwa ein geändertes Signalmodell: Verlauf sofort neu rechnen)
-    else if (archivePending(j, s, env) || (j.version && s.version !== j.version)) due.push({ job: j, age: 0.5, catchup: true });
+    // Jobs mit neuer Version (etwa ein geändertes Signalmodell: Verlauf sofort neu rechnen) vor den Archivläufen
+    else if (j.version && s.version !== j.version) due.push({ job: j, age: 0.7 });
+    else if (archivePending(j, s, env)) due.push({ job: j, age: 0.5, catchup: true });
   }
   // nie geladene Jobs zuerst, dann nach relativer Überfälligkeit; nachzuholende Archivläufe zuletzt und begrenzt
   due.sort((a, b) => b.age - a.age);

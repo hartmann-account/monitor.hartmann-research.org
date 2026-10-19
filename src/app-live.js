@@ -16,7 +16,7 @@ const LSRC = {
   mof: { name: "Japanisches Finanzministerium, JGB-Renditen", url: "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/index.htm" },
   oecd: { name: "OECD Data Explorer", url: "https://data-explorer.oecd.org/" },
   bis: { name: "Bank für Internationalen Zahlungsausgleich, Data Portal", url: "https://data.bis.org/" },
-  imf: { name: "Internationaler Währungsfonds, World Economic Outlook (DataMapper)", url: "https://www.imf.org/external/datamapper/" },
+  imf: { name: "Internationaler Währungsfonds (World Economic Outlook, Rohstoff- und Verbraucherpreise)", url: "https://data.imf.org/" },
   imf_cofer: { name: "IWF COFER", url: "https://data.imf.org/en/datasets/IMF.STA:COFER" },
   wb: { name: "Weltbank, World Development Indicators und Bevölkerungsprojektionen", url: "https://data.worldbank.org/" },
   treasury: { name: "U.S. Treasury, Fiscal Data", url: "https://fiscaldata.treasury.gov/" },
