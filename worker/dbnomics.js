@@ -25,6 +25,9 @@ const MAX_BYTES = 8e6;    // größere Antworten werden abgebrochen und mit weni
 const RUN_MS = 240000;
 const BUDGET = 300;       // eigene Subrequests je Lauf (nicht aus dem Budget der übrigen Quellen)
 const FIRST_LIMIT = 10;   // erste Seite eines Datensatzes klein (Tagesreihen können je Reihe mehrere 100 kB groß sein)
+// Stand des Importzustands: Bei einer Änderung beginnt der Import von vorn (2: R2-Bucket im EU-Rechtsraum, damit dort alle
+// Seiten liegen; D1 schreibt dabei nur geänderte Werte)
+const STATE_V = 2;
 
 // Länder des Monitors: ISO 3 (WEO, Weltbank) und ISO 2 (IWF, BIZ); dazu Euroraum (U2) und Welt (W00)
 const C3 = ["USA", "CHN", "DEU", "JPN", "GBR", "IND", "FRA", "ITA", "ESP", "NLD", "CHE", "CAN", "AUS", "KOR", "BRA", "MEX", "ZAF",
@@ -159,7 +162,7 @@ const UPSERT_DATASET = `INSERT INTO datasets (p, d, name, indexed_at, nb_series,
 const keyOf = e => `${e.p}/${e.d}`;
 const roundDue = (st, now) => !st || (!!st.doneAt && now - Date.parse(st.doneAt) >= REFRESH_DAYS * 864e5);
 const entry = (P, d, x = null) => ({ p: P.p, d, dims: P.dims || null, raw: !!P.raw, ia: x ? x.indexed_at || null : null });
-const newRound = (prev, nowIso) => ({ round: ((prev && prev.round) || 0) + 1, startedAt: nowIso, doneAt: null, plan: { k: 0, offset: 0 },
+const newRound = (prev, nowIso) => ({ v: STATE_V, round: ((prev && prev.round) || 0) + 1, startedAt: nowIso, doneAt: null, plan: { k: 0, offset: 0 },
   queue: [], i: 0, cur: null, seen: (prev && prev.seen) || {}, fails: {}, changed: 0, skipped: 0, failed: [] });
 
 /* Liste der Datensätze aufstellen; Anbieterlisten seitenweise (je 500 Datensätze), mirror: Kennungen aus dem Katalogbaum */
@@ -234,6 +237,7 @@ export async function dbnomicsRun(F, ctx, o) {
   const cap = Math.min(F.budget, F.used + cost);
   const left = () => F.used < cap && Date.now() - t0 < runMs;
   let st = await ctx.state.get(key);
+  if (st && st.v !== STATE_V) st = null;
   if (roundDue(st, now)) st = newRound(st, nowIso);
   // Durchgang abgeschlossen, der nächste noch nicht fällig: nichts zu tun
   if (st.doneAt) return progress(st);
@@ -400,7 +404,7 @@ export const DBNOMICS_JOBS = [
       const G = makeFetcher(BUDGET);
       // Anbieterliste nur, solange die Liste der Datensätze aufgestellt wird
       const st = await ctx.state.get("dbnomics_mirror");
-      const packages = roundDue(st, ctx.now) || !st.planned ? await mirrorPackages(G, ctx.env, ctx) : [];
+      const packages = !st || st.v !== STATE_V || roundDue(st, ctx.now) || !st.planned ? await mirrorPackages(G, ctx.env, ctx) : [];
       const p = await dbnomicsRun(G, ctx, { key: "dbnomics_mirror", packages, bucket: ctx.env.ARCHIVE, cost: BUDGET, rawOnly: true });
       return { series: {}, items: [p] };
     },

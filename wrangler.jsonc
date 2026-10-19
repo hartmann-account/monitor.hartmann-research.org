@@ -27,9 +27,11 @@
     { "binding": "DB", "database_name": "monitor-signals" },
     { "binding": "DBN", "database_name": "monitor-dbnomics" }
   ],
-  // Rohdatenarchiv: Rohausgaben aller Abrufe und DBnomics-Datensätze, nach Quellen geordnet (Aufbau in worker/r2.js)
+  // Rohdatenarchiv: Rohausgaben aller Abrufe und DBnomics-Datensätze, nach Quellen geordnet (Aufbau in worker/r2.js).
+  // Der Bucket liegt im EU-Rechtsraum; ohne "jurisdiction" sucht Wrangler ihn im allgemeinen Bereich und legt dort
+  // einen gleichnamigen zweiten Bucket an.
   "r2_buckets": [
-    { "binding": "ARCHIVE", "bucket_name": "monitor" }
+    { "binding": "ARCHIVE", "bucket_name": "monitor", "jurisdiction": "eu" }
   ],
   // Reserve für den ersten Archivlauf (ganze Historie der Quellen) und die Rückrechnung der drei Horizonte
   "limits": { "cpu_ms": 60000 },
