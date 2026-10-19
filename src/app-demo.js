@@ -33,9 +33,15 @@ function renderDemography() {
     src: ["live:wb", "live:pictet"],
     note: "Die Projektionen setzen die bisherige Zuwanderung fort. Restriktivere Einwanderungspolitik würde vor allem die Werte der USA, Großbritanniens und der Schweiz verschlechtern.",
   });
-  sh.body.append(h("div", { style: "overflow-x:auto" }, h("table", { class: "data demo-table" },
-    h("thead", null, h("tr", null, h("th", { text: "Land" }), h("th", { text: "Bevölkerung 2024–2050" }), h("th", { text: "Altersquotient 2024" }), h("th", { text: "Altersquotient 2050" }),
-      h("th", { text: "Erwerbsalter 2024" }), h("th", { text: "Erwerbsalter 2050" }), h("th", { text: "Lebenserwartung" }), h("th", { text: "Geburten je Frau" }))),
+  sh.body.append(h("div", { style: "overflow-x:auto" }, stackTable(h("table", { class: "data demo-table" },
+    h("thead", null, h("tr", null, h("th", { text: "Land" }),
+      thInfo("Bevölkerung 2024–2050", { t: "Bevölkerungsveränderung 2024–2050", f: "Bevölkerung 2050 (Projektion, mittlere Variante) ÷ Bevölkerung 2024 − 1, in %", r: rows.slice(0, 3).map(r => { const a = annualAt("pop_" + r.c.iso.toLowerCase(), CUR_YEAR), b = annualAt("pop_" + r.c.iso.toLowerCase(), 2050); return a && b ? `${r.c.name}: ${fmt(b / 1e6, 1)} Mio. ÷ ${fmt(a / 1e6, 1)} Mio. − 1 = ${signed(r.popChg, 1)} %` : null; }) }),
+      thInfo("Altersquotient 2024", { t: "Altersquotient", f: "Personen ab 65 Jahren ÷ Personen von 15 bis 64 Jahren × 100. 40 % heißt: auf 100 Menschen im Erwerbsalter kommen 40 Ältere." }),
+      thInfo("Altersquotient 2050", { t: "Altersquotient 2050", f: "Wie 2024, aus der Bevölkerungsprojektion der Weltbank (mittlere Variante)." }),
+      thInfo("Erwerbsalter 2024", { t: "Anteil im Erwerbsalter", f: "Personen von 15 bis 64 Jahren ÷ Gesamtbevölkerung × 100." }),
+      thInfo("Erwerbsalter 2050", { t: "Anteil im Erwerbsalter 2050", f: "Wie 2024, aus der Projektion." }),
+      thInfo("Lebenserwartung", { t: "Lebenserwartung", f: "Lebenserwartung bei Geburt in Jahren, jüngster verfügbarer Wert (Weltbank); Jahr in Klammern." }),
+      thInfo("Geburten je Frau", { t: "Geburten je Frau", f: "Zusammengefasste Geburtenziffer: Kinder je Frau bei den Geburtenraten des Jahres. Rund 2,1 halten die Bevölkerung ohne Zuwanderung stabil." }))),
     h("tbody", null, ...rows.map(r => h("tr", null,
       h("td", null, r.c.r ? h("span", { style: `display:inline-block;width:10px;height:3px;margin-right:6px;vertical-align:middle;background:var(${LC[r.c.r]})` }) : null, r.c.name),
       h("td", { text: r.popChg == null ? "–" : signed(r.popChg, 1) + " %" }),
@@ -44,7 +50,7 @@ function renderDemography() {
       h("td", { text: r.wa24 == null ? "–" : fmt(r.wa24, 1) + " %" }),
       h("td", { text: r.wa50 == null ? "–" : fmt(r.wa50, 1) + " %" }),
       h("td", { text: r.le ? `${fmt(r.le.v, 1)} J. (${Math.round(r.le.x)})` : "–" }),
-      h("td", { text: r.tfr ? `${fmt(r.tfr.v, 2)} (${Math.round(r.tfr.x)})` : "–" })))))));
+      h("td", { text: r.tfr ? `${fmt(r.tfr.v, 2)} (${Math.round(r.tfr.x)})` : "–" }))))))));
 
   const ch = document.getElementById("demo-charts");
   const lines = DEMO.filter(c => c.r && LP("dep_" + c.iso.toLowerCase()).length);
@@ -55,7 +61,8 @@ function renderDemography() {
       { id: c.iso + "_p", group: c.iso, label: c.name + " (Projektion)", color: LC[c.r], dash: "4 4", data: d.filter(p => p[0] >= CUR_YEAR), noLegend: true, endLabel: true, short: c.name },
     ];
   };
-  if (lines.length) chartSheet(ch, { title: "Altersquotient 1960–2050", sub: "65-Jährige und Ältere je 100 Personen im Alter von 15 bis 64 Jahren; gestrichelt: Projektion", src: ["live:wb"] },
+  if (lines.length) chartSheet(ch, { title: "Altersquotient 1960–2050", sub: "65-Jährige und Ältere je 100 Personen im Alter von 15 bis 64 Jahren; gestrichelt: Projektion", src: ["live:wb"],
+      info: { f: "Personen ab 65 Jahren ÷ Personen von 15 bis 64 Jahren × 100 (Weltbank); ab 2025 Projektion der Weltbank-Bevölkerungsstatistik (mittlere Variante)." } },
     { series: lines.flatMap(c => split("dep_" + c.iso.toLowerCase(), c)).map(s => s.id.endsWith("_p") ? s : { ...s, endLabel: false }), height: 300, zero: true, vlines: [{ x: CUR_YEAR, label: String(CUR_YEAR) }], endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 1) + " %" });
   const wa = DEMO.filter(c => c.r && LP("wa_" + c.iso.toLowerCase()).length && LP("pop_" + c.iso.toLowerCase()).length).map(c => {
     const pop = LP("pop_" + c.iso.toLowerCase()), share = LP("wa_" + c.iso.toLowerCase());
@@ -63,7 +70,9 @@ function renderDemography() {
     const base = abs.find(p => Math.round(p[0]) === CUR_YEAR);
     return base ? { id: c.iso, label: c.name, color: LC[c.r], data: abs.filter(p => p[0] >= 1990).map(([x, v]) => [x, 100 * v / base[1]]) } : null;
   }).filter(Boolean);
-  if (wa.length) chartSheet(ch, { title: "Bevölkerung im erwerbsfähigen Alter", sub: "Personen von 15 bis 64 Jahren, Index 2024 = 100; ab 2025 Projektion", src: ["live:wb"] },
+  if (wa.length) chartSheet(ch, { title: "Bevölkerung im erwerbsfähigen Alter", sub: "Personen von 15 bis 64 Jahren, Index 2024 = 100; ab 2025 Projektion", src: ["live:wb"],
+      info: () => ({ f: ["Erwerbsbevölkerung = Gesamtbevölkerung × Anteil der 15- bis 64-Jährigen.", "Index = Erwerbsbevölkerung im Jahr ÷ Erwerbsbevölkerung 2024 × 100."],
+        r: wa.map(sr => { const p = sr.data.find(q => Math.round(q[0]) === 2050); return p ? `${sr.label} 2050: ${fmt(p[1], 0)}` : null; }) }) },
     { series: wa, height: 300, refs: [{ y: 100 }], vlines: [{ x: CUR_YEAR, label: "Projektion" }], endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 1) });
   renderGrowthBalance();
   renderTech();
@@ -92,6 +101,10 @@ function renderGrowthBalance() {
     sub: "Jährliche Wachstumsbeiträge in Prozent: Bevölkerung und Anteil der Erwerbsfähigen (Projektion 2025–2050) sowie Produktivität (BIP je Erwerbstätigem, Wachstum der letzten zehn Jahre). Punkt = Summe, also das BIP-Wachstum bei gleichbleibender Produktivitätsdynamik, Erwerbsquote und Arbeitszeit",
     src: ["live:wb", "live:pictet"],
     note: "Nachbildung der Abbildung 15 der Pictet-Studie mit offenen Daten; Pictet verwendet die Produktivität je Arbeitsstunde (The Conference Board), hier steht das BIP je Erwerbstätigem (Weltbank/ILO).",
+    info: () => ({ d: "Wie stark Demografie das Wirtschaftswachstum bis 2050 bremst oder stützt, und ob die Produktivität das ausgleichen kann.",
+      f: ["Jährliche Wachstumsrate (CAGR) = (Endwert ÷ Anfangswert)^(1 ÷ Jahre) − 1.", "Bevölkerung: CAGR der Bevölkerung 2025–2050. Anteil im Erwerbsalter: CAGR des Anteils der 15- bis 64-Jährigen 2025–2050. Beide zusammen ≈ Wachstum der Erwerbsbevölkerung.",
+        "Produktivität: CAGR des BIP je Erwerbstätigem über die letzten zehn verfügbaren Jahre.", "Summe = Bevölkerung + Erwerbsanteil + Produktivität ≈ BIP-Wachstum pro Jahr, wenn die Produktivität so weiterwächst wie bisher."],
+      r: rows.slice(0, 4).map(r => `${r.c.name}: ${signed(r.pg, 2)} ${r.wg < 0 ? "−" : "+"} ${fmt(Math.abs(r.wg), 2)}${r.prod == null ? "" : ` ${r.prod < 0 ? "−" : "+"} ${fmt(Math.abs(r.prod), 2)}`} = ${signed(r.total ?? r.demo, 2)} % p. a.`) }),
   });
   const comps = [["pg", "Bevölkerung", "--s1"], ["wg", "Anteil im Erwerbsalter", "--s2"], ["prod", "Produktivität (10 J.)", "--s3"]];
   const wrap = h("div", { class: "chart" });
@@ -158,20 +171,25 @@ function renderTech() {
   const host = document.getElementById("tech-charts");
   const cs = DEMO.filter(c => TECH.some(([p]) => LP(p + c.iso.toLowerCase()).length));
   if (!cs.length) return;
-  const sh = sheet(host, { title: "Technologie-Infrastruktur", sub: "Voraussetzung, damit Automatisierung und KI Produktivität schaffen (dritte Bedingung der Pictet-Studie); jüngster verfügbarer Wert je Land", src: ["live:wb"], cls: "span-2" });
+  const sh = sheet(host, { title: "Technologie-Infrastruktur", sub: "Voraussetzung, damit Automatisierung und KI Produktivität schaffen (dritte Bedingung der Pictet-Studie); jüngster verfügbarer Wert je Land", src: ["live:wb"], cls: "span-2",
+    info: { f: ["F&E-Ausgaben in % des BIP, Forschende je Million Einwohner, Hightech-Exporte in % der Industriegüterexporte, Internetnutzung in % der Bevölkerung: Weltbank-Indikatoren ohne eigene Umrechnung, jüngstes verfügbares Jahr in Klammern.", "Patente je Million Einwohner = Patentanmeldungen von Inländern ÷ Bevölkerung × 1.000.000.", "Balken: Wert ÷ höchster Wert der Spalte."] } });
   const maxOf = p => Math.max(...cs.map(c => { const l = lastAnnual(p + c.iso.toLowerCase()); return l ? l.v : 0; }));
   const mx = Object.fromEntries(TECH.map(([p]) => [p, maxOf(p)]));
   const pat = c => { const a = lastAnnual("pat_" + c.iso.toLowerCase()); if (!a) return null; const pop = LP("pop_" + c.iso.toLowerCase()).find(q => Math.round(q.x) === Math.round(a.x)); return pop ? { v: 1e6 * a.v / pop.v, x: a.x } : null; };
   const patMax = Math.max(...cs.map(c => (pat(c) || { v: 0 }).v));
   const cell = (l, max, d) => l ? h("td", null, h("span", { class: "barcell" }, h("i", { style: `width:${Math.max(1, 46 * l.v / max)}px` }), `${fmt(l.v, d)} `, h("span", { class: "small", text: `(${Math.round(l.x)})` }))) : h("td", { text: "–" });
-  sh.body.append(h("div", { style: "overflow-x:auto" }, h("table", { class: "data demo-table" },
-    h("thead", null, h("tr", null, h("th", { text: "Land" }), ...TECH.map(([, l, u]) => h("th", null, l, h("div", { class: "th-unit", text: u }))), h("th", null, "Patente", h("div", { class: "th-unit", text: "Anmeldungen je Mio. Einw." })))),
-    h("tbody", null, ...cs.map(c => h("tr", null, h("td", { text: c.name }), ...TECH.map(([p, , , d]) => cell(lastAnnual(p + c.iso.toLowerCase()), mx[p], d)), cell(pat(c), patMax, 0)))))));
+  sh.body.append(h("div", { style: "overflow-x:auto" }, stackTable(h("table", { class: "data demo-table" },
+    h("thead", null, h("tr", null, h("th", { text: "Land" }), ...TECH.map(([, l, u]) => h("th", null, l, h("div", { class: "th-unit", text: u }))),
+      h("th", null, h("span", { class: "th-i" }, "Patente", info({ t: "Patente je Million Einwohner", f: "Patentanmeldungen von Inländern im Jahr ÷ Bevölkerung desselben Jahres × 1.000.000 (Weltbank)." }, "Patente")), h("div", { class: "th-unit", text: "Anmeldungen je Mio. Einw." })))),
+    h("tbody", null, ...cs.map(c => h("tr", null, h("td", { text: c.name }), ...TECH.map(([p, , , d]) => cell(lastAnnual(p + c.iso.toLowerCase()), mx[p], d)), cell(pat(c), patMax, 0))))))));
   const rd = DEMO.filter(c => c.r && LP("rd_" + c.iso.toLowerCase()).length);
-  if (rd.length) chartSheet(host, { title: "Ausgaben für Forschung und Entwicklung", sub: "% des BIP", src: ["live:wb"] },
+  if (rd.length) chartSheet(host, { title: "Ausgaben für Forschung und Entwicklung", sub: "% des BIP", src: ["live:wb"],
+      info: { f: "Keine eigene Rechnung: Bruttoinlandsausgaben für Forschung und Entwicklung ÷ BIP × 100 (Weltbank, UNESCO-Daten)." } },
     { series: rd.map(c => ({ id: c.iso, label: c.name, color: LC[c.r], data: LS("rd_" + c.iso.toLowerCase()).filter(p => p[0] >= 1996) })), height: 260, zero: true, endValFmt: v => fmt(v, 1), tipFmt: v => fmt(v, 2) + " %" });
   const pr = DEMO.filter(c => c.r && LP("prod_" + c.iso.toLowerCase()).length);
-  if (pr.length) chartSheet(host, { title: "Produktivität: BIP je Erwerbstätigem", sub: "Index 2000 = 100, konstante Kaufkraftparitäten (ILO-Schätzung)", src: ["live:wb"] },
+  if (pr.length) chartSheet(host, { title: "Produktivität: BIP je Erwerbstätigem", sub: "Index 2000 = 100, konstante Kaufkraftparitäten (ILO-Schätzung)", src: ["live:wb"],
+      info: () => ({ f: ["BIP je Erwerbstätigem zu konstanten Kaufkraftparitäten (ILO-Modellschätzung über die Weltbank).", "Index = Wert im Jahr ÷ Wert 2000 × 100; logarithmische Skala, gleiche Abstände = gleiche Wachstumsraten."],
+        r: pr.map(c => { const d = indexed(LS("prod_" + c.iso.toLowerCase()), 2000); const a = lastPt(d); return a ? `${c.name} ${Math.round(a[0])}: ${fmt(a[1], 0)}` : null; }) }) },
     { series: pr.map(c => ({ id: c.iso, label: c.name, color: LC[c.r], data: indexed(LS("prod_" + c.iso.toLowerCase()), 2000) })), height: 260, log: true, endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 0) });
 }
 
@@ -179,7 +197,8 @@ function renderTech() {
 function renderTechFrame() {
   const host = document.getElementById("tech-frame");
   if (host.childElementCount) return;
-  const left = sheet(host, { title: "Die Produktivitäts-J-Kurve der Basistechnologien", sub: "Schematische Darstellung nach Pictet Research Institute (Abb. 8 und 9): Neue Basistechnologien drücken die gemessene Produktivität zunächst, bevor sie sie heben; keine Messwerte", src: ["live:pictet"] });
+  const left = sheet(host, { title: "Die Produktivitäts-J-Kurve der Basistechnologien", sub: "Schematische Darstellung nach Pictet Research Institute (Abb. 8 und 9): Neue Basistechnologien drücken die gemessene Produktivität zunächst, bevor sie sie heben; keine Messwerte", src: ["live:pictet"],
+    info: { f: "Keine Berechnung: Die Kurven sind schematisch gezeichnet (Glockenkurve für die anfängliche Delle plus S-Kurve für den späteren Anstieg) und geben nur den Verlauf aus der Pictet-Studie wieder. KI ist ab der Gegenwart gestrichelt, weil ihr Verlauf offen ist." } });
   const wrap = h("div", { class: "chart" });
   left.body.append(wrap);
   const curves = [

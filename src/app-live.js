@@ -82,7 +82,9 @@ function renderMovers() {
   const items = MOVER_IDS.map(id => byId[id]).filter(r => r && r.now);
   if (!items.length) return;
   host.replaceChildren(h("div", { class: "movers" },
-    h("div", { class: "movers-head" }, h("div", { class: "eyebrow", text: "Was steigt, was fällt? Signale des Anlagebarometers" }), h("a", { href: "#barometer", class: "small", text: "Alle Signale" })),
+    h("div", { class: "movers-head" }, h("div", { class: "eyebrow" }, "Was steigt, was fällt? Signale des Anlagebarometers", info({ t: "Was steigt, was fällt?",
+      d: "Acht Anlagen aus dem Anlagebarometer im Kurzformat.",
+      f: ["Signal: Stufe aus dem gewichteten Mittel der fünf Säulen (Rechenweg im Barometer).", "Trendpfeil: Trendsäule über +0,3 = Aufwärtstrend, unter −0,3 = Abwärtstrend, sonst seitwärts.", "1 Monat: letzter Kurs ÷ Kurs vor 30 Tagen − 1."] }, "Was steigt, was fällt")), h("a", { href: "#barometer", class: "small", text: "Alle Signale" })),
     h("div", { class: "movers-grid" }, ...items.map(r => {
       const c = r.now.cat;
       return h("a", { class: "mover", href: "#baro-" + r.row.id, title: `${moverName(r)}: Signal ${c.label} (${fmt(r.now.score, 2)})` },
@@ -134,13 +136,72 @@ function fmtPart(q) {
   const unit = q.u === "%" ? " %" : q.u === "Pp." ? " Pp." : q.u === "σ" ? " σ" : q.u ? " " + q.u : "";
   return (q.u === "%" || q.u === "Pp." || q.u === "σ" ? signed(q.v, d) : fmt(q.v, d)) + unit;
 }
+const SOFT = "Jeder Teilwert wird weich auf −2 bis +2 begrenzt: 2 × tanh(z ÷ 2).";
+const PILLAR_RULES = {
+  trend: { all: ["Rendite über 3, 6 und 12 Monate ÷ (annualisierte Volatilität × √(Monate ÷ 12)) ergibt je Zeitraum einen z-Wert.", "Abstand zum 200-Tage-Schnitt (bei Monatsreihen: 10-Monats-Schnitt) ÷ (Volatilität × 0,45).", "Säule = 0,6 × Mittel der Renditewerte + 0,4 × Abstandswert."] },
+  cycle: {
+    equity: ["OECD-Frühindikator der Region: Wert = 1,4 × Veränderung über 3 Monate + 0,3 × (Niveau − 100); bei mehreren Regionen das Mittel."],
+    commodity: ["OECD-Frühindikator der Region bzw. der Welt (Mittel aus USA, Eurozone, China, Japan, Großbritannien, Indien): 1,4 × Veränderung über 3 Monate + 0,3 × (Niveau − 100)."],
+    bond: ["Wachstum: −0,7 × Frühindikator-Wert der Region (gute Konjunktur belastet Anleihen).", "Inflation: −(Veränderung der Inflationsrate über 6 Monate ÷ 0,8 Pp.).", "Säule = Mittel beider Werte."],
+    fx: ["Wachstumsvorsprung = Frühindikator-Wert der Region − Wert der USA (beim Dollar: USA − Welt; bei EUR/CHF: Eurozone − Schweiz)."],
+    gold: ["Weltkonjunktur: −0,5 × Frühindikator-Wert der Welt.", "US-Inflation: Veränderung der Inflationsrate über 6 Monate ÷ 0,8 Pp.", "Säule = Mittel beider Werte."],
+    relative: ["Wachstumsvorsprung der ersten gegenüber der zweiten Region; Aktien vs. Anleihen: US-Frühindikator; Gold vs. Aktien: −0,6 × US-Frühindikator."],
+  },
+  value: {
+    equity: ["Gerade durch die logarithmierten Monatskurse der letzten 10 Jahre; z = Abstand des heutigen Kurses zur Geraden ÷ Standardabweichung der Abstände.", "Wert = −z ÷ 1,2 (deutlich über dem Trend = teuer = negativ).", "USA zusätzlich Shiller-KGV: 4 × (0,5 − Perzentil seit 1881); Säule = Mittel beider."],
+    commodity: ["Gerade durch die logarithmierten Monatskurse der letzten 10 Jahre; z = Abstand des heutigen Kurses ÷ Standardabweichung der Abstände.", "Wert = −z ÷ 1,2."],
+    bond: ["Realrendite = Rendite 10 Jahre − Inflationsrate.", "z = (Realrendite − Mittel der letzten 10 Jahre) ÷ Standardabweichung; Wert = 0,9 × z (hohe Realrendite = günstig = positiv). Ohne Historie: Realrendite ÷ 1,2."],
+    credit: ["z = (Risikoprämie − Mittel der letzten 10 Jahre) ÷ Standardabweichung; hohe Prämie = günstig = positiv."],
+    fx: ["Abweichung des realen effektiven Wechselkurses (BIZ) von seinem 10-Jahres-Mittel in %.", "Wert = −Abweichung ÷ 7 %. Gegenüber dem Dollar zählt der Unterschied: −(Abweichung der Währung − Abweichung des Dollars) ÷ 10 %."],
+    gold: ["Realer Goldpreis = Goldpreis ÷ US-Verbraucherpreisindex; z = Abstand zum 10-Jahres-Trend (wie bei Aktien).", "Wert = −z ÷ 1,2."],
+  },
+  liquidity: {
+    equity: ["Leitzinsänderung über 12 Monate: −Änderung ÷ 0,6 Pp. (Senkungen stützen).", "Zinskurve = Rendite 10 Jahre − Leitzins, geteilt durch 1 Pp.", "USA: Fed-Bilanz über 6 Monate ÷ 3 %.", "Schwellenländer und Rohstoffe: −Veränderung des Dollarindex über 6 Monate ÷ 4 %.", "Säule = Mittel der vorhandenen Teile."],
+    bond: ["Leitzinsänderung über 6 Monate: −Änderung ÷ 0,4 Pp.", "USA: Markterwartung = 2-jährige Rendite − Leitzins, Wert = −Erwartung ÷ 0,5 Pp. (erwartete Senkungen stützen).", "Säule = Mittel."],
+    fx: ["Veränderung der Zinsdifferenz zur Vergleichswährung über 6 Monate ÷ 0,5 Pp.", "Niveau der Zinsdifferenz ÷ 3 Pp. × 0,5.", "Dollar: Fed-Leitzinsänderung über 6 Monate ÷ 0,5 Pp.", "Säule = Mittel."],
+    gold: ["Reale US-Rendite (TIPS), Veränderung über 6 Monate: −Änderung ÷ 0,4 Pp.", "Dollarindex über 6 Monate: −Veränderung ÷ 4 %.", "Säule = Mittel."],
+  },
+  risk: { all: ["Risikoappetit = Mittel aus: VIX gegenüber seinem Jahresmedian (−Abweichung ÷ 5), Hochzins-Risikoprämie über 3 Monate (−Änderung ÷ 0,6 Pp.), Finanzstressindex (−Wert ÷ 1,2) und geopolitischem Risiko (−Abweichung ÷ 1,5 σ).", "Säule = Risikoappetit × Risikobeta der Anlage (Aktien +1, Schwellenländer +1,2, Rohstoffe +0,7, Gold −0,7, Franken und Yen −0,9 …) + Gewicht × Spannungsabweichung der betroffenen Konfliktlinien, begrenzt auf ±2."] },
+};
+function pillarRules(pid, kind) {
+  const R = PILLAR_RULES[pid];
+  if (R.all) return R.all;
+  return R[kind] || R.equity;
+}
+function pillarInfo(r, p) {
+  return () => {
+    const pp = r.now.pillars[p.id];
+    const w = SIG.cfg.weights[r.row.kind][p.id];
+    const kind = r.row.kind === "credit" && (p.id === "cycle" || p.id === "liquidity") ? "equity" : r.row.kind;
+    return {
+      t: `${r.row.label}: ${p.label}`,
+      d: p.desc,
+      f: [...pillarRules(p.id, kind), SOFT],
+      r: pp ? [...pp.parts.map(q => `${q.k}${q.d ? ` (${q.d})` : ""}: ${q.v == null ? "" : fmtPart(q) + " → "}Teilwert ${q.s == null ? "–" : signed(q.s, 2)}`), `Säule = ${signed(pp.s, 2)}, Gewicht ${fmt(100 * w, 0)} %`] : "Keine Daten für diese Säule.",
+    };
+  };
+}
+function scoreInfo(r) {
+  return () => {
+    const W = SIG.cfg.weights[r.row.kind];
+    const used = SIG.cfg.pillars.filter(p => W[p.id] && r.now.pillars[p.id]);
+    const den = used.reduce((a, p) => a + W[p.id], 0);
+    return {
+      t: `${r.row.label}: Gesamtwert und Stufe`,
+      d: "Der Gesamtwert fasst die fünf Säulen zusammen und bestimmt die Stufe auf der Skala.",
+      f: ["Gesamtwert = Σ (Gewicht × Säulenwert) ÷ Σ Gewichte der vorhandenen Säulen.", `Stufen: ${SIG.cfg.cats.map((c, i) => `${c.sym} ${c.max === Infinity ? `über ${fmt(SIG.cfg.cats[i - 1].max, 1)}` : `bis ${fmt(c.max, 1)}`}`).join(", ")}.`, `Toleranzband: Gegenüber der Vormonatsstufe wechselt die Stufe erst, wenn die Schwelle um mehr als ${fmt(SIG.cfg.hyst, 1)} überschritten ist.`],
+      r: [`(${used.map(p => `${fmt(W[p.id], 2)} × ${signed(r.now.pillars[p.id].s, 2)}`).join(" + ")}) ÷ ${fmt(den, 2)} = ${signed(r.now.score, 2)}`,
+        `Stufe: ${r.now.cat.sym} ${r.now.cat.label}` + (r.now.raw && r.now.raw.n !== r.now.cat.n ? ` (rechnerisch ${r.now.raw.label}, Toleranzband)` : "") + (r.prev && r.prev.cat ? `; Vormonat ${signed(r.prev.score, 2)} (${r.prev.cat.label})` : "")],
+    };
+  };
+}
 function detailPanel(r) {
   const w = SIG.cfg.weights[r.row.kind];
   const cards = SIG.cfg.pillars.map(p => {
     if (!w[p.id]) return null;
     const pp = r.now.pillars[p.id];
     return h("div", { class: "pillar" },
-      h("h5", null, h("span", { text: `${p.label} · Gewicht ${fmt(100 * w[p.id], 0)} %` }), h("span", null, pp ? signed(pp.s, 2) : "keine Daten", " ", pillarBar(pp ? pp.s : null))),
+      h("h5", null, h("span", null, p.label, info(pillarInfo(r, p), `${p.label} für ${r.row.label}`), ` · Gewicht ${fmt(100 * w[p.id], 0)} %`), h("span", null, pp ? signed(pp.s, 2) : "keine Daten", " ", pillarBar(pp ? pp.s : null))),
       pp ? h("ul", null, ...pp.parts.map(q => h("li", null, h("span", { text: q.k + (q.d ? ` (${q.d})` : "") }), h("span", { class: "v", text: q.v == null ? (q.s != null ? signed(q.s, 2) : "") : fmtPart(q) }))))
         : h("p", { class: "small", text: "Für diese Säule liegen keine Daten vor; sie entfällt, die übrigen Gewichte werden hochgerechnet." }));
   }).filter(Boolean);
@@ -150,7 +211,8 @@ function detailPanel(r) {
       `${r.row.label}${r.row.sub ? " (" + r.row.sub + ")" : ""}: Gesamtwert ${signed(r.now.score, 2)} auf der Skala −2 bis +2, Datenstand ${deShort(SIG.isoOf(r.now.date))}; abgedeckt sind ${fmt(100 * r.now.coverage, 0)} % der Säulengewichte.`,
       r.prev && r.prev.cat ? ` Vor einem Monat: ${signed(r.prev.score, 2)} (${r.prev.cat.label}).` : "",
       r.now.raw && r.now.raw.n !== r.now.cat.n ? ` Die Stufe bleibt wegen des Toleranzbands bei „${r.now.cat.label}“; rechnerisch läge der Wert bei „${r.now.raw.label}“.` : "",
-      r.perf ? ` Seit Jahresbeginn ${signed(100 * (r.perf.ytd ?? NaN), 1)} %, drei Monate ${signed(100 * (r.perf.m3 ?? NaN), 1)} %.` : ""));
+      r.perf ? ` Seit Jahresbeginn ${signed(100 * (r.perf.ytd ?? NaN), 1)} %, drei Monate ${signed(100 * (r.perf.m3 ?? NaN), 1)} %.` : "",
+      info(scoreInfo(r), `Gesamtwert ${r.row.label}`)));
 }
 function gridHead(extra = true) {
   return h("div", { class: "pg-group pg-hgroup" }, h("div", { class: "pg-glabel gl-h" }),
@@ -191,7 +253,7 @@ function renderBarometer() {
   const draw = () => {
     host.replaceChildren();
     if (view === "scale") {
-      const sh = sheet(host, { title: "Monatsübersicht der Signale", sub: `Einstufung zum ${deShort(SIG.isoOf(BARO.tNow))}; Zeile antippen für die Säulen im Einzelnen` });
+      const sh = sheet(host, { title: "Monatsübersicht der Signale", sub: `Einstufung zum ${deShort(SIG.isoOf(BARO.tNow))}; Zeile antippen für die Säulen im Einzelnen`, info: BARO_INFO });
       const grid = h("div", { class: "pgrid" }, gridHead(true));
       for (const g of BARO.groups) {
         const rows = BARO.rows.filter(r => r.row.group === g.id && r.now);
@@ -209,7 +271,7 @@ function renderBarometer() {
       for (const g of BARO.groups) {
         const rows = BARO.rows.filter(r => r.row.group === g.id && r.now);
         if (!rows.length) continue;
-        const sh = sheet(host, { title: GROUP_LABELS[g.id] || g.label, sub: g.note });
+        const sh = sheet(host, { title: GROUP_LABELS[g.id] || g.label, sub: g.note, info: { d: "Säulenwerte der Anlagen dieser Gruppe auf der Skala −2 bis +2; Farbe = Stufe des Werts.", f: ["Spalten Trend bis Risiko: Säulenwerte (Rechenweg im Barometer: Zeile antippen, dann ⓘ an der Säule).", "Gesamt = gewichtetes Mittel der Säulen; Vormonat = dieselbe Rechnung mit dem Datenstand von vor 30 Tagen.", "· = Säule zählt für diese Anlageart nicht."] } });
         sh.body.append(h("div", { style: "overflow-x:auto" }, heatTable(rows)));
       }
     }
@@ -245,6 +307,15 @@ function heatTable(rows) {
       ...P.map(p => (SIG.cfg.weights[r.row.kind][p.id] ? cell(r.now.pillars[p.id] ? r.now.pillars[p.id].s : null) : h("td", null, h("div", { class: "heat-cell", style: "color:var(--muted)", text: "·" })))),
       cell(r.now.score), cell(r.prev ? r.prev.score : null)))));
 }
+const BARO_INFO = {
+  d: "Für jede Anlage ein Signal von klar negativ bis klar positiv, abgeleitet aus fünf Säulen: Trend, Konjunktur, Bewertung, Liquidität sowie Risiko und Geopolitik.",
+  f: ["Jede Säule rechnet Rohwerte (Renditen, Zinsänderungen, Bewertungsabstände …) in z-Werte um und begrenzt sie weich auf −2 bis +2.",
+    "Gesamtwert = gewichtetes Mittel der Säulen; die Gewichte hängen von der Anlageart ab (Methodik unten).",
+    "Stufen: bis −0,9 klar negativ, bis −0,3 negativ, bis +0,3 neutral, bis +0,9 positiv, darüber klar positiv; Toleranzband 0,1 gegenüber dem Vormonat.",
+    "Pfeilbalken: Stufe hat sich gegenüber dem Vormonat geändert (Datenstand vor 30 Tagen, Monatsreihen nach ihrer Veröffentlichungsfrist).",
+    "1 Monat und 12 Monate: letzter Kurs ÷ Kurs vor 30 bzw. 365 Tagen − 1. „Stand …“: jüngster Wert älter als eine Woche oder nur als Monatswert verfügbar."],
+  s: "Rechenweg je Anlage: Zeile antippen, dann ⓘ an der Säule oder am Gesamtwert.",
+};
 /* Indikatoren für die Risikoausrichtung: die Säulen des Weltaktien-Signals als eigene Zeilen */
 function riskScorecard(host) {
   const w = BARO.rows.find(r => r.row.id === "eq_world" && r.now);
@@ -253,7 +324,10 @@ function riskScorecard(host) {
     .map(([k, label]) => ({ label, now: w.now.pillars[k] ? w.now.pillars[k].s : null, prev: w.prev && w.prev.pillars[k] ? w.prev.pillars[k].s : null }))
     .filter(x => x.now != null);
   rows.push({ label: "Modell gesamt", now: w.now.score, prev: w.prev ? w.prev.score : null, total: true });
-  const sh = sheet(host, { title: "Indikatoren für die Risikoausrichtung", sub: "Säulen des Signals für Aktien weltweit: positiv = Umfeld spricht für riskante Anlagen, negativ = für sichere Häfen" });
+  const sh = sheet(host, { title: "Indikatoren für die Risikoausrichtung", sub: "Säulen des Signals für Aktien weltweit: positiv = Umfeld spricht für riskante Anlagen, negativ = für sichere Häfen",
+    info: () => { const W = SIG.cfg.weights.equity; return { d: "Die fünf Säulen des Signals für Aktien weltweit, einzeln gezeigt wie in Pictets Übersicht der Risikoausrichtung.",
+      f: ["Aktien weltweit = Korb nach ungefährer Börsengewichtung: USA 62 %, Eurozone 10 %, Japan 6 %, China 5 %, Großbritannien 4 %, Schweiz 3 %, Indien 3 % (jede Reihe auf den Start indexiert).", "Säulen wie im Barometer; Modell gesamt = gewichtetes Mittel."],
+      r: rows.map(x => `${x.label}: ${signed(x.now, 2)}${x.total ? "" : ` (Gewicht ${fmt(100 * W[{ "Konjunkturzyklus": "cycle", "Liquidität": "liquidity", "Bewertung": "value", "Technik und Trend": "trend", "Risiko und Geopolitik": "risk" }[x.label]], 0)} %)`}; Vormonat ${x.prev == null ? "–" : signed(x.prev, 2)}`) }; } });
   const grid = h("div", { class: "pgrid" },
     h("div", { class: "pg-group pg-hgroup no-label" }, h("div", { class: "pg-head score" },
       h("div", { class: "pg-scale-h" }, h("span", { text: "risikoscheu −" }), h("span", { text: "neutral o" }), h("span", { text: "risikofreudig +" })), h("div", { class: "h num-h", text: "Wert (Vormonat)" }))));
@@ -287,7 +361,10 @@ function renderBaroSummary() {
     ra ? `Der Risikoappetit liegt bei ${signed(ra.s, 2)} (${ra.s > 0.3 ? "Risikofreude" : ra.s < -0.3 ? "Risikoscheu" : "ausgeglichen"}). ` : "",
     tension ? `Die stärkste Zunahme der Berichterstattung verzeichnet die Konfliktlinie ${tension.label} (${signed(tension.z, 1)} Standardabweichungen über dem Viermonatsmittel).` : "");
   const chg = ok.filter(r => r.prev && r.prev.cat && r.prev.cat.n !== r.now.cat.n);
-  const sh = sheet(host, { title: "Kurzüberblick", sub: `Automatisch aus den Signalen formuliert, Stand ${deShort(SIG.isoOf(BARO.tNow))}` });
+  const sh = sheet(host, { title: "Kurzüberblick", sub: `Automatisch aus den Signalen formuliert, Stand ${deShort(SIG.isoOf(BARO.tNow))}`,
+    info: { d: "Drei Sätze, die bei jedem Aufruf aus den Signalen erzeugt werden.",
+      f: ["Anlageklassen: Stufen der Zeilen Aktien weltweit, Staatsanleihen, Hochzinsanleihen, Gold und Rohstoffe.", "Regionen: die zwei Aktienmärkte mit dem höchsten und dem niedrigsten Gesamtwert; Währungen mit ihrer Stufe gegenüber dem Dollar.",
+        "Risiko: Risikoappetit (Mittel aus VIX, Hochzinsprämie, Finanzstress, Geopolitik) und die Konfliktlinie mit der größten Abweichung der Berichterstattung vom Viermonatsmittel.", "Geändert: Anlagen, deren Stufe sich gegenüber dem Vormonat verschoben hat."] } });
   sh.body.append(h("div", { class: "inbrief" }, s1, s2, s3,
     chg.length ? h("div", { class: "summary-line", style: "margin-top:4px" }, h("span", { class: "lbl", text: "Geändert gegenüber dem Vormonat:" }),
       ...chg.map(r => h("a", { class: "chipline", href: "#baro-" + r.row.id, style: "text-decoration:none;color:inherit" }, h("span", { class: `sig-badge o${r.prev.cat.n}`, text: r.prev.cat.sym }), "→", h("span", { class: `sig-badge o${r.now.cat.n}`, text: r.now.cat.sym }), moverName(r)))) : null));
@@ -300,9 +377,9 @@ function renderBaroMethod() {
   host.replaceChildren(
     h("p", { text: "Jede Säule wird auf eine Skala von −2 (klar negativ) bis +2 (klar positiv) abgebildet. Rohwerte werden dazu durch eine typische Schwankungsbreite geteilt und weich begrenzt (2·tanh(z/2)). Die Gesamtnote ist das gewichtete Mittel der verfügbaren Säulen; fehlt eine Säule, werden die übrigen Gewichte hochgerechnet. Die Einstufung des Vormonats entsteht aus derselben Rechnung mit dem Datenstand von vor 30 Tagen; Monatsreihen zählen dabei erst nach ihrer üblichen Veröffentlichungsfrist." }),
     h("ul", { style: "margin:0;padding-left:18px;display:grid;gap:4px" }, ...P.map(p => h("li", null, h("b", { text: p.label + ": " }), p.desc))),
-    h("div", { style: "overflow-x:auto" }, h("table", null,
+    h("div", { style: "overflow-x:auto" }, stackTable(h("table", null,
       h("thead", null, h("tr", null, h("th", { text: "Gewichte" }), ...P.map(p => h("th", { text: p.label })))),
-      h("tbody", null, ...Object.entries(W).map(([k, w]) => h("tr", null, h("td", { text: kinds[k] }), ...P.map(p => h("td", { text: w[p.id] ? fmt(100 * w[p.id], 0) + " %" : "–" }))))))),
+      h("tbody", null, ...Object.entries(W).map(([k, w]) => h("tr", null, h("td", { text: kinds[k] }), ...P.map(p => h("td", { text: w[p.id] ? fmt(100 * w[p.id], 0) + " %" : "–" })))))))),
     h("p", { text: `Einstufung nach Gesamtwert: ${SIG.cfg.cats.map((c, i) => `${c.sym} ${c.label} ${c.max === Infinity ? `über ${fmt(SIG.cfg.cats[i - 1].max, 1)}` : `bis ${fmt(c.max, 1)}`}`).join(" · ")}. Gegenüber der Vormonatsstufe gilt ein Toleranzband von ${fmt(SIG.cfg.hyst, 1)}: Die Stufe wechselt erst, wenn der Gesamtwert die Schwelle um mehr als diesen Betrag überschreitet. Das verhindert, dass Werte nahe einer Schwelle jeden Monat hin- und herspringen.` }),
     h("p", { text: "Anleihekurse werden aus der Rendite zehnjähriger Staatsanleihen geschätzt (Duration 8,5, Konvexität 85, laufender Kupon). Währungen sind als Preis der Währung in US-Dollar notiert; ein positives Signal bedeutet erwartete Aufwertung gegenüber dem Dollar. Die geopolitische Komponente nutzt den Spannungsmonitor: Steigt die Berichterstattung über eine Konfliktlinie deutlich über ihr Viermonatsmittel, belastet das die betroffenen Märkte (etwa China bei Spannungen mit den USA oder um Taiwan) und stützt Öl bei Spannungen im Nahen Osten." }),
     h("p", { class: "small", text: "Darstellung und Säulen lehnen sich an die monatliche Asset-Allocation-Übersicht von Pictet Asset Management an (Konjunkturzyklus, Liquidität, Bewertung, Technik und Stimmung). Der Monitor verwendet keine Daten oder Einschätzungen von Pictet; Regeln, Schwellen und Gewichte sind Setzungen dieses Monitors. Keine Anlageberatung." }));
@@ -311,6 +388,12 @@ function renderBaroMethod() {
 /* ------------------------------------------------------------------ Konjunkturuhr */
 const CLOCK_REGIONS = [["US", "cli_us"], ["EA", "cli_ea"], ["CN", "cli_cn"], ["JP", "cli_jp"], ["GB", "cli_gb"], ["IN", "cli_in"], ["CH", "cli_ch"], ["DE", "cli_de"]];
 const PHASE_COL = { expansion: "--pos2", recovery: "--pos1", slowdown: "--neg1", contraction: "--neg2" };
+const CLOCK_INFO = {
+  d: "Zeigt, in welcher Phase des kurzen Konjunkturzyklus sich jede Volkswirtschaft befindet.",
+  f: ["Grundlage: OECD-Frühindikator (Composite Leading Indicator), amplitudenbereinigt, langfristiges Mittel = 100; Schweiz und Eurozone: Geschäftsklima-Indikator der OECD.",
+    "Waagrecht: Niveau − 100 (über null = Konjunktur über dem Trend). Senkrecht: Veränderung gegenüber dem Wert von vor drei Monaten.",
+    "Aufschwung = über dem Trend und steigend; Abschwung = über dem Trend, aber fallend; Abschwächung = unter dem Trend und fallend; Erholung = unter dem Trend, aber steigend."],
+};
 function renderCycleClock() {
   const host = document.getElementById("cycle-clock");
   const regs = CLOCK_REGIONS.filter(([, id]) => LP(id).length > 12);
@@ -319,6 +402,7 @@ function renderCycleClock() {
     title: "Konjunkturuhr der großen Volkswirtschaften",
     sub: "OECD-Frühindikator (amplitudenbereinigt, langfristiges Mittel = 100): waagrecht das Niveau, senkrecht die Veränderung über drei Monate; Spur der letzten 18 Monate, Punkt = jüngster Wert",
     src: liveSrcIds(...regs.map(r => r[1])),
+    info: CLOCK_INFO,
   });
   const trails = regs.map(([r, id]) => {
     const p = LP(id);
@@ -354,7 +438,9 @@ function renderCycleClock() {
     }
     const ph = tr.phase;
     grid.append(h("div", { class: "clock" },
-      h("h4", null, h("span", { text: RN[tr.r] }), ph ? h("span", { class: "phase-pill" }, h("i", { style: `background:var(${PHASE_COL[ph.id]})` }), ph.label) : null),
+      h("h4", null, h("span", null, RN[tr.r], ph ? info({ t: `Konjunkturuhr ${RN[tr.r]}`, f: CLOCK_INFO.f.slice(1),
+        r: [`Niveau: ${fmt(100 + ph.lvl, 2)} − 100 = ${signed(ph.lvl, 2)} (${ph.lvl >= 0 ? "über" : "unter"} dem Trend)`, `Veränderung über 3 Monate: ${signed(ph.mom, 2)} Punkte (${ph.mom >= 0 ? "steigend" : "fallend"})`, `→ ${ph.label} (${deMonth(ph.date + "-01")})`] }, `Konjunkturuhr ${RN[tr.r]}`) : null),
+        ph ? h("span", { class: "phase-pill" }, h("i", { style: `background:var(${PHASE_COL[ph.id]})` }), ph.label) : null),
       svg,
       ph ? h("div", { class: "small", text: `Index ${fmt(100 + ph.lvl, 1)} · 3 Monate ${signed(ph.mom, 2)} · ${deMonth(ph.date + "-01")}` }) : null));
   }
@@ -374,17 +460,21 @@ function renderMacro() {
   const x0 = nowX() - 7;
   const R = ["US", "EA", "CH", "JP", "GB", "CN", "IN"];
   const pr = regionLines("pr_", R, 1, x0);
-  if (pr.length) chartSheet(host, { title: "Leitzinsen", sub: "Leitzins der Zentralbanken, %; Eurozone: Einlagefazilität der EZB", src: liveSrcIds(...R.map(r => "pr_" + r.toLowerCase())) },
+  if (pr.length) chartSheet(host, { title: "Leitzinsen", sub: "Leitzins der Zentralbanken, %; Eurozone: Einlagefazilität der EZB", src: liveSrcIds(...R.map(r => "pr_" + r.toLowerCase())),
+      info: { f: "Keine eigene Rechnung: Leitzinsen aus der Statistik der Bank für Internationalen Zahlungsausgleich (tägliche Werte); fehlt ein Land dort, die Angabe der Zentralbank selbst (EZB-Einlagesatz, SNB, Bank of England, Fed Funds Effective Rate)." } },
     { series: pr, height: 280, freq: liveFreq(R.map(r => "pr_" + r.toLowerCase())), refs: [{ y: 0 }], endValFmt: v => fmt(v, 2), tipFmt: v => fmt(v, 2) + " %", ...SHORT_RANGE });
   const cpi = regionLines("cpi_", R, 1, x0);
-  if (cpi.length) chartSheet(host, { title: "Inflation", sub: "Verbraucherpreise, Veränderung gegenüber dem Vorjahresmonat, %", src: liveSrcIds(...R.map(r => "cpi_" + r.toLowerCase())) },
+  if (cpi.length) chartSheet(host, { title: "Inflation", sub: "Verbraucherpreise, Veränderung gegenüber dem Vorjahresmonat, %", src: liveSrcIds(...R.map(r => "cpi_" + r.toLowerCase())),
+      info: { f: "Verbraucherpreisindex im Monat ÷ Index im Vorjahresmonat − 1, in % (von der OECD berechnet und so übernommen; Russland und Iran: IWF). Referenzlinie bei 2 %, dem Inflationsziel der meisten Notenbanken." } },
     { series: cpi, height: 280, freq: "M", refs: [{ y: 0 }, { y: 2, label: "2 %" }], endValFmt: v => fmt(v, 1), tipFmt: v => fmt(v, 1) + " %", ...SHORT_RANGE });
   const y10 = ["US", "DE", "CH", "JP", "GB", "CN", "IN"].filter(r => LP("y10_" + r.toLowerCase()).length)
     .map(r => ({ id: r, label: r === "DE" ? "Deutschland" : RN[r], color: LC[r], data: LS("y10_" + r.toLowerCase()).filter(p => p[0] >= nowX() - 3) }));
-  if (y10.length) chartSheet(host, { title: "Rendite zehnjähriger Staatsanleihen", sub: "%, letzte drei Jahre", src: liveSrcIds(...["us", "de", "ch", "jp", "gb", "cn", "in"].map(r => "y10_" + r)) },
+  if (y10.length) chartSheet(host, { title: "Rendite zehnjähriger Staatsanleihen", sub: "%, letzte drei Jahre", src: liveSrcIds(...["us", "de", "ch", "jp", "gb", "cn", "in"].map(r => "y10_" + r)),
+      info: { f: ["Tageswerte der Notenbanken bzw. Finanzministerien: USA (Fed), Deutschland (Bundesbank), Schweiz (SNB), Japan (Finanzministerium), Großbritannien (Bank of England).", "China und Indien sowie fehlende Tage: Monatswerte der OECD bzw. FRED. Schweiz und Japan: Monatswerte bis zum Beginn der Tagesreihe, danach Tageswerte."] } },
     { series: y10, height: 280, freq: "D", refs: [{ y: 0 }], endValFmt: v => fmt(v, 2), tipFmt: v => fmt(v, 2) + " %", ...SHORT_RANGE });
   const un = regionLines("unemp_", R, 1, x0);
-  if (un.length) chartSheet(host, { title: "Arbeitslosenquote", sub: "%, saisonbereinigt (OECD, harmonisiert)", src: liveSrcIds(...R.map(r => "unemp_" + r.toLowerCase())) },
+  if (un.length) chartSheet(host, { title: "Arbeitslosenquote", sub: "%, saisonbereinigt (OECD, harmonisiert)", src: liveSrcIds(...R.map(r => "unemp_" + r.toLowerCase())),
+      info: { f: "Keine eigene Rechnung: harmonisierte Arbeitslosenquote der OECD (Arbeitslose ÷ Erwerbspersonen × 100, saisonbereinigt); Schweiz: Quartalswerte." } },
     { series: un, height: 280, freq: "M", zero: true, endValFmt: v => fmt(v, 1), tipFmt: v => fmt(v, 1) + " %", ...SHORT_RANGE });
 }
 function renderMarkets() {
@@ -392,19 +482,27 @@ function renderMarkets() {
   const x1 = nowX() - 1;
   const fx = [["CH", "fx_chf"], ["EA", "fx_eur"], ["JP", "fx_jpy"], ["GB", "fx_gbp"], ["CN", "fx_cny"], ["IN", "fx_inr"]].filter(([, id]) => LP(id).length)
     .map(([r, id]) => ({ id: r, label: { CH: "Franken", EA: "Euro", JP: "Yen", GB: "Pfund", CN: "Renminbi", IN: "Rupie" }[r], color: LC[r], data: indexed(LS(id), x1) }));
-  if (fx.length) chartSheet(host, { title: "Währungen gegenüber dem US-Dollar", sub: "Index, vor zwölf Monaten = 100; steigend = Aufwertung gegenüber dem Dollar", src: liveSrcIds("fx_chf", "fx_eur", "fx_jpy", "fx_cny") },
+  if (fx.length) chartSheet(host, { title: "Währungen gegenüber dem US-Dollar", sub: "Index, vor zwölf Monaten = 100; steigend = Aufwertung gegenüber dem Dollar", src: liveSrcIds("fx_chf", "fx_eur", "fx_jpy", "fx_cny"),
+      info: () => ({ f: ["Preis der Währung in US-Dollar aus den EZB-Referenzkursen: z. B. Franken = (USD je Euro) ÷ (CHF je Euro).", "Index = Wert ÷ Wert am ersten Tag des Zeitraums (vor zwölf Monaten) × 100. Über 100 = gestiegen."],
+        r: fx.map(sr => { const a = lastPt(sr.data); return a ? `${sr.label}: ${fmt(a[1], 1)} (${signed(a[1] - 100, 1)} %)` : null; }) }) },
     { series: fx, height: 280, freq: "D", refs: [{ y: 100 }], endValFmt: v => fmt(v, 1), tipFmt: v => fmt(v, 1), ...SHORT_RANGE });
   const eqDev = [["US", "eq_us", "USA"], ["CH", "eq_ch", "Schweiz"], ["EA", "eq_ea", "Eurozone"], ["JP", "eq_jp", "Japan"], ["GB", "eq_gb", "Großbritannien"]].filter(([, id]) => LP(id).length)
     .map(([r, id, l]) => ({ id: r, label: l, color: LC[r], data: indexed(LS(id), x1) }));
-  if (eqDev.length) chartSheet(host, { title: "Aktienmärkte der Industrieländer", sub: "Index in Lokalwährung, vor zwölf Monaten = 100", src: liveSrcIds("eq_us", "eq_ch", "eq_ea", "eq_jp", "eq_gb") },
+  if (eqDev.length) chartSheet(host, { title: "Aktienmärkte der Industrieländer", sub: "Index in Lokalwährung, vor zwölf Monaten = 100", src: liveSrcIds("eq_us", "eq_ch", "eq_ea", "eq_jp", "eq_gb"),
+      info: () => ({ f: ["Indexstand in Landeswährung (S&P 500, SMI, Euro Stoxx 50, Nikkei 225, FTSE 100).", "Index = Wert ÷ Wert am ersten Tag des Zeitraums (vor zwölf Monaten) × 100. Über 100 = gestiegen.", "Eurozone und Großbritannien nur als Monatswerte (EZB, OECD)."],
+        r: eqDev.map(sr => { const a = lastPt(sr.data); return a ? `${sr.label}: ${fmt(a[1], 1)} (${signed(a[1] - 100, 1)} %)` : null; }) }) },
     { series: eqDev, height: 280, freq: "D", refs: [{ y: 100 }], endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 1), ...SHORT_RANGE });
   const eqEm = [["CN", "eq_cn", "China"], ["IN", "eq_in", "Indien"], ["RU", "eq_em", "Schwellenländer (MSCI EM)"], ["US", "eq_us", "USA (Vergleich)"]].filter(([, id]) => LP(id).length)
     .map(([r, id, l]) => ({ id: id, label: l, color: r === "RU" ? "--s7" : LC[r], data: indexed(LS(id), x1), dash: r === "US" ? "5 4" : null }));
-  if (eqEm.length > 1) chartSheet(host, { title: "Aktienmärkte der Schwellenländer", sub: "Index, vor zwölf Monaten = 100; gestrichelt: S&P 500 zum Vergleich", src: liveSrcIds("eq_cn", "eq_in", "eq_em") },
+  if (eqEm.length > 1) chartSheet(host, { title: "Aktienmärkte der Schwellenländer", sub: "Index, vor zwölf Monaten = 100; gestrichelt: S&P 500 zum Vergleich", src: liveSrcIds("eq_cn", "eq_in", "eq_em"),
+      info: () => ({ f: ["Aktienindizes Chinas und Indiens (Monatswerte der OECD), S&P 500 zum Vergleich.", "Index = Wert ÷ Wert am ersten Tag des Zeitraums (vor zwölf Monaten) × 100. Über 100 = gestiegen."],
+        r: eqEm.map(sr => { const a = lastPt(sr.data); return a ? `${sr.label}: ${fmt(a[1], 1)}` : null; }) }) },
     { series: eqEm, height: 280, freq: "D", refs: [{ y: 100 }], endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 1), ...SHORT_RANGE });
   const com = [["gold_usd", "Gold", "--s4"], ["silver_usd", "Silber", "--s7"], ["brent", "Brent", "--s2"], ["copper", "Kupfer", "--s3"]].filter(([id]) => LP(id).length)
     .map(([id, l, c]) => ({ id, label: l, color: c, data: indexed(LS(id), x1) }));
-  if (com.length) chartSheet(host, { title: "Gold und Rohstoffe", sub: "Index in US-Dollar, vor zwölf Monaten = 100", src: liveSrcIds("gold_usd", "brent", "copper") },
+  if (com.length) chartSheet(host, { title: "Gold und Rohstoffe", sub: "Index in US-Dollar, vor zwölf Monaten = 100", src: liveSrcIds("gold_usd", "brent", "copper"),
+      info: () => ({ f: ["Preise in US-Dollar: Gold täglich (polnische Notenbank, umgerechnet), Brent täglich (FRED), Silber und Kupfer als Monatsmittel (IWF).", "Index = Wert ÷ Wert am ersten Tag des Zeitraums (vor zwölf Monaten) × 100. Über 100 = gestiegen."],
+        r: com.map(sr => { const a = lastPt(sr.data); return a ? `${sr.label}: ${fmt(a[1], 1)} (${signed(a[1] - 100, 1)} %)` : null; }) }) },
     { series: com, height: 280, freq: "D", refs: [{ y: 100 }], endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 1), ...SHORT_RANGE });
 }
 
@@ -429,8 +527,11 @@ function renderRiskTiles() {
     const a = p[p.length - 1];
     const hist = p.filter(q => q.t > a.t - 3653).map(q => q.v);
     const pr = pctRank(hist, a.v);
+    const n10 = hist.length, below = hist.filter(v => v <= a.v).length;
     tiles.push(h("div", { class: "tile" },
-      h("div", { class: "label", text: label }),
+      h("div", { class: "label" }, label, info({ t: label, d: note,
+        f: ["Wert: jüngste Beobachtung der Quelle, keine eigene Umrechnung.", "Perzentil (10 J.) = Anteil der Beobachtungen der letzten zehn Jahre, die gleich hoch oder niedriger waren, × 100. 90. Perzentil = höher als an 90 % der Tage."],
+        r: pr == null ? null : `${below} von ${n10} Werten ≤ ${fmt(a.v, d)} → ${fmt(pr, 0)}. Perzentil` }, label)),
       h("div", { class: "value" }, fmt(a.v, d), unit ? h("small", { text: unit }) : null),
       sparkline(p.filter(q => q.t > a.t - 730).map(q => [q.x, q.v]), "--s7"),
       h("div", { class: "meta" }, h("span", { text: liveDate(a, LF(id)) }), h("span", { text: pr == null ? note : `${fmt(pr, 0)}. Perzentil (10 J.)` }))));
@@ -451,7 +552,8 @@ function renderDebtWorld() {
       { id: iso + "_p", group: iso, label: RN[r] + " (Projektion)", short: RN[r], color: LC[r], dash: "4 4", data: d.filter(p => p[0] >= y0), noLegend: true },
     ];
   });
-  if (deb.length) chartSheet(host, { title: "Staatsschulden der großen Volkswirtschaften", sub: `Bruttoschulden des Gesamtstaats in % des BIP; gestrichelt ab ${y0}: Projektion des IWF (World Economic Outlook)`, src: ["live:imf"], cls: "span-2" },
+  if (deb.length) chartSheet(host, { title: "Staatsschulden der großen Volkswirtschaften", sub: `Bruttoschulden des Gesamtstaats in % des BIP; gestrichelt ab ${y0}: Projektion des IWF (World Economic Outlook)`, src: ["live:imf"], cls: "span-2",
+      info: { f: "Keine eigene Rechnung: Bruttoschulden des Gesamtstaats (Bund, Länder, Gemeinden, Sozialversicherung) ÷ BIP × 100 laut IWF World Economic Outlook; ab dem laufenden Jahr Projektion des IWF." } },
     { series: deb, height: 320, zero: true, vlines: [{ x: y0, label: "Projektion" }], endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 1) + " %" });
   // Reale Leitzinsen: Leitzins minus Inflation (finanzielle Repression, wenn negativ)
   const R = ["US", "EA", "CH", "JP", "GB", "CN", "IN"];
@@ -460,7 +562,9 @@ function renderDebtWorld() {
     const data = cpi.filter(q => q.x >= nowX() - 8).map(q => { const p = SIG.valueAt(pr, q.e); return p ? [q.x, p.v - q.v] : null; }).filter(Boolean);
     return { id: r, label: RN[r], color: LC[r], data };
   });
-  if (real.length) chartSheet(host, { title: "Reale Leitzinsen", sub: "Leitzins minus Inflationsrate, Prozentpunkte; negativ = Sparer verlieren real (finanzielle Repression)", src: liveSrcIds("pr_us", "cpi_us") },
+  if (real.length) chartSheet(host, { title: "Reale Leitzinsen", sub: "Leitzins minus Inflationsrate, Prozentpunkte; negativ = Sparer verlieren real (finanzielle Repression)", src: liveSrcIds("pr_us", "cpi_us"),
+      info: () => ({ f: "Realer Leitzins = Leitzins am Monatsende − Inflationsrate des Monats (Vorjahresvergleich), in Prozentpunkten",
+        r: real.map(sr => { const a = sr.data[sr.data.length - 1]; if (!a) return null; const prA = LP("pr_" + sr.id.toLowerCase()), cp = LP("cpi_" + sr.id.toLowerCase()); const c = cp[cp.length - 1]; const p = c ? SIG.valueAt(prA, c.e) : null; return p && c ? `${sr.label}: ${fmt(p.v, 2)} % − ${fmt(c.v, 1)} % = ${signed(p.v - c.v, 2)} Pp.` : null; }) }) },
     { series: real, height: 280, freq: "M", refs: [{ y: 0 }], endValFmt: v => fmt(v, 1), tipFmt: v => signed(v, 2) + " Pp.", ...SHORT_RANGE });
   // Währungen gemessen in Gold: Goldpreis in der jeweiligen Währung, Index
   const g = LP("gold_usd");
@@ -472,13 +576,18 @@ function renderDebtWorld() {
       const pts = id ? SIG.combine(g, LP(id), (a, b) => a / b, 7) : g;
       return pts.length ? { id: c, label: `Gold in ${c}`, color: col[c], data: indexed(pts.map(q => [q.x, q.v]), x0) } : null;
     }).filter(Boolean);
-    chartSheet(host, { title: "Währungen gemessen in Gold", sub: `Goldpreis in der jeweiligen Währung, Index ${fmtYearFrac(x0, "M")} = 100; je steiler, desto mehr Kaufkraft verliert die Währung gegenüber Gold`, src: liveSrcIds("gold_usd", "fx_chf", "fx_eur") },
+    chartSheet(host, { title: "Währungen gemessen in Gold", sub: `Goldpreis in der jeweiligen Währung, Index ${fmtYearFrac(x0, "M")} = 100; je steiler, desto mehr Kaufkraft verliert die Währung gegenüber Gold`, src: liveSrcIds("gold_usd", "fx_chf", "fx_eur"),
+      info: () => ({ f: ["Goldpreis in Währung X = Goldpreis in US-Dollar ÷ Preis der Währung X in US-Dollar (gleicher Tag, höchstens 7 Tage Abstand).", `Index = Wert ÷ Wert am ${fmtYearFrac(x0, "M")} × 100. 300 bedeutet: Gold kostet in dieser Währung dreimal so viel wie zu Beginn.`],
+        r: ser.map(sr => { const a = lastPt(sr.data); return a ? `${sr.label}: ${fmt(a[1], 0)}` : null; }) }) },
       { series: ser, height: 280, freq: "D", endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 1), ...SHORT_RANGE });
   }
   const cof = [["cofer_usd", "US-Dollar", "--s1"], ["cofer_eur", "Euro", "--s5"], ["cofer_jpy", "Yen", "--s6"], ["cofer_gbp", "Pfund", "--s3"], ["cofer_cny", "Renminbi", "--s2"], ["cofer_chf", "Franken", "--s4"]].filter(([id]) => LP(id).length);
-  if (cof.length) chartSheet(host, { title: "Anteile an den Weltdevisenreserven", sub: "IWF COFER, % der zugeordneten Reserven, Quartalswerte", src: ["live:imf_cofer"] },
+  if (cof.length) chartSheet(host, { title: "Anteile an den Weltdevisenreserven", sub: "IWF COFER, % der zugeordneten Reserven, Quartalswerte", src: ["live:imf_cofer"],
+      info: { f: "Reserven der Zentralbanken in der jeweiligen Währung ÷ alle Reserven mit gemeldeter Währung × 100 (IWF COFER). Logarithmische Skala, damit kleine Anteile sichtbar bleiben." } },
     { series: cof.map(([id, l, c]) => ({ id, label: l, color: c, data: LS(id) })), height: 280, freq: "Q", log: true, logFloor: 0.1, endValFmt: v => fmt(v, 1), tipFmt: v => fmt(v, 2) + " %" });
   const cb = [["fed_assets", "Federal Reserve", "--s1"], ["ecb_assets", "Eurosystem", "--s5"], ["boj_assets", "Bank of Japan", "--s6"], ["snb_assets", "Nationalbank (SNB)", "--s4"]].filter(([id]) => LP(id).length);
-  if (cb.length) chartSheet(host, { title: "Bilanzsummen der Zentralbanken", sub: "Index Januar 2019 = 100, in Landeswährung", src: liveSrcIds(...cb.map(c => c[0])) },
+  if (cb.length) chartSheet(host, { title: "Bilanzsummen der Zentralbanken", sub: "Index Januar 2019 = 100, in Landeswährung", src: liveSrcIds(...cb.map(c => c[0])),
+      info: () => ({ f: "Bilanzsumme in Landeswährung ÷ Bilanzsumme im Januar 2019 × 100. Über 100 = Bilanz größer als vor der Pandemie (Anleihekäufe), sinkend = Bilanzabbau.",
+        r: cb.map(([id, l]) => { const d = indexed(LS(id), 2019); const a = lastPt(d); return a ? `${l}: ${fmt(a[1], 0)}` : null; }) }) },
     { series: cb.map(([id, l, c]) => ({ id, label: l, color: c, data: indexed(LS(id), 2019) })), height: 280, freq: "M", refs: [{ y: 100 }], endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 0) });
 }

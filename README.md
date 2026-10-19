@@ -2,7 +2,9 @@
 
 Interaktive Übersicht der Weltwirtschaft entlang der großen Zyklen nach Ray Dalio: Schuldenzyklus, innere Ordnung, äußere Ordnung (Machtverschiebung), Natur sowie Technologie und Demografie. Im Blick sind nur die großen Akteure: USA, China, Eurozone mit Deutschland, Japan, Großbritannien, Indien, Russland und die Schweiz. So werden Dynamiken und Spannungen zwischen ihnen sichtbar.
 
-Ziel-Adresse: **https://monitor.hartmann-research.org**. Bis die Domain eingerichtet ist (siehe [Einrichtung, Schritt 6](#6-domain-monitorhartmann-researchorg)), läuft die Seite unter `https://bigcycle-monitor.<konto>.workers.dev`.
+Ziel-Adresse: **https://monitor.hartmann-research.org**. Bis die Domain eingerichtet ist (siehe [Einrichtung, Schritt 6](#6-domain-monitorhartmann-researchorg)), läuft die Seite unter **https://monitor.hartmann-it.workers.dev**.
+
+Jede berechnete Größe trägt ein ⓘ. Ein Klick öffnet ein kleines Fenster mit dem Rechenweg und, wo möglich, der aktuellen Rechnung mit Zahlen. Auf dem Telefon erscheint es als Blatt vom unteren Rand.
 
 ## Was die Seite zeigt
 
@@ -23,7 +25,7 @@ Ziel-Adresse: **https://monitor.hartmann-research.org**. Bis die Domain eingeric
 
 ```
 Cloudflare-Cron (alle 10 Min.)
-   └─► Worker scheduled() ─► Batch-Runner: fällige Jobs, höchstens 5 je Lauf, Budget 40 Subrequests
+   └─► Worker scheduled() ─► Batch-Runner: fällige Jobs, höchstens 8 je Lauf, Budget 80 Subrequests
           │                     offizielle Quellen: FRED, EZB, SNB, BIZ, IWF, OECD, Weltbank, …
           ├─► KV  job:<id>      letzte gute Ausgabe je Job
           ├─► KV  state:<k>     Arbeitszustand (GDELT-Tageswerte)
@@ -36,7 +38,7 @@ Browser ─► GET /data/bigcycle.json   lange Historien (wöchentlich über Git
 ```
 
 - **Ein Worker** liefert die statische Seite (`public/`), die API (`/api/*`) und führt die Abrufe aus. Der Browser ruft nie eine fremde Quelle direkt auf.
-- **Jobs** (`worker/jobs*.js`) haben einen Takt (`every`) und ein Subrequest-Budget (`cost`). Ein Lauf nimmt die fälligen Jobs in der Reihenfolge ihrer Überfälligkeit. Nach einem vollen Umlauf (rund 80 Minuten) sind alle 38 Jobs geladen.
+- **Jobs** (`worker/jobs*.js`) haben einen Takt (`every`) und ein Subrequest-Budget (`cost`). Ein Lauf nimmt die fälligen Jobs in der Reihenfolge ihrer Überfälligkeit, höchstens acht. Nach einem vollen Umlauf (rund 50 Minuten) sind alle 38 Jobs geladen.
 - **Letzter guter Stand:** Schlägt ein Abruf fehl, bleibt die alte Ausgabe stehen. Der Job wartet dann 1, 2, 4, 8, 12 bzw. 24 Stunden bis zum nächsten Versuch (wie bei World Monitor).
 - **Historien wachsen mit:** Viele Jobs laden nur die letzten Wochen nach und hängen sie an die gespeicherte Reihe an (`keep: true`). Tageswerte, die älter als 800 Tage sind, werden auf Wochenwerte ausgedünnt.
 - **GDELT:** Alle 30 Minuten verarbeitet der Worker die neuesten 15-Minuten-Dateien der GDELT-Ereignisdatenbank und führt Tagessummen je Länderpaar für 150 Tage (Startbestand: `public/data/gdelt-state.json`).
@@ -57,13 +59,13 @@ test/              Tests des Signalmodells (node --test)
 
 ### 1. Cloudflare-Plan
 
-Empfohlen ist **Workers Paid** (5 USD im Monat). Die Abrufjobs parsen CSV- und JSON-Antworten und brauchen dafür je Job 20 bis 120 ms Rechenzeit. Der Free-Plan erlaubt pro Cron-Lauf nur 10 ms CPU und 1.000 KV-Schreibvorgänge am Tag. Paid erlaubt 30 Sekunden CPU je Lauf, und KV-Schreibvorgänge sind nicht begrenzt.
+Nötig ist **Workers Paid** (5 USD im Monat; im Konto vorhanden). Die Abrufjobs parsen CSV- und JSON-Antworten und brauchen dafür je Job 20 bis 120 ms Rechenzeit. Der Free-Plan erlaubt pro Cron-Lauf nur 10 ms CPU und 1.000 KV-Schreibvorgänge am Tag. Paid erlaubt 30 Sekunden CPU je Lauf, und KV-Schreibvorgänge sind nicht begrenzt.
 
 ### 2. Repository mit Cloudflare verbinden (Workers Builds)
 
 1. Cloudflare-Dashboard → **Workers & Pages** → **Erstellen** → **Repository importieren**.
 2. GitHub verbinden und `hartmann-account/monitor.hartmann-research.org` wählen.
-3. Projektname: **`bigcycle-monitor`**. Er muss dem `name` in `wrangler.jsonc` entsprechen.
+3. Projektname: **`monitor`**, wie der `name` in `wrangler.jsonc`.
 4. Build-Befehl leer lassen; Deploy-Befehl `npx wrangler deploy`; Produktionszweig `main`.
 
 Danach wird jeder Push auf `main` automatisch veröffentlicht. `wrangler deploy` baut die Seite vorher selbst (`node scripts/build.mjs`, eingetragen unter `build.command`).
@@ -83,15 +85,15 @@ Im Dashboard unter Worker → **Einstellungen** → **Variablen und Secrets**, o
 | `ADMIN_TOKEN` | Secret | Schaltet `POST /api/run` frei (Abruf sofort anstoßen) |
 | `FRED_API_KEY` | Secret | FRED über die offizielle API statt über den CSV-Download; nicht nötig |
 | `GDELT_FILES_PER_RUN` | Variable | GDELT-Dateien je Lauf (Standard 3) |
-| `MAX_JOBS_PER_RUN`, `SUBREQUEST_BUDGET` | Variable | Jobs und Subrequests je Cron-Lauf (in `wrangler.jsonc`: 5 und 40) |
+| `MAX_JOBS_PER_RUN`, `SUBREQUEST_BUDGET` | Variable | Jobs und Subrequests je Cron-Lauf (in `wrangler.jsonc`: 8 und 80) |
 
 ### 5. Erste Befüllung
 
-Direkt nach dem ersten Deploy liefert `/api/snapshot` den Startbestand aus dem Repository (Header `x-snapshot-origin: seed`). Nach einem vollen Umlauf von rund 80 Minuten kommt alles aus dem KV (`x-snapshot-origin: kv`). Wer nicht warten will, stößt einzelne Jobs sofort an:
+Direkt nach dem ersten Deploy liefert `/api/snapshot` den Startbestand aus dem Repository (Header `x-snapshot-origin: seed`). Nach einem vollen Umlauf von rund 50 Minuten kommt alles aus dem KV (`x-snapshot-origin: kv`). Wer nicht warten will, stößt einzelne Jobs sofort an:
 
 ```bash
 curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
-  "https://bigcycle-monitor.<konto>.workers.dev/api/run?jobs=fred_markets,fred_rates,ecb_fx,six_ch"
+  "https://monitor.hartmann-it.workers.dev/api/run?jobs=fred_markets,fred_rates,ecb_fx,six_ch"
 ```
 
 ### 6. Domain monitor.hartmann-research.org
@@ -161,7 +163,7 @@ Alle Quellen sind ohne Schlüssel und dauerhaft abrufbar. Fast alle sind amtlich
 | `nbp_gold` | Goldpreis täglich (in US-Dollar umgerechnet) | Narodowy Bank Polski | 6 Std. |
 | `boj` | Tagesgeldsatz und Bilanzsumme | Bank of Japan | 1 Tag |
 | `oecd_cli`, `oecd_prices`, `oecd_labour`, `oecd_gdp`, `oecd_finmark` | Frühindikatoren, Inflation, Arbeitslosigkeit, BIP, Aktienindizes und Langfristzinsen | OECD | 1–2 Tage |
-| `imf_weo_1` bis `imf_weo_3` | Schulden, Wachstum, Inflation, Leistungsbilanz, BIP-Anteile, Finanzierungssaldo mit Projektionen | IWF World Economic Outlook | 3 Tage |
+| `imf_weo_1` bis `imf_weo_3` | Schulden, Wachstum, Inflation, Leistungsbilanz, BIP-Anteile, Finanzierungssaldo mit Projektionen | IWF World Economic Outlook (SDMX, Rückfall DataMapper) | 3 Tage |
 | `imf_cofer` | Anteile an den Weltdevisenreserven | IWF COFER | 3 Tage |
 | `imf_cpi_ru` | Inflation Russland und Iran | IWF | 3 Tage |
 | `fred_uncertainty` | Economic Policy Uncertainty, World Uncertainty Index | FRED | 1 Tag |

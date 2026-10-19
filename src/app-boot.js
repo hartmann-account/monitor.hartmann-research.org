@@ -50,7 +50,7 @@ async function boot() {
   document.getElementById("stamp").textContent = "Datenstand: " + st;
   const steps = [renderArchetype, renderKpis, renderMovers, renderBarometer, renderCycleClock, renderMacro, renderMarkets, renderRiskTiles,
     renderDebtWorld, renderPower, renderDebt, renderInternal, renderTension, renderPredictions, renderUncertainty, renderExternal,
-    renderDemography, renderNatureLive, renderNature, renderSim, renderMethods, renderDataStatus, renderForces, renderCompare, renderVerdict, renderVerdictLive, renderLeads];
+    renderDemography, renderNatureLive, renderNature, renderSim, renderMethods, renderDataStatus, renderForces, renderCompare, renderVerdict, renderLeads];
   for (const f of steps) { try { f(); } catch (e) { console.error(f.name, e); } }
   if (location.hash) { const el = document.querySelector(location.hash); if (el) el.scrollIntoView(); }
 }
@@ -62,9 +62,8 @@ function renderLeads() {
     el.append(` Ein langer Schuldenzyklus dauert nach Dalio ${du.long} Jahre, ein kurzer ${du.short}.`);
   }
 }
-function renderVerdictLive() {
+function verdictLive(el) {
   if (!BARO) return;
-  const el = document.getElementById("verdict");
   const ok = BARO.rows.filter(r => r.now && r.row.group !== "relativ" && r.row.group !== "klassen");
   const top = ok.filter(r => r.now.cat.n >= 1).sort((a, b) => b.now.score - a.now.score).slice(0, 3).map(moverName);
   const bot = ok.filter(r => r.now.cat.n <= -1).sort((a, b) => a.now.score - b.now.score).slice(0, 3).map(moverName);
@@ -84,13 +83,16 @@ function renderNatureLive() {
     const by = new Map();
     for (const [x, v] of t) { const y = Math.floor(x + 1e-6); const e = by.get(y) || []; e.push(v); by.set(y, e); }
     for (const [y, a] of by) if (a.length === 12) yr.push([y, a.reduce((s, v) => s + v, 0) / 12]);
-    chartSheet(host, { title: "Globale Temperaturabweichung, monatlich", sub: "NASA GISTEMP v4, gegenüber 1951–1980 in °C; Linie = Jahresmittel vollständiger Jahre", src: ["live:nasa"] },
+    chartSheet(host, { title: "Globale Temperaturabweichung, monatlich", sub: "NASA GISTEMP v4, gegenüber 1951–1980 in °C; Linie = Jahresmittel vollständiger Jahre", src: ["live:nasa"],
+      info: () => { const y = yr[yr.length - 1]; return { f: ["Monatswert: Abweichung der globalen Land- und Meerestemperatur vom Mittel 1951–1980 (NASA GISTEMP v4).", "Jahresmittel = Summe der zwölf Monatswerte ÷ 12, nur für vollständige Jahre.", "Referenzlinie 1,2 °C: entspricht etwa 1,5 °C über dem vorindustriellen Niveau, weil 1951–1980 bereits rund 0,3 °C wärmer war."],
+        r: y ? `Jahresmittel ${y[0]}: ${fmt(y[1], 2)} °C` : null }; } },
       { series: [{ id: "m", label: "Monatswert", color: "--s8", data: t.filter(p => p[0] >= 1990), width: 1, opacity: 0.45, endLabel: false }, { id: "y", label: "Jahresmittel", color: "--s8", data: yr.filter(p => p[0] >= 1990), markers: false }],
         height: 260, freq: "M", refs: [{ y: 0 }, { y: 1.2, label: "≈ 1,5 °C über vorindustriell" }], endValFmt: v => fmt(v, 2) + " °C", tipFmt: v => fmt(v, 2) + " °C" });
   }
   const items = LIVE && LIVE.items && LIVE.items.gdacs;
   if (items && items.length) {
-    const sh = sheet(host, { title: "Aktuelle Naturgefahren mit Warnstufe", sub: "GDACS-Meldungen der letzten 30 Tage mit oranger oder roter Warnstufe (Erdbeben, Wirbelstürme, Überschwemmungen, Vulkane, Dürren)", src: ["live:gdacs"] });
+    const sh = sheet(host, { title: "Aktuelle Naturgefahren mit Warnstufe", sub: "GDACS-Meldungen der letzten 30 Tage mit oranger oder roter Warnstufe (Erdbeben, Wirbelstürme, Überschwemmungen, Vulkane, Dürren)", src: ["live:gdacs"],
+      info: { f: "Keine eigene Rechnung: Das Global Disaster Alert and Coordination System von EU und UN vergibt die Warnstufe aus Stärke des Ereignisses, betroffener Bevölkerung und Verwundbarkeit der Region. Gezeigt: orange und rot, die jüngsten zehn." } });
     const lvl = { Red: ["rot", "st-crit"], Orange: ["orange", "st-serious"], Green: ["grün", "st-good"] };
     sh.body.append(h("div", { class: "events" }, ...items.slice(0, 10).map(e => h("div", { class: "event" },
       h("div", { class: "d", text: deShort(e.date) }),
@@ -117,6 +119,11 @@ function renderDataStatus() {
   };
   const counts = S.reduce((c, [, s]) => { const k = state(s)[1]; c[k] = (c[k] || 0) + 1; return c; }, {});
   const sh = sheet(host, {
+    info: { d: "Zeigt für jeden Abrufjob, wann er zuletzt Daten geladen hat und ob dabei Fehler auftraten.",
+      f: ["Der Cron-Trigger des Workers läuft alle zehn Minuten und lädt die Jobs, deren Takt abgelaufen ist (mit 10 % Toleranz), höchstens acht je Lauf.",
+        "aktuell: letzter Abruf erfolgreich. Fehler, letzter Stand: letzter Versuch fehlgeschlagen, die alten Daten bleiben stehen; neuer Versuch nach 1, 2, 4, 8, 12 bzw. 24 Stunden.",
+        "veraltet: letzter erfolgreicher Abruf liegt mehr als das Dreifache des Takts und mindestens einen Tag über dem Takt zurück.",
+        "Jüngster Wert: Datum der neuesten Beobachtung in den geladenen Reihen (bei Monatswerten der Monat)."] },
     title: "Datenstatus der täglichen Abrufe",
     sub: `Snapshot vom ${LIVE.generated ? deDate(LIVE.generated.slice(0, 10)) + ", " + LIVE.generated.slice(11, 16) + " UTC" : "–"} (${LIVE.origin === "worker" ? "Cloudflare-Worker" : "statischer Seed"}). Der Cron-Trigger läuft alle zehn Minuten und lädt jeweils die fälligen Quellen; fällt eine Quelle aus, bleibt ihr letzter guter Stand stehen.`,
   });
@@ -139,6 +146,6 @@ function renderDataStatus() {
         h("td", { class: "when", text: s.latest || "–" }),
         h("td", null, h("span", { class: "pill " + cls }, h("span", { class: "dot" }), w), s.error ? h("div", { class: "err-text", text: s.error }) : null));
     })));
-  sh.body.append(h("details", { class: "more", style: "margin-top:10px" }, h("summary", { text: `Alle ${rows.length} Abrufjobs anzeigen` }), h("div", { style: "overflow-x:auto" }, tbl)));
+  sh.body.append(h("details", { class: "more", style: "margin-top:10px" }, h("summary", { text: `Alle ${rows.length} Abrufjobs anzeigen` }), h("div", { style: "overflow-x:auto" }, stackTable(tbl))));
 }
 document.addEventListener("DOMContentLoaded", boot);

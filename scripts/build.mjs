@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const src = f => readFileSync(join(root, "src", f), "utf8");
-const JS = ["charts.js", "model.js", "markers.js", "signals.js", "app-core.js", "app-sections.js", "app-live.js", "app-geo.js", "app-demo.js", "app-boot.js"];
+const JS = ["charts.js", "info.js", "model.js", "markers.js", "signals.js", "app-core.js", "app-sections.js", "app-live.js", "app-geo.js", "app-demo.js", "app-boot.js"];
 
 const fonts = `@font-face { font-family: "Archivo"; font-style: normal; font-display: swap; font-weight: 100 900; font-stretch: 62% 125%;
   src: url(fonts/archivo-latin-wdth-normal.woff2) format("woff2-variations"), url(fonts/archivo-latin-wdth-normal.woff2) format("woff2");

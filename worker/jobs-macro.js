@@ -38,15 +38,33 @@ const WEO = [
   ["GGXCNL_NGDP", "bal_", "Finanzierungssaldo des Gesamtstaats", "% des BIP"],
 ];
 const WEO_C = ["USA", "CHN", "DEU", "JPN", "GBR", "IND", "RUS", "CHE", "EURO", "TWN", "IRN", "ISR", "UKR"];
+/* WEO über die SDMX-3.0-Schnittstelle des IWF (eine Abfrage für alle Kennzahlen eines Jobs); fällt sie aus,
+   wird je Kennzahl die DataMapper-Schnittstelle gefragt. Der Euroraum heißt dort EURO, in SDMX G163. */
+const WEO_SDMX = { EURO: "G163" };
+async function weoSdmx(F, codes) {
+  const back = Object.fromEntries(Object.entries(WEO_SDMX).map(([a, b]) => [b, a]));
+  const { header, rows, iT, iV } = await imf3(F, `IMF.RES/WEO/+/${WEO_C.map(c => WEO_SDMX[c] || c).join("+")}.${codes.join("+")}.A`);
+  const iC = header.indexOf("COUNTRY"), iI = header.indexOf("INDICATOR");
+  const out = {};
+  for (const r of rows) {
+    const c = back[r[iC]] || r[iC], v = num(r[iV]);
+    if (v == null) continue;
+    ((out[r[iI]] = out[r[iI]] || {})[c] = out[r[iI]][c] || []).push([+r[iT], v]);
+  }
+  if (!Object.keys(out).length) throw new Error("IWF WEO: keine Daten");
+  return out;
+}
 function weoJob(n, inds) {
   return {
-    id: "imf_weo_" + n, label: "IWF World Economic Outlook: " + inds.map(i => i[2]).join(", "), source: "imf", every: 24 * 3, cost: inds.length,
+    id: "imf_weo_" + n, label: "IWF World Economic Outlook: " + inds.map(i => i[2]).join(", "), source: "imf", every: 24 * 3, cost: 1 + inds.length,
     async run(F) {
+      let all = null;
+      try { all = await weoSdmx(F, inds.map(i => i[0])); } catch (e) { all = null; }
       const s = {};
       for (const [code, pre, label, unit] of inds) {
-        const r = await imfDatamapper(F, code, WEO_C);
+        const r = all && all[code] ? all[code] : await imfDatamapper(F, code, WEO_C);
         for (const c of WEO_C) {
-          const pts = (r[c] || []).filter(p => p[0] >= 1990);
+          const pts = (r[c] || []).filter(p => p[0] >= 1990).sort((a, b) => a[0] - b[0]);
           if (pts.length) s[pre + c.toLowerCase()] = annualSeries(pts, meta(`${label} ${CNAME[c] || c}`, unit, "imf", { weo: true }));
         }
       }

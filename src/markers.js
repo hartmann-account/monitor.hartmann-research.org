@@ -40,24 +40,31 @@ function renderForces() {
   const intRev = L.mts_net_interest && L.mts_ytd ? 100 * L.mts_net_interest.current / L.mts_ytd.current.rcpt : null;
   const fs = C.framework && C.framework.forces ? C.framework.forces : ["Schulden- und Geldzyklus", "Innere Ordnung", "Äußere Ordnung", "Naturereignisse", "Technologie"];
   if (ST.debtStage) cards.push(forceCard(fs[0], `Stadium ${ST.debtStage.stage} von ${C.framework.debtStages.length}`, stageTrack(C.framework.debtStages.length, ST.debtStage.stage, ST.debtStage.next && ST.debtStage.next.share >= 0.25 ? ST.debtStage.stage + 1 : null),
-    `${ST.debtStage.name}. Schulden ${fmt(L.debt_public_gdp_now.value, 0)} % des BIP, Zinsen ${fmt(intRev, 1)} % der Einnahmen.`, "#schulden"));
+    `${ST.debtStage.name}. Schulden ${fmt(L.debt_public_gdp_now.value, 0)} % des BIP, Zinsen ${fmt(intRev, 1)} % der Einnahmen.`, "#schulden",
+    { f: ["Stadium aus der regelbasierten Markerprüfung im Abschnitt Schuldenzyklus: Ein Stadium gilt als erreicht, wenn mindestens die Hälfte seiner Marker erfüllt ist.", "Schulden = Schulden in Händen der Öffentlichkeit ÷ BIP; Zinsen = Nettozinsen ÷ Bundeseinnahmen im laufenden Fiskaljahr."],
+      r: ST.debtStage.next ? `Marker für Stadium ${ST.debtStage.next.n}: ${ST.debtStage.next.share == null ? "keine Daten" : fmt(100 * ST.debtStage.next.share, 0) + " % erfüllt"}` : null }));
   if (ST.intStage) cards.push(forceCard(fs[1], `Stadium ${ST.intStage.stage} von ${C.framework.internalStages.length}`, stageTrack(C.framework.internalStages.length, ST.intStage.stage, ST.intStage.next && ST.intStage.next.share >= 0.25 ? ST.intStage.stage + 1 : null),
-    `${ST.intStage.name}. Polarisierung (V-Dem) ${fmt(lastPt(A("polar_usa"))[1], 1)}, Vertrauen in die Regierung ${fmt(lastPt(A("us_trust_gov"))[1], 0)} %.`, "#innen"));
+    `${ST.intStage.name}. Polarisierung (V-Dem) ${fmt(lastPt(A("polar_usa"))[1], 1)}, Vertrauen in die Regierung ${fmt(lastPt(A("us_trust_gov"))[1], 0)} %.`, "#innen",
+    { f: ["Stadium aus der regelbasierten Markerprüfung im Abschnitt Innere Ordnung (Schulden, Vermögenskonzentration, Polarisierung, Vertrauen, politische Gewalt).", "Polarisierung: V-Dem-Expertenschätzung, höher = feindseligere Lager; Vertrauen: Pew Research Center, Anteil mit Vertrauen „fast immer“ oder „meistens“."] }));
   const wars = C.wars || [];
   const cls = { aktiv: "st-crit", eskalierend: "st-crit", teilweise: "st-serious", latent: "st-warn", nein: "st-good" };
   cards.push(forceCard(fs[2], `${wars.filter(w => ["aktiv", "eskalierend"].includes(w.status)).length} von ${wars.length} Konfliktformen aktiv`,
-    h("div", { class: "wars" }, ...wars.map(w => h("span", { class: "pill " + (cls[w.status] || "st-none"), title: w.statusLabel || w.status }, h("span", { class: "dot" }), w.short || w.name))), null, "#aussen"));
+    h("div", { class: "wars" }, ...wars.map(w => h("span", { class: "pill " + (cls[w.status] || "st-none"), title: w.statusLabel || w.status }, h("span", { class: "dot" }), w.short || w.name))), null, "#geopolitik",
+    { f: "Zählt die Konfliktformen zwischen den USA und China (Handel, Technologie, Kapital, Geopolitik, Militär), deren Status in der kuratierten Liste „aktiv“ oder „eskalierend“ lautet. Rot = aktiv oder eskalierend, orange = teilweise, gelb = latent." }));
   const temp = lastPt(A("temp_anomaly"));
-  cards.push(forceCard(fs[3], temp ? `${fmt(temp[1], 2)} °C über 1861–1890 (${Math.round(temp[0])})` : "", null, "Nicht in der Stadienschätzung; Klimarisiken wirken als Kostenschock und Konfliktverstärker.", "#natur"));
+  cards.push(forceCard(fs[3], temp ? `${fmt(temp[1], 2)} °C über 1861–1890 (${Math.round(temp[0])})` : "", null, "Nicht in der Stadienschätzung; Klimarisiken wirken als Kostenschock und Konfliktverstärker.", "#natur",
+    { f: "Abweichung der globalen bodennahen Jahresmitteltemperatur vom Mittel 1861–1890 (HadCRUT5 über Our World in Data), keine eigene Umrechnung." }));
   const inn = D.power.score.innovation;
   const iu = inn.USA[inn.USA.length - 1], ic = inn.CHN[inn.CHN.length - 1];
   const i10u = inn.USA[inn.USA.length - 11], i10c = inn.CHN[inn.CHN.length - 11];
-  cards.push(forceCard(fs[4], `Innovationsindex USA ${fmt(100 * iu, 0)}, China ${fmt(100 * ic, 0)}`, null, `Vor zehn Jahren: USA ${fmt(100 * i10u, 0)}, China ${fmt(100 * i10c, 0)} (0–100, normiert auf den historischen Höchstwert).`, "#natur"));
+  cards.push(forceCard(fs[4], `Innovationsindex USA ${fmt(100 * iu, 0)}, China ${fmt(100 * ic, 0)}`, null, `Vor zehn Jahren: USA ${fmt(100 * i10u, 0)}, China ${fmt(100 * i10c, 0)} (0–100, normiert auf den historischen Höchstwert).`, "#macht",
+    { f: ["Messgröße Innovation des Machtindex: gewichtetes Mittel der Anteile an naturwissenschaftlichen Nobelpreisen (40 %), an den weltweiten F&E-Ausgaben (40 %) und an den Patentanmeldungen (20 %).", "Jede Komponente geglättet (5-Jahres-Mittel) und durch den höchsten je erreichten Wert der acht Länder geteilt; Ergebnis × 100."],
+      r: `USA ${fmt(100 * i10u, 0)} → ${fmt(100 * iu, 0)}, China ${fmt(100 * i10c, 0)} → ${fmt(100 * ic, 0)} (zehn Jahre)` }));
   host.replaceChildren(...cards);
 }
-function forceCard(title, read, visual, text, href) {
+function forceCard(title, read, visual, text, href, inf) {
   return h("article", { class: "force" },
-    h("div", { class: "f-head" }, h("h3", { text: title }), h("a", { href, class: "small", text: "Details" })),
+    h("div", { class: "f-head" }, h("h3", null, title, inf ? info(withTitle(inf, title), title) : null), h("a", { href, class: "small", text: "Details" })),
     read ? h("div", { style: "font-weight:640", text: read }) : null,
     visual,
     text ? h("div", { class: "f-read", text }) : null);

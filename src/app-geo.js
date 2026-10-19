@@ -2,6 +2,14 @@
 /* Big-Cycle-Monitor: Geopolitik – Spannungsmonitor (GDELT), Prognosemärkte, Unsicherheitsindizes */
 
 const LOW_EVENTS = 30;
+const TENSION_INFO = {
+  d: "Misst täglich, wie stark und in welchem Ton die Weltpresse über Konflikte zwischen zwei Ländern berichtet.",
+  f: ["Datenbasis: GDELT-Ereignisdatenbank. Alle 15 Minuten erscheint eine Datei mit Ereignissen aus Nachrichtenmeldungen weltweit (wer tut wem was, wie oft erwähnt).",
+    "Konfliktintensität je Tag = Σ Erwähnungen × max(0, −Goldstein-Wert) über alle Ereignisse der Klassen 3 und 4 (verbaler und materieller Konflikt) zwischen den beiden Ländern, geteilt durch alle Erwähnungen des Tages × 10.000.",
+    "Spannungsindex (0–100) = Perzentil des 7-Tage-Mittels innerhalb der letzten 90 Tage: 90 heißt, an 90 % der Tage war die Intensität niedriger.",
+    "Stufe: ab 90 sehr hoch, ab 70 erhöht, ab 40 mittel, darunter niedrig."],
+  s: "Goldstein-Skala: −10 (militärischer Angriff) bis +10 (engste Zusammenarbeit). Aufmerksamkeit der Medien ist nicht dasselbe wie das tatsächliche Geschehen.",
+};
 const TENSION_FOCUS = ["us_cn", "cn_tw", "ru_ua", "ru_eu", "il_ir", "us_ir", "us_ru", "cn_jp", "in_pk", "in_cn", "kp", "us_eu", "us_ch"];
 function movAvg(pts, n) {
   const out = [];
@@ -30,6 +38,7 @@ function renderTension() {
     sub: "Konfliktintensität in der Weltpresse je Länderpaar: Erwähnungen konfliktträchtiger Ereignisse, gewichtet mit der Goldstein-Skala, je 10.000 Erwähnungen aller Ereignisse. Index = Perzentil des 7-Tage-Mittels innerhalb der letzten 90 Tage",
     src: ["live:gdelt"],
     note: "Methode nach dem Vorbild von World Monitor: Σ Erwähnungen × max(0, −Goldstein) über Ereignisse der Klassen 3 und 4 (verbale und materielle Konflikte). Medienintensität misst Aufmerksamkeit und Ton, nicht das tatsächliche Geschehen.",
+    info: TENSION_INFO,
   });
   const rows = TENSION_FOCUS.map(id => T.pairs[id]).filter(Boolean).sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1));
   const tb = h("tbody");
@@ -47,9 +56,15 @@ function renderTension() {
       h("td", { class: "num", text: t.events7 == null ? "–" : fmt(t.events7, 0) }),
       h("td", { class: "spark" }, sparkline(t.spark, "--s8"))));
   }
-  sh.body.append(h("div", { style: "overflow-x:auto" }, h("table", { class: "tension-table" },
-    h("thead", null, h("tr", null, h("th", { text: "Konfliktlinie" }), h("th", { text: "Spannungsindex (0–100)" }), h("th", { text: "Stufe" }), h("th", { style: "text-align:right", text: "Woche" }), h("th", { style: "text-align:right", text: "Konfliktanteil" }), h("th", { style: "text-align:right", text: "Ereignisse 7 T." }), h("th", { text: "120 Tage" }))),
-    tb)));
+  sh.body.append(h("div", { style: "overflow-x:auto" }, stackTable(h("table", { class: "tension-table" },
+    h("thead", null, h("tr", null, h("th", { text: "Konfliktlinie" }),
+      thInfo("Spannungsindex (0–100)", { t: "Spannungsindex", f: ["7-Tage-Mittel der täglichen Konfliktintensität.", "Index = Anteil der letzten 90 Tage, an denen dieses 7-Tage-Mittel niedriger oder gleich war, × 100 (Perzentil)."], r: rows.slice(0, 3).map(t => `${t.label}: ${fmt(t.pct, 0)}`) }),
+      thInfo("Stufe", { t: "Stufe", f: "Spannungsindex ab 90 = sehr hoch, ab 70 = erhöht, ab 40 = mittel, darunter niedrig." }),
+      thInfo("Woche", { t: "Veränderung zur Vorwoche", f: "7-Tage-Mittel der Konfliktintensität ÷ 7-Tage-Mittel der Woche davor − 1, in %. Pfeil ab ±10 %." }, { style: "text-align:right" }),
+      thInfo("Konfliktanteil", { t: "Konfliktanteil", f: "Mittlere Konfliktintensität der letzten 14 Tage ÷ (Konfliktintensität + Kooperationsintensität) × 100. Kooperation: Ereignisse der Klassen 1 und 2 (verbale und materielle Zusammenarbeit), gewichtet mit Erwähnungen und positivem Goldstein-Wert." }, { style: "text-align:right" }),
+      thInfo("Ereignisse 7 T.", { t: "Ereignisse in sieben Tagen", f: `Zahl der erfassten Ereignisse zwischen beiden Ländern in den letzten sieben Tagen. Unter ${LOW_EVENTS}: „wenig Daten“, der Index schwankt dann stark.` }, { style: "text-align:right" }),
+      h("th", { text: "120 Tage" }))),
+    tb))));
   if (thin) sh.body.append(h("p", { class: "small", style: "margin-top:8px", text: `„wenig Daten“: weniger als ${LOW_EVENTS} erfasste Ereignisse in sieben Tagen. Bei so kleinen Zahlen bewegen einzelne Meldungen den Index stark.` }));
   const g = T.global;
   if (g) sh.body.append(h("p", { class: "small", style: "margin-top:8px", text: `Durchschnittliche Abweichung der letzten 14 Tage vom Viermonatsmittel über alle Konfliktlinien: ${signed(g.z, 2)} Standardabweichungen. Dieser Wert fließt als geopolitische Komponente in die Risikosäule des Anlagebarometers ein. Letzter verarbeiteter Tag: ${deShort(T.last)}.` }));
@@ -57,11 +72,13 @@ function renderTension() {
   const ch = document.getElementById("tension-charts");
   const sel = ["us_cn", "ru_ua", "il_ir", "cn_tw", "ru_eu", "in_pk"].filter(id => LP("gdelt_c_" + id).length > 20);
   const colors = { us_cn: "--s1", ru_ua: "--s2", il_ir: "--s3", cn_tw: "--s4", ru_eu: "--s5", in_pk: "--s6" };
-  if (sel.length) chartSheet(ch, { title: "Konfliktintensität ausgewählter Konfliktlinien", sub: "7-Tage-Mittel, Erwähnungen × negative Goldstein-Skala je 10.000 Erwähnungen", src: ["live:gdelt"], cls: "span-2" },
+  if (sel.length) chartSheet(ch, { title: "Konfliktintensität ausgewählter Konfliktlinien", sub: "7-Tage-Mittel, Erwähnungen × negative Goldstein-Skala je 10.000 Erwähnungen", src: ["live:gdelt"], cls: "span-2",
+      info: { f: [TENSION_INFO.f[1], "Linie: gleitendes Mittel der letzten sieben Tage, um Wochentagsschwankungen der Berichterstattung zu glätten."] } },
     { series: sel.map(id => ({ id, label: T.pairs[id] ? T.pairs[id].label : id, color: colors[id], data: movAvg(LP("gdelt_c_" + id), 7).map(p => [p.x, p.v]) })),
       height: 300, freq: "D", zero: true, endValFmt: v => fmt(v, 1), tipFmt: v => fmt(v, 2), ...SHORT_RANGE });
   const gd = A("gpr_daily");
-  if (gd.length) chartSheet(ch, { title: "Geopolitischer Risikoindex, täglich", sub: "Caldara-Iacoviello (GPRD), 7-Tage-Mittel; 1985–2019 = 100", src: ["gpr"] },
+  if (gd.length) chartSheet(ch, { title: "Geopolitischer Risikoindex, täglich", sub: "Caldara-Iacoviello (GPRD), 7-Tage-Mittel; 1985–2019 = 100", src: ["gpr"],
+      info: { f: ["Tageswert von Caldara und Iacoviello: Anteil der Artikel in zehn großen Zeitungen, die geopolitische Risiken erwähnen, normiert auf 1985–2019 = 100.", "Linie: Mittel der letzten sieben Tageswerte."] } },
     { series: [{ id: "gprd", label: "GPR täglich", color: "--s8", data: smoothDaily(gd, 7).filter(p => p[0] >= nowX() - 3), area: true, width: 1.5 }], freq: "D", height: 260, zero: true, refs: [{ y: 100, label: "100" }], endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 0), ...SHORT_RANGE });
   const gc = ["USA", "CHN", "RUS", "UKR", "ISR", "TWN", "IRN", "DEU", "JPN", "IND"].filter(c => (D.series["gprc_" + c.toLowerCase()] || {}).values);
   if (gc.length) {
@@ -69,7 +86,8 @@ function renderTension() {
     const top = gc.sort((a, b) => lastV(b) - lastV(a)).slice(0, 6);
     const name = { USA: "USA", CHN: "China", RUS: "Russland", UKR: "Ukraine", ISR: "Israel", TWN: "Taiwan", IRN: "Iran", DEU: "Deutschland", JPN: "Japan", IND: "Indien" };
     const col = { USA: "--s1", CHN: "--s2", RUS: "--s7", UKR: "--s4", ISR: "--s3", TWN: "--s5", IRN: "--s8", DEU: "--s5", JPN: "--s6", IND: "--s8" };
-    chartSheet(ch, { title: "Geopolitisches Risiko nach Ländern", sub: "Caldara-Iacoviello, Anteil der Artikel mit geopolitischem Risiko, die das Land nennen (%), Monatswerte; die sechs derzeit höchsten", src: ["gpr"] },
+    chartSheet(ch, { title: "Geopolitisches Risiko nach Ländern", sub: "Caldara-Iacoviello, Anteil der Artikel mit geopolitischem Risiko, die das Land nennen (%), Monatswerte; die sechs derzeit höchsten", src: ["gpr"],
+      info: { f: ["Länderindex von Caldara und Iacoviello: Anteil aller Artikel eines Monats, die geopolitische Risiken behandeln und das Land nennen, in %.", "Gezeigt werden die sechs Länder mit den derzeit höchsten Werten."] } },
       { series: top.map(c => ({ id: c, label: name[c], color: col[c], data: A("gprc_" + c.toLowerCase()).filter(p => p[0] >= nowX() - 6) })), freq: "M", height: 260, zero: true, endValFmt: v => fmt(v, 2), tipFmt: v => fmt(v, 2) + " %" });
   }
 }
@@ -122,6 +140,9 @@ function renderPredictions() {
   const items = LIVE && LIVE.items && LIVE.items.polymarket;
   if (!items || !items.length) { host.replaceChildren(); return; }
   const sh = sheet(host, { title: "Was Prognosemärkte erwarten", sub: "Implizite Wahrscheinlichkeiten ausgewählter geopolitischer und wirtschaftlicher Fragen auf Polymarket, nach Handelsvolumen", src: ["live:polymarket"],
+    info: { d: "Auf Polymarket handeln Teilnehmer Anteile, die 1 US-Dollar auszahlen, wenn ein Ereignis eintritt, sonst nichts.",
+      f: ["Wahrscheinlichkeit = Preis des Ja-Anteils (zwischen 0 und 1 US-Dollar) × 100.", "24 h = Veränderung dieses Preises in Prozentpunkten gegenüber dem Vortag; Volumen = bisher gehandelter Betrag.",
+        "Auswahl: je Frage mit mehreren Fristen der umsatzstärkste Markt mit mindestens drei Wochen Restlaufzeit; bei Ereignissen mit mehreren Ausgängen (Zinsentscheid) die zwei wahrscheinlichsten; nur Märkte ab 50.000 US-$ Volumen."] },
     note: "Prognosemärkte spiegeln Wetten von Marktteilnehmern, keine Prognose dieses Monitors. Bei geringem Volumen sind die Kurse wenig aussagekräftig." });
   const list = h("div", { class: "pred-list" });
   for (const it of items.slice(0, 10)) {
@@ -142,7 +163,8 @@ function renderUncertainty() {
       const pts = LIVE.s[id].f === "D" ? smoothDaily(LS(id), 30).filter((p, i, a) => i % 7 === 0 || i === a.length - 1) : LS(id);
       return { id, label: l, color: c, data: pts.filter(p => p[0] >= nowX() - 8) };
     });
-    chartSheet(host, { title: "Wirtschaftspolitische Unsicherheit", sub: "Economic Policy Uncertainty Index (Baker, Bloom, Davis), Auswertung von Zeitungsartikeln; Langfristmittel ≈ 100", src: liveSrcIds(...epu.map(e => e[0])) },
+    chartSheet(host, { title: "Wirtschaftspolitische Unsicherheit", sub: "Economic Policy Uncertainty Index (Baker, Bloom, Davis), Auswertung von Zeitungsartikeln; Langfristmittel ≈ 100", src: liveSrcIds(...epu.map(e => e[0])),
+      info: { f: ["Anteil der Zeitungsartikel, die gleichzeitig Begriffe zu Wirtschaft, Politik und Unsicherheit enthalten, normiert auf ein Langfristmittel von 100 (Baker, Bloom, Davis).", "USA täglich: hier als Mittel der letzten 30 Tage, wöchentlich abgetragen; übrige Regionen Monatswerte."] } },
       { series: ser, height: 280, freq: "M", zero: true, hidden: ["epu_gb", "epu_in", "epu_ru"], endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 0) });
   }
   const wui = [["wui_world", "Welt", "--ink-2"], ["wui_us", "USA", "--s1"], ["wui_cn", "China", "--s2"], ["wui_de", "Deutschland", "--s5"], ["wui_ch", "Schweiz", "--s4"], ["wui_jp", "Japan", "--s6"], ["wui_gb", "Großbritannien", "--s3"], ["wui_in", "Indien", "--s8"], ["wui_ru", "Russland", "--s7"]].filter(([id]) => LP(id).length);
@@ -152,10 +174,12 @@ function renderUncertainty() {
     const m = base.length ? base.reduce((a, b) => a + b, 0) / base.length : null;
     return m ? d.map(([x, v]) => [x, 100 * v / m]) : [];
   };
-  if (wui.length) chartSheet(host, { title: "World Uncertainty Index", sub: "Ahir, Bloom, Furceri: Häufigkeit des Wortes „Unsicherheit“ in den Länderberichten der Economist Intelligence Unit, Quartalswerte; je Reihe Mittel 2008–2019 = 100", src: liveSrcIds(...wui.map(e => e[0])) },
+  if (wui.length) chartSheet(host, { title: "World Uncertainty Index", sub: "Ahir, Bloom, Furceri: Häufigkeit des Wortes „Unsicherheit“ in den Länderberichten der Economist Intelligence Unit, Quartalswerte; je Reihe Mittel 2008–2019 = 100", src: liveSrcIds(...wui.map(e => e[0])),
+      info: { f: ["Ursprungswert: Häufigkeit des Wortes „uncertainty“ je 1.000 Wörter in den Länderberichten der Economist Intelligence Unit (Weltwert BIP-gewichtet, auf anderer Skala).", "Damit Welt und Länder vergleichbar sind: jede Reihe ÷ ihr eigenes Mittel 2008–2019 × 100. 150 = 50 % mehr Unsicherheit als im Mittel jener Jahre."] } },
     { series: wui.map(([id, l, c]) => ({ id, label: l, color: c, data: norm(id).filter(p => p[0] >= 2005) })), height: 280, freq: "Q", zero: true,
       hidden: ["wui_jp", "wui_gb", "wui_in", "wui_ru"], refs: [{ y: 100 }], endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 0) });
   const tpu = A("tpu_m");
-  if (tpu.length) chartSheet(host, { title: "Handelspolitische Unsicherheit", sub: "Trade Policy Uncertainty Index (Caldara, Iacoviello, Molligo, Prestipino, Raffo), Monatswerte; 1985–2010 = 100", src: srcOf("tpu_m") },
+  if (tpu.length) chartSheet(host, { title: "Handelspolitische Unsicherheit", sub: "Trade Policy Uncertainty Index (Caldara, Iacoviello, Molligo, Prestipino, Raffo), Monatswerte; 1985–2010 = 100", src: srcOf("tpu_m"),
+      info: { f: "Keine eigene Rechnung: Anteil der Artikel in sieben großen US-Zeitungen, die Handelspolitik und Unsicherheit zugleich behandeln, normiert auf 1985–2010 = 100." } },
     { series: [{ id: "tpu", label: "TPU", color: "--s2", data: tpu.filter(p => p[0] >= 2000), area: true }], height: 280, freq: "M", zero: true, endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 0) });
 }

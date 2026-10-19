@@ -57,7 +57,7 @@ function srcLinks(foot, ids) {
 }
 function sheet(parent, o) {
   const actions = h("div", { class: "chart-actions" });
-  const head = h("header", null, h("div", { class: "titles" }, h("h3", { text: o.title }), o.sub ? h("div", { class: "sub", text: o.sub }) : null), actions);
+  const head = h("header", null, h("div", { class: "titles" }, h("h3", null, o.title, o.info ? info(withTitle(o.info, o.title), o.title) : null), o.sub ? h("div", { class: "sub", text: o.sub }) : null), actions);
   const body = h("div");
   const el = h("section", { class: "sheet" + (o.cls ? " " + o.cls : "") }, head, body);
   if (o.src && o.src.length) { const f = h("footer", { class: "src" }); srcLinks(f, o.src); if (o.note) f.append(h("br"), o.note); el.append(f); }
@@ -74,6 +74,34 @@ function chartSheet(parent, o, copts) {
   return ch;
 }
 function srcOf(...ids) { return ids.flatMap(id => (D.series[id] ? D.series[id].src : [])); }
+/* Auf Telefonen werden breite Tabellen zu Karten: jede Zelle trägt die Spaltenüberschrift als Beschriftung,
+   die Spalte titleCol wird zum Kartentitel (CSS: table.stack unter 560 px) */
+function cellLabel(el) {
+  const parts = [];
+  el.childNodes.forEach(n => {
+    if (n.nodeType === 3) parts.push(n.textContent);
+    else if (n.nodeType === 1 && !n.classList.contains("info-btn")) parts.push(n.classList.contains("th-unit") ? `(${n.textContent})` : cellLabel(n));
+  });
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+}
+function stackTable(tbl, titleCol = 0) {
+  const heads = [...tbl.querySelectorAll("thead tr:last-child th")].map(cellLabel);
+  tbl.classList.add("stack");
+  for (const tr of tbl.querySelectorAll("tbody tr")) {
+    let col = 0;
+    for (const td of tr.children) {
+      const span = +(td.getAttribute("colspan") || 1);
+      if (span > 1) td.classList.add("st-full");
+      else {
+        if (heads[col]) td.setAttribute("data-label", heads[col]);
+        if (col === titleCol) td.classList.add("st-title");
+        else if ((td.textContent || "").length > 42) td.classList.add("st-long");
+      }
+      col += span;
+    }
+  }
+  return tbl;
+}
 
 /* ------------------------------------------------------------------ Machtindex */
 function weightsArr() { return Object.fromEntries(D.power.measures.map(m => [m.id, ST.weights[m.id] ?? 1])); }
@@ -127,6 +155,7 @@ function renderPower() {
     title: "Machtindex 1820–2026",
     sub: "Gewichtetes Mittel der normierten Messgrößen, 0–100; blass gezeichnet, wo weniger als fünf Größen vorliegen",
     src: ["maddison", "owid_cepii", "owid_gmsd", "owid_sipri", "cow", "owid_leelee", "nobel", "owid_rd", "wb", "imf_cofer", "imf_weo"],
+    info: powerInfo,
   }, { series: powerSeries(), height: 360, yMin: 0, yMax: 100, endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 1), aria: "Machtindex je Land 1820 bis 2026",
        shades: [{ x0: 1914, x1: 1918, label: "1. WK" }, { x0: 1939, x1: 1945, label: "2. WK" }] });
 
@@ -136,12 +165,42 @@ function renderPower() {
     const comps = m.components.map(c => D.power.components[c.id]);
     const src = [...new Set(comps.flatMap(c => c.src))];
     charts.measures[m.id] = chartSheet(grid, {
-      title: MSHORT[m.id], sub: comps.map(c => c.label).join("; "), src,
+      title: MSHORT[m.id], sub: comps.map(c => c.label).join("; "), src, info: () => measureInfo(m),
     }, { series: measureSeries(m.id), height: 170, yMin: 0, yMax: 100, endLabels: false, legend: false, tipFmt: v => fmt(v, 0), aria: `Messgröße ${MSHORT[m.id]}` });
   }
   renderFingerprint();
   renderGpi();
   renderBench();
+}
+/* Erklärungen zum Machtindex */
+function powerInfo() {
+  const yi = D.power.years.length - 1, y = D.power.years[yi];
+  const W = weightsArr();
+  const line = c => {
+    const parts = D.power.measures.map(m => [m, D.power.score[m.id][c][yi]]).filter(([m, v]) => v != null && (W[m.id] ?? 1) > 0);
+    const den = parts.reduce((a, [m]) => a + (W[m.id] ?? 1), 0);
+    const num = parts.reduce((a, [m, v]) => a + (W[m.id] ?? 1) * v, 0);
+    return parts.length ? `${SHORT[c]} ${y}: (${parts.map(([m, v]) => `${fmt((W[m.id] ?? 1), 2)}×${fmt(v, 2)}`).join(" + ")}) ÷ ${fmt(den, 2)} × 100 = ${fmt(100 * num / den, 1)}` : null;
+  };
+  return {
+    d: "Relative Stärke der Länder nach Dalios acht Machtfaktoren, gemessen mit offenen Ersatzreihen.",
+    f: ["1. Jede Komponente (z. B. Anteil am Welt-BIP, an den Weltexporten, an den Militärausgaben) wird jährlich interpoliert und mit einem zentrierten 5-Jahres-Mittel geglättet.",
+      "2. Normierung: geteilt durch den höchsten Wert, den eines der acht Länder je erreicht hat (Kriegsjahre ausgenommen), also 0 bis 1.",
+      "3. Messgröße = gewichtetes Mittel ihrer Komponenten, erneut auf das historische Maximum normiert.",
+      `4. Machtindex = Σ (Gewicht × Messgröße) ÷ Σ Gewichte × 100 über die vorhandenen Messgrößen. Jahre mit weniger als ${ST.minN} Messgrößen bleiben leer.`],
+    r: ["USA", "CHN"].map(line),
+    s: "Gewichte und Mindestabdeckung lassen sich oberhalb der Grafik ändern.",
+  };
+}
+function measureInfo(m) {
+  const yi = D.power.years.length - 1;
+  const comps = m.components.map(c => `${D.power.components[c.id].label} (Gewicht ${fmt(c.w * 100, 0)} %)`);
+  const top = D.power.countries.map(c => [c.id, D.power.score[m.id][c.id][yi]]).filter(x => x[1] != null).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  return {
+    d: `Messgröße „${MSHORT[m.id]}“ im Machtindex.`,
+    f: [`Komponenten: ${comps.join("; ")}.`, "Je Komponente: Anteil des Landes am Weltwert, geglättet (5-Jahres-Mittel) und durch den historischen Höchstwert der acht Länder geteilt. Messgröße = gewichtetes Mittel, erneut auf 0–100 normiert."],
+    r: top.length ? `${D.power.years[yi]}: ${top.map(([c, v]) => `${SHORT[c]} ${fmt(100 * v, 0)}`).join(", ")}` : null,
+  };
 }
 function rankOf(obj) {
   const ks = Object.keys(obj).sort((a, b) => obj[b] - obj[a]);
@@ -164,13 +223,18 @@ function renderGpi() {
   for (const c of Object.keys(G.values)) { const v = composite(c)[yi]; if (v && v.v != null) ours[c] = v.v; }
   const sp = spearman(ours, G.values);
   const rows = Object.keys(G.values).sort((a, b) => G.values[b] - G.values[a]);
+  const d2 = Object.keys(sp.ra).reduce((a, c) => a + (sp.ra[c] - sp.rb[c]) ** 2, 0);
+  sh.head.querySelector("h3").append(info({ t: "Rangkorrelation nach Spearman",
+    d: "Wie gut die Rangfolge des offenen Proxy-Index mit Dalios eigener Rangfolge übereinstimmt: +1 = identisch, 0 = kein Zusammenhang, −1 = umgekehrt.",
+    f: "ρ = 1 − 6 × Σ d² ÷ (n × (n² − 1)), d = Rang im Proxy-Index minus Rang bei Dalio, je Land",
+    r: `Σ d² = ${fmt(d2, 0)}, n = ${sp.n}: ρ = 1 − 6 × ${fmt(d2, 0)} ÷ (${sp.n} × ${sp.n * sp.n - 1}) = ${fmt(sp.rho, 2)}` }, "Rangkorrelation"));
   const tbl = h("table", { class: "data" },
     h("thead", null, h("tr", null, h("th", { text: "Land" }), h("th", { text: "Proxy-Index 2024" }), h("th", { text: "Rang" }), h("th", { text: "Dalio 2024" }), h("th", { text: "Rang" }))),
     h("tbody", null, ...rows.map(c => h("tr", null,
       h("td", null, h("span", { style: `display:inline-block;width:10px;height:3px;margin-right:6px;vertical-align:middle;background:var(${CC[c]})` }), SHORT[c]),
       h("td", { text: ours[c] == null ? "–" : fmt(ours[c], 0) }), h("td", { text: sp.ra[c] ? String(sp.ra[c]) : "–" }),
       h("td", { text: fmt(G.values[c], 2) }), h("td", { text: String(sp.rb[c]) })))));
-  sh.body.append(h("div", { class: "table-wrap", style: "max-height:none" }, tbl),
+  sh.body.append(h("div", { class: "table-wrap", style: "max-height:none" }, stackTable(tbl)),
     h("p", { class: "small", style: "margin-top:8px", text: `Rangkorrelation nach Spearman: ${fmt(sp.rho, 2)} (n = ${sp.n}). ` + (() => {
       const diff = rows.filter(c => sp.ra[c] && Math.abs(sp.ra[c] - sp.rb[c]) >= 2).map(c => `${SHORT[c]} (${sp.ra[c]} statt ${sp.rb[c]})`);
       return diff.length ? `Größere Rangabweichungen: ${diff.join(", ")}. Dalio gewichtet Bildungsqualität und Pro-Kopf-Größen stärker, die offenen Ersatzreihen messen vor allem Mengen.` : "Die Rangfolgen weichen höchstens um einen Platz ab.";
@@ -180,7 +244,9 @@ function renderGpi() {
 function renderCompare() {
   const C = D.curated || {};
   const host = document.getElementById("compare");
-  const sh = sheet(host, { title: "Modell und Dalios eigene Einordnung", sub: "Die Modellwerte stammen allein aus den offenen Daten dieses Monitors; Dalios Aussagen sind datiert und verlinkt" });
+  const sh = sheet(host, { title: "Modell und Dalios eigene Einordnung", sub: "Die Modellwerte stammen allein aus den offenen Daten dieses Monitors; Dalios Aussagen sind datiert und verlinkt",
+    info: { d: "Gegenüberstellung der Modellergebnisse mit datierten Aussagen Ray Dalios.",
+      f: ["Schuldenzyklus und innere Ordnung: Stadium aus der regelbasierten Markerprüfung (ein Stadium gilt als erreicht, wenn mindestens die Hälfte seiner Marker erfüllt ist).", "Äußere Ordnung: Konfliktformen mit Status „aktiv“ oder „eskalierend“ aus der kuratierten Liste.", "Gesamtbild: Phase relativ zum Zenit aus der Musteranpassung der acht Machtmessgrößen (siehe Lagebild)."] } });
   const view = (C.dalioView || []).slice().sort((a, b) => (a.date < b.date ? 1 : -1));
   const latest = topic => view.find(v => v.topic === topic);
   const wars = C.wars || [];
@@ -195,7 +261,7 @@ function renderCompare() {
     h("thead", null, h("tr", null, h("th", { text: "Kraft" }), h("th", { text: "Dieser Monitor" }), h("th", { text: "Dalio (jüngste gefundene Aussage)" }))),
     h("tbody", null, ...rows.map(([k, m, d]) => h("tr", null, h("td", null, h("b", { text: k })), h("td", { text: m }),
       h("td", null, d ? h("span", null, h("span", { class: "small", text: d.dateLabel + ": " }), d.text, " ", h("a", { href: d.url, target: "_blank", rel: "noopener", class: "small", text: d.source })) : "–")))));
-  sh.body.append(h("div", { style: "overflow-x:auto" }, tbl));
+  sh.body.append(h("div", { style: "overflow-x:auto" }, stackTable(tbl)));
   sh.body.append(h("details", { class: "more", style: "margin-top:10px" }, h("summary", { text: `Alle gesammelten Aussagen Dalios (${view.length})` }),
     h("div", { class: "events" }, ...view.map(e => h("div", { class: "event" }, h("div", { class: "d", text: e.dateLabel }),
       h("div", { class: "t" }, h("div", null, h("span", { class: "force-tag", style: "margin-right:6px", text: e.topic }), e.text), h("a", { href: e.url, target: "_blank", rel: "noopener", text: e.source })))))));
@@ -216,6 +282,8 @@ function renderFingerprint() {
     title: "Reihenfolge der Höhepunkte",
     sub: "Jede Messgröße relativ zu ihrem eigenen Höchststand im Land; schwarze Marke = Jahr des Höchststands",
     note: "Dalios Archetyp erwartet die Höhepunkte von Bildung und Innovation zuerst, die von Finanzzentrum und Reservewährung zuletzt.",
+    info: { d: "Zeigt, in welcher Reihenfolge ein Land bei den acht Messgrößen seinen Höhepunkt erreicht hat.",
+      f: "Zellwert = Messgröße im Jahr ÷ höchster Wert dieser Messgröße im selben Land (0 bis 1). Dunkel = nahe am eigenen Höchststand; die schwarze Marke steht im Jahr des Höchststands." },
   });
   const sel = h("select", { id: "fp-country", "aria-label": "Land für die Heatmap" }, ...D.power.countries.map(c => h("option", { value: c.id, text: SHORT[c.id] })));
   sel.style.cssText = "font:inherit;font-size:12.5px;padding:3px 8px;border:1px solid var(--rule);border-radius:999px;background:var(--sheet);color:var(--ink)";
@@ -234,7 +302,8 @@ function fpRows(c) {
 }
 function renderBench() {
   const host = document.getElementById("bench");
-  const sh = sheet(host, { title: "Vor 1820: Anteile am Welt-BIP", sub: "Kaufkraftbereinigt, Stützjahre der Maddison-Datenbank; Weltwert aus der Langfristreihe von Our World in Data", src: ["maddison", "owid_longrun_gdp"] });
+  const sh = sheet(host, { title: "Vor 1820: Anteile am Welt-BIP", sub: "Kaufkraftbereinigt, Stützjahre der Maddison-Datenbank; Weltwert aus der Langfristreihe von Our World in Data", src: ["maddison", "owid_longrun_gdp"],
+    info: { f: "BIP des Landes zu Kaufkraftparitäten (Maddison) ÷ Welt-BIP zu Kaufkraftparitäten (Our World in Data) × 100, nur für die Jahre, für die Maddison Schätzungen vorlegt." } });
   const B = D.power.outputBenchmarks;
   const yrs = Object.keys(B).map(Number).sort((a, b) => a - b);
   const cs = D.power.countries.map(c => c.id).filter(c => yrs.some(y => B[y][c] != null));
@@ -243,7 +312,7 @@ function renderBench() {
     h("thead", null, h("tr", null, h("th", { text: "Land" }), yrs.map(y => h("th", { text: String(y) })))),
     h("tbody", null, cs.map(c => h("tr", null, h("td", null, h("span", { style: `display:inline-block;width:10px;height:3px;margin-right:6px;vertical-align:middle;background:var(${CC[c]})` }), SHORT[c]),
       yrs.map(y => { const v = B[y][c]; return h("td", null, v == null ? "–" : h("span", null, h("span", { style: `display:inline-block;height:6px;width:${Math.max(1, 46 * v / mx)}px;background:var(--q400);border-radius:0 3px 3px 0;margin-right:6px;vertical-align:middle` }), fmt(v, 1) + " %")); })))));
-  sh.body.append(h("div", { class: "table-wrap", style: "max-height:none" }, tbl));
+  sh.body.append(h("div", { class: "table-wrap", style: "max-height:none" }, stackTable(tbl)));
   sh.body.append(h("p", { class: "small", style: "margin-top:8px", text: "Die Niederlande stellten auch auf dem Höhepunkt ihrer Macht im 17. Jahrhundert nur rund ein Prozent der Weltwirtschaft. Ihr Gewicht beruhte auf Handel, Finanzplatz und Gulden, für die vor 1820 keine vergleichbaren offenen Reihen vorliegen." }));
 }
 
@@ -256,6 +325,16 @@ function renderArchetype() {
   const chart = { render: () => drawArchetype(host, fits) };
   Charts.add(chart);
   new ResizeObserver(() => chart.render()).observe(host);
+  const ttl = document.getElementById("arch-title");
+  if (ttl && !ttl.querySelector(".info-btn")) ttl.append(info(() => {
+    const per = f => Object.entries(f.per).map(([k, v]) => `${MSHORT[k]} ${signed(v.phi, 0)}`).join(", ");
+    return { t: "Position im archetypischen Zyklus",
+      d: "Schätzt, wie weit ein Land vor oder nach dem Zenit des typischen Auf- und Abstiegs nach Dalio steht.",
+      f: ["Archetyp: Jede der acht Messgrößen erreicht ihren Höhepunkt zu einer festen Phase (Bildung −60 Jahre, Innovation −25, Wettbewerbsfähigkeit −20, Wirtschaftsleistung, Handel und Militär 0, Finanzzentrum +5, Reservewährung +65), geformt als Glockenkurve mit 45 Jahren Breite.",
+        "Beobachtet wird je Messgröße das Niveau relativ zum bisherigen Höchststand des Landes und die Veränderung über 15 Jahre.",
+        "Für jede Phase von −130 bis +150 Jahren: Summe der quadrierten Abweichungen zwischen Beobachtung und Archetyp. Die Phase mit der kleinsten Summe ist die Schätzung; das Band umfasst 80 % der Plausibilität (Gewicht je Phase ∝ e^(−(Abweichung − Minimum) ÷ T), T = 0,02 × Zahl der Messgrößen)."],
+      r: fits.map(f => `${SHORT[f.c]}: ${signed(f.best, 0)} Jahre (Band ${signed(f.lo, 0)} bis ${signed(f.hi, 0)}); einzeln: ${per(f)}`) };
+  }, "Position im archetypischen Zyklus"));
   const leg = document.getElementById("arch-legend");
   const src = D.curated && D.curated.framework && D.curated.framework.archetypeSource;
   leg.replaceChildren("Ziffern auf der Achse: Höhepunkt der Messgrößen im Archetyp. 1 Bildung · 2 Innovation · 3 Wettbewerbsfähigkeit · 4 Wirtschaftsleistung · 5 Welthandel · 6 Militär · 7 Finanzzentrum · 8 Reservewährung. Lage aus Dalios Archetyp-Grafik abgelesen", src ? h("span", null, " (", h("a", { href: src.url, target: "_blank", rel: "noopener", text: src.label }), ")") : null, "; Glockenform und Breite sind Annahmen dieses Modells.");
@@ -329,24 +408,45 @@ function renderKpis() {
   const host = document.getElementById("kpis");
   const ni = L.mts_net_interest, ytd = L.mts_ytd, fy = L.fy_gdp_est;
   const items = [];
-  items.push({ label: "US-Schulden in Händen der Öffentlichkeit", value: fmt(L.debt_public_gdp_now.value, 1), unit: "% BIP", meta: deShort(L.debt_public_gdp_now.date), spark: A("us_debt_public_gdp").filter(p => p[0] >= 1990), color: "--s1" });
-  if (ni && ytd) items.push({ label: `Nettozinsen in % der Bundeseinnahmen, Fiskaljahr ${fy ? fy.fy : ""}`, value: fmt(100 * ni.current / ytd.current.rcpt, 1), unit: "%", meta: `MTS ${deShort(ni.date)}`, spark: A("us_interest_revenue").filter(p => p[0] >= 1990).concat([[fy.fy, 100 * ni.current / ytd.current.rcpt]]), color: "--s1" });
-  if (ytd && fy) items.push({ label: `Bundesdefizit Fiskaljahr ${fy.fy}`, value: fmt(100 * ytd.current.def / fy.value, 1), unit: "% BIP", meta: `${fmt(ytd.current.def, 0)} Mrd. US-$`, spark: A("us_deficit_gdp").filter(p => p[0] >= 1990).map(([x, y]) => [x, y == null ? null : -y]).concat([[fy.fy, 100 * ytd.current.def / fy.value]]), color: "--s8" });
+  const dp = L.debt_public_gdp_now;
+  items.push({ label: "US-Schulden in Händen der Öffentlichkeit", value: fmt(dp.value, 1), unit: "% BIP", meta: deShort(dp.date), spark: A("us_debt_public_gdp").filter(p => p[0] >= 1990), color: "--s1",
+    info: {
+      d: "Schulden des Bundes, die bei Anlegern außerhalb der Bundesregierung liegen (ohne Bestände der Sozialversicherungsfonds), gemessen an der jährlichen Wirtschaftsleistung.",
+      f: "Schulden in Händen der Öffentlichkeit (Treasury, „Debt to the Penny“, Tageswert) ÷ nominales BIP des letzten Quartals, auf ein Jahr hochgerechnet, × 100",
+      r: L.debt_penny_public ? `${fmt(L.debt_penny_public.value, 2)} Bio. US-$ ÷ ${fmt(L.debt_penny_public.value / (dp.value / 100), 2)} Bio. US-$ × 100 = ${fmt(dp.value, 1)} %` : null,
+      s: `Schuldenstand vom ${deShort(dp.date)}, BIP aus ${dp.gdpQuarter ? deQuarter(dp.gdpQuarter) : "dem letzten Quartal"} (FRED GDP). Linie: Jahreswerte seit 1990.`,
+    } });
+  if (ni && ytd) items.push({ label: `Nettozinsen in % der Bundeseinnahmen, Fiskaljahr ${fy ? fy.fy : ""}`, value: fmt(100 * ni.current / ytd.current.rcpt, 1), unit: "%", meta: `MTS ${deShort(ni.date)}`, spark: A("us_interest_revenue").filter(p => p[0] >= 1990).concat([[fy.fy, 100 * ni.current / ytd.current.rcpt]]), color: "--s1",
+    info: {
+      d: "Welcher Teil der Steuereinnahmen allein für Zinsen auf die Staatsschuld ausgegeben wird.",
+      f: "Nettozinsausgaben des Bundes vom Beginn des Fiskaljahres (1. Oktober) bis zum Stichtag ÷ Bundeseinnahmen im selben Zeitraum × 100 (Monthly Treasury Statement)",
+      r: [`${fmt(ni.current, 1)} Mrd. US-$ ÷ ${fmt(ytd.current.rcpt, 1)} Mrd. US-$ × 100 = ${fmt(100 * ni.current / ytd.current.rcpt, 1)} %`,
+        ni.prior && ytd.prior ? `Vorjahr: ${fmt(ni.prior, 1)} ÷ ${fmt(ytd.prior.rcpt, 1)} × 100 = ${fmt(100 * ni.prior / ytd.prior.rcpt, 1)} %` : null],
+      s: `Stichtag ${deShort(ni.date)}. Nettozinsen = Zinsausgaben minus Zinseinnahmen des Bundes.`,
+    } });
+  if (ytd && fy) items.push({ label: `Bundesdefizit Fiskaljahr ${fy.fy}`, value: fmt(100 * ytd.current.def / fy.value, 1), unit: "% BIP", meta: `${fmt(ytd.current.def, 0)} Mrd. US-$`, spark: A("us_deficit_gdp").filter(p => p[0] >= 1990).map(([x, y]) => [x, y == null ? null : -y]).concat([[fy.fy, 100 * ytd.current.def / fy.value]]), color: "--s8",
+    info: {
+      d: "Wie viel mehr der Bund ausgibt als er einnimmt, gemessen an der Wirtschaftsleistung.",
+      f: "Ausgaben minus Einnahmen des Bundes vom Beginn des Fiskaljahres bis zum Stichtag ÷ nominales BIP des Fiskaljahres × 100. Das BIP ist das Mittel der bereits vorliegenden Quartale, auf ein Jahr hochgerechnet.",
+      r: [`Defizit = ${fmt(ytd.current.outl, 1)} − ${fmt(ytd.current.rcpt, 1)} = ${fmt(ytd.current.def, 1)} Mrd. US-$`, `${fmt(ytd.current.def, 1)} ÷ ${fmt(fy.value, 0)} Mrd. US-$ × 100 = ${fmt(100 * ytd.current.def / fy.value, 1)} %`],
+      s: `${fy.quarters} von 4 Quartalen des Fiskaljahres ${fy.fy} liegen vor (FRED GDP).`,
+    } });
   // tagesaktuelle Werte des Workers haben Vorrang vor dem wöchentlichen Datensatz, sofern sie jünger sind
   const fresh = (id, base) => {
-    const p = typeof lastLive === "function" ? lastLive(id) : null;
+    const p = lastLive(id);
     if (!p) return base;
     const iso = SIG.isoOf(p.t);
-    return !base || !base.date || iso >= base.date ? { ...(base || {}), value: p.v, date: iso } : base;
+    return !base || !base.date || iso >= base.date ? { ...(base || {}), value: p.v, date: iso, live: true } : base;
   };
   const t10 = fresh("y10_us", L.us10y_d || L.us10y), ffr = fresh("dff", L.dff || L.fedfunds);
-  const cpiL = typeof LP === "function" ? LP("cpi_us_index") : [];
+  const cpiL = LP("cpi_us_index");
+  let cpiCalc = null;
   if (cpiL.length > 13) {
     const a = cpiL[cpiL.length - 1], b = SIG.valueAt(cpiL, a.t - 360);
     const iso = SIG.isoOf(a.t);
-    if (b && (!L.cpi_yoy || iso > L.cpi_yoy.date)) L.cpi_yoy = { ...L.cpi_yoy, value: 100 * (a.v / b.v - 1), date: iso };
+    if (b && (!L.cpi_yoy || iso > L.cpi_yoy.date)) { L.cpi_yoy = { ...L.cpi_yoy, value: 100 * (a.v / b.v - 1), date: iso }; cpiCalc = { a, b }; }
   }
-  const hi = typeof LP === "function" ? LP("fed_hi") : [], lo = typeof LP === "function" ? LP("fed_lo") : [];
+  const hi = LP("fed_hi"), lo = LP("fed_lo");
   if (hi.length && lo.length && (!L.fed_target || SIG.isoOf(hi[hi.length - 1].t) >= L.fed_target.date)) {
     const cur = hi[hi.length - 1].v;
     let i = hi.length - 1;
@@ -355,33 +455,82 @@ function renderKpis() {
       last_change: i > 0 ? SIG.isoOf(hi[i].t) : L.fed_target && L.fed_target.last_change, last_change_bp: i > 0 ? Math.round(100 * (cur - hi[i - 1].v)) : L.fed_target && L.fed_target.last_change_bp };
   }
   items.push({ label: "Rendite 10-jähriger Treasuries", value: fmt(t10.value, 2), unit: "%", meta: deShort(t10.date), spark: A("us_10y_m").filter(p => p[0] >= 2000), color: "--s1",
-    sparkNote: t10.max_year ? `Hoch ${fmt(t10.max_year, 2)} % (${deShort(t10.max_date)})` : null });
-  items.push({ label: `Inflation (VPI, ${deMonth(L.cpi_yoy.date)})`, value: fmt(L.cpi_yoy.value, 1), unit: "%", meta: `Realzins kurz ${signed(ffr.value - L.cpi_yoy.value, 2)} Pp.`, spark: A("us_cpi_infl").filter(p => p[0] >= 2000), color: "--s2" });
-  if (L.fed_target) items.push({ label: "Zielband der Federal Funds Rate", value: `${fmt(L.fed_target.lo, 2)}–${fmt(L.fed_target.hi, 2)}`, unit: "%", meta: L.fed_target.last_change ? `seit ${deShort(L.fed_target.last_change)}, ${signed(L.fed_target.last_change_bp, 0)} Bp.` : "", spark: A("us_fedfunds_m").filter(p => p[0] >= 2000), color: "--s7" });
+    sparkNote: t10.max_year ? `Hoch ${fmt(t10.max_year, 2)} % (${deShort(t10.max_date)})` : null,
+    info: {
+      d: "Marktrendite einer zehnjährigen US-Staatsanleihe. Sie ist der Bezugszins für Hypotheken, Unternehmensanleihen und die Bewertung von Aktien.",
+      f: "Keine eigene Rechnung: Tageswert der Federal Reserve (FRED DGS10, konstante Laufzeit). „Hoch“ ist der höchste Tageswert des laufenden Kalenderjahres. Linie: Monatsmittel seit 2000.",
+      r: `${fmt(t10.value, 2)} % am ${deShort(t10.date)}` + (t10.max_year ? `; Jahreshoch ${fmt(t10.max_year, 2)} % am ${deShort(t10.max_date)}` : ""),
+    } });
+  items.push({ label: `Inflation (VPI, ${deMonth(L.cpi_yoy.date)})`, value: fmt(L.cpi_yoy.value, 1), unit: "%", meta: `Realzins kurz ${signed(ffr.value - L.cpi_yoy.value, 2)} Pp.`, spark: A("us_cpi_infl").filter(p => p[0] >= 2000), color: "--s2",
+    info: {
+      d: "Anstieg der Verbraucherpreise in den USA gegenüber dem Vorjahresmonat. Der kurzfristige Realzins zeigt, ob der Leitzins über oder unter der Inflation liegt.",
+      f: ["Inflation = Verbraucherpreisindex im Berichtsmonat ÷ Index im Vorjahresmonat − 1, in %", "Realzins kurz = effektiver Leitzins (Federal Funds Effective Rate) − Inflation, in Prozentpunkten"],
+      r: [cpiCalc ? `${fmt(cpiCalc.a.v, 3)} ÷ ${fmt(cpiCalc.b.v, 3)} − 1 = ${fmt(L.cpi_yoy.value, 2)} %` : `Inflation ${fmt(L.cpi_yoy.value, 2)} % (${deMonth(L.cpi_yoy.date)})`,
+        `${fmt(ffr.value, 2)} % − ${fmt(L.cpi_yoy.value, 2)} % = ${signed(ffr.value - L.cpi_yoy.value, 2)} Pp.`],
+      s: cpiCalc ? "Index: CPIAUCSL (saisonbereinigt), tagesaktuell über den Worker." : "Index: CPIAUCNS (nicht saisonbereinigt), wöchentlicher Datensatz.",
+    } });
+  if (L.fed_target) items.push({ label: "Zielband der Federal Funds Rate", value: `${fmt(L.fed_target.lo, 2)}–${fmt(L.fed_target.hi, 2)}`, unit: "%", meta: L.fed_target.last_change ? `seit ${deShort(L.fed_target.last_change)}, ${signed(L.fed_target.last_change_bp, 0)} Bp.` : "", spark: A("us_fedfunds_m").filter(p => p[0] >= 2000), color: "--s7",
+    info: {
+      d: "Der Leitzins der US-Notenbank: Banken leihen sich Zentralbankgeld über Nacht zu einem Satz innerhalb dieses Bandes.",
+      f: "Unter- und Obergrenze laut Federal Reserve (FRED DFEDTARL, DFEDTARU). Letzte Änderung = jüngster Tag, an dem sich die Obergrenze verschoben hat; 1 Basispunkt (Bp.) = 0,01 Prozentpunkte.",
+      r: L.fed_target.last_change ? `Band ${fmt(L.fed_target.lo, 2)}–${fmt(L.fed_target.hi, 2)} % seit ${deShort(L.fed_target.last_change)}, Änderung ${signed(L.fed_target.last_change_bp, 0)} Bp.` : null,
+    } });
   const G = D.curated && D.curated.values && D.curated.values.gold;
-  const gl = typeof LP === "function" ? LP("gold_usd") : [];
+  const gl = LP("gold_usd");
   const glast = gl.length ? gl[gl.length - 1] : null;
   if (glast && (!G || SIG.isoOf(glast.t) > G.lbmaDate)) {
     const top = gl.reduce((m, q) => (q.v > m.v ? q : m), gl[0]);
     const ath = G && G.athLbmaPm > top.v ? { v: G.athLbmaPm, iso: G.athDate } : { v: top.v, iso: SIG.isoOf(top.t) };
-    items.push({ label: "Goldpreis", value: fmt(glast.v, 0), unit: "US-$/oz", meta: deShort(SIG.isoOf(glast.t)), spark: A("gold_usd").filter(p => p[0] >= 2000).concat(gl.filter(q => q.x > (lastPt(A("gold_usd")) || [0])[0]).map(q => [q.x, q.v])), color: "--s4", sparkNote: `Höchststand ${fmt(ath.v, 0)} (${deShort(ath.iso)})` });
-  } else if (G) items.push({ label: "Goldpreis (LBMA, Nachmittag)", value: fmt(G.lbmaPm, 0), unit: "US-$/oz", meta: deShort(G.lbmaDate), spark: A("gold_usd").filter(p => p[0] >= 2000), color: "--s4", sparkNote: `Rekord ${fmt(G.athLbmaPm, 0)} (${deShort(G.athDate)})` });
-  else items.push({ label: "Goldpreis, Monatsmittel", value: fmt(L.gold_m.value, 0), unit: "US-$/oz", meta: deMonth(L.gold_m.date), spark: A("gold_usd").filter(p => p[0] >= 2000), color: "--s4" });
+    items.push({ label: "Goldpreis", value: fmt(glast.v, 0), unit: "US-$/oz", meta: deShort(SIG.isoOf(glast.t)), spark: A("gold_usd").filter(p => p[0] >= 2000).concat(gl.filter(q => q.x > (lastPt(A("gold_usd")) || [0])[0]).map(q => [q.x, q.v])), color: "--s4", sparkNote: `Höchststand ${fmt(ath.v, 0)} (${deShort(ath.iso)})`,
+      info: {
+        d: "Preis einer Feinunze Gold (31,1 Gramm) in US-Dollar.",
+        f: ["Die polnische Notenbank veröffentlicht täglich einen Goldpreis in Złoty je Gramm und den Dollarkurs in Złoty.", "Goldpreis in US-$ = Złoty je Gramm × 31,1035 Gramm je Unze ÷ Złoty je US-Dollar", "Höchststand = höchster Tageswert der Reihe; Linie: Jahresmittel seit 2000, danach Tageswerte."],
+        r: `${fmt(glast.v, 2)} US-$ am ${deShort(SIG.isoOf(glast.t))}; Höchststand ${fmt(ath.v, 0)} US-$ am ${deShort(ath.iso)}`,
+        s: "Kann um wenige Dollar vom Londoner LBMA-Fixing abweichen.",
+      } });
+  } else if (G) items.push({ label: "Goldpreis (LBMA, Nachmittag)", value: fmt(G.lbmaPm, 0), unit: "US-$/oz", meta: deShort(G.lbmaDate), spark: A("gold_usd").filter(p => p[0] >= 2000), color: "--s4", sparkNote: `Rekord ${fmt(G.athLbmaPm, 0)} (${deShort(G.athDate)})`,
+    info: { d: "Londoner Nachmittags-Fixing für eine Feinunze Gold.", f: "Keine eigene Rechnung: Wert aus der kuratierten Liste mit Quellenangabe.", s: G.lbmaSource } });
+  else items.push({ label: "Goldpreis, Monatsmittel", value: fmt(L.gold_m.value, 0), unit: "US-$/oz", meta: deMonth(L.gold_m.date), spark: A("gold_usd").filter(p => p[0] >= 2000), color: "--s4",
+    info: { f: "Mittel der Tagespreise eines Monats (Weltbank)." } });
   const usd = D.power.coferLatest && D.power.coferLatest.CI_USD;
-  if (usd != null) items.push({ label: "US-Dollar-Anteil an den Devisenreserven", value: fmt(usd, 1), unit: "%", meta: D.power.coferLatestQuarter.replace("-", " "), spark: D.power.years.map((y, i) => [y, D.power.components.cofer.share.USA[i]]).filter(p => p[0] >= 1995), color: "--s1" });
-  items.push({ label: "US-Zolleinnahmen in % der Warenimporte", value: fmt(L.tariff_eff_q.value, 1), unit: "%", meta: deQuarter(L.tariff_eff_q.date), spark: A("us_tariff_eff"), color: "--s2" });
-  items.push({ label: "Vermögensanteil des obersten 1 % (USA)", value: fmt(L.top1_wealth.value, 1), unit: "%", meta: deQuarter(L.top1_wealth.date), spark: A("us_top1_wealth_dfa"), color: "--s7" });
+  if (usd != null) items.push({ label: "US-Dollar-Anteil an den Devisenreserven", value: fmt(usd, 1), unit: "%", meta: D.power.coferLatestQuarter.replace("-", " "), spark: D.power.years.map((y, i) => [y, D.power.components.cofer.share.USA[i]]).filter(p => p[0] >= 1995), color: "--s1",
+    info: {
+      d: "Wie viel der Währungsreserven aller Zentralbanken in US-Dollar gehalten wird; Maß für die Rolle als Reservewährung.",
+      f: "Dollarreserven der Zentralbanken ÷ alle Reserven mit gemeldeter Währung × 100 (IWF COFER, Quartalswerte)",
+      r: `${fmt(usd, 2)} % (${D.power.coferLatestQuarter.replace("-", " ")})`,
+    } });
+  items.push({ label: "US-Zolleinnahmen in % der Warenimporte", value: fmt(L.tariff_eff_q.value, 1), unit: "%", meta: deQuarter(L.tariff_eff_q.date), spark: A("us_tariff_eff"), color: "--s2",
+    info: {
+      d: "Effektiver Zollsatz: welcher Anteil des Importwerts tatsächlich als Zoll bezahlt wird.",
+      f: "Zolleinnahmen des Bundes ÷ Warenimporte × 100; beides aus der US-Volkswirtschaftlichen Gesamtrechnung (NIPA), Quartalswerte auf ein Jahr hochgerechnet (FRED B235RC1Q027SBEA, A255RC1Q027SBEA)",
+      r: `${fmt(L.tariff_eff_q.value, 2)} % im ${deQuarter(L.tariff_eff_q.date)}`,
+      s: "Linie: Jahreswerte seit 1929.",
+    } });
+  items.push({ label: "Vermögensanteil des obersten 1 % (USA)", value: fmt(L.top1_wealth.value, 1), unit: "%", meta: deQuarter(L.top1_wealth.date), spark: A("us_top1_wealth_dfa"), color: "--s7",
+    info: {
+      d: "Anteil des reichsten Prozents der Haushalte am gesamten Nettovermögen der privaten Haushalte.",
+      f: "Nettovermögen des obersten 1 % ÷ Nettovermögen aller Haushalte × 100 (Federal Reserve, Distributional Financial Accounts, FRED WFRBST01134)",
+      r: `${fmt(L.top1_wealth.value, 1)} % im ${deQuarter(L.top1_wealth.date)}`,
+    } });
   const gs = D.series.gpr_daily, gd = A("gpr_daily");
   const gpr = lastPt(A("gpr_hist_m"));
   if (gd.length) {
     // 7-Tage-Mittel; Datum des letzten Tageswerts aus Start und Länge der Reihe
     const sm = smoothDaily(gd, 7).filter(p => p[1] != null);
     const iso = new Date(Date.parse(gs.start + "T00:00:00Z") + (gs.values.length - 1) * 864e5).toISOString().slice(0, 10);
+    const last7 = gd.slice(-7).map(p => p[1]).filter(v => v != null);
     items.push({ label: "Geopolitischer Risikoindex (7-Tage-Mittel)", value: fmt(lastPt(sm)[1], 0), unit: "", meta: deShort(iso),
-      spark: sm.filter((p, i, a) => p[0] >= a[a.length - 1][0] - 2 && (i % 7 === 0 || i === a.length - 1)), color: "--s8", sparkNote: "1985–2019 = 100" });
-  } else if (gpr) items.push({ label: "Geopolitischer Risikoindex (historisch)", value: fmt(gpr[1], 0), unit: "", meta: fmtYearFrac(gpr[0], "M"), spark: A("gpr_hist").filter(p => p[0] >= 1990), color: "--s8" });
+      spark: sm.filter((p, i, a) => p[0] >= a[a.length - 1][0] - 2 && (i % 7 === 0 || i === a.length - 1)), color: "--s8", sparkNote: "1985–2019 = 100",
+      info: {
+        d: "Wie häufig große Zeitungen über Kriegsgefahr, militärische Spannungen und Terror berichten (Caldara und Iacoviello).",
+        f: ["Tageswert: Anteil der Artikel in zehn großen Zeitungen mit Begriffen zu geopolitischen Risiken, normiert auf das Mittel 1985–2019 = 100.", "Angezeigt: Mittel der letzten sieben Tageswerte; Linie: zwei Jahre, wöchentliche Punkte."],
+        r: `(${last7.map(v => fmt(v, 0)).join(" + ")}) ÷ ${last7.length} = ${fmt(last7.reduce((a, b) => a + b, 0) / last7.length, 0)}`,
+        s: `Letzter Tageswert vom ${deShort(iso)}; die Reihe wird wöchentlich übernommen.`,
+      } });
+  } else if (gpr) items.push({ label: "Geopolitischer Risikoindex (historisch)", value: fmt(gpr[1], 0), unit: "", meta: fmtYearFrac(gpr[0], "M"), spark: A("gpr_hist").filter(p => p[0] >= 1990), color: "--s8",
+    info: { f: "Monatswert des historischen Index von Caldara und Iacoviello (1985–2019 = 100)." } });
   host.replaceChildren(...items.map(it => h("div", { class: "kpi" },
-    h("div", { class: "label", text: it.label }),
+    h("div", { class: "label" }, it.label, it.info ? info(withTitle(it.info, it.label), it.label) : null),
     h("div", { class: "value" }, it.value, it.unit ? h("small", { text: it.unit }) : null),
     it.spark ? sparkline(it.spark, it.color) : h("div", { style: "height:28px" }),
     h("div", { class: "meta" }, h("span", { text: it.meta }), it.sparkNote ? h("span", { text: it.sparkNote }) : null))));
@@ -406,4 +555,14 @@ function renderVerdict() {
     debtSt ? h("span", null, "Die Indikatoren verorten den Schuldenzyklus in ", h("b", { text: `Stadium ${debtSt.stage}` }), ` (${debtSt.name}) und die innere Ordnung in `, h("b", { text: `Stadium ${intSt.stage}` }), ` (${intSt.name}). `) : null,
     fu && fc ? `Das Muster der Messgrößen legt für die USA eine Position etwa ${Math.abs(fu.best)} Jahre ${fu.best >= 0 ? "nach" : "vor"} dem Zenit nahe, für China etwa ${Math.abs(fc.best)} Jahre ${fc.best >= 0 ? "nach" : "vor"} dem Zenit.` : ""
   ].filter(x => x != null && x !== ""));
+  if (typeof verdictLive === "function") verdictLive(el);
+  el.append(info({ t: "So entsteht der Lagetext",
+    d: "Der Text wird bei jedem Aufruf automatisch aus den aktuellen Kennzahlen zusammengesetzt; es gibt keine redaktionelle Wertung.",
+    f: ["Machtindex: gewichtetes Mittel der acht Messgrößen (siehe Machtindex), Abstand USA minus China.",
+      "Schulden und Zinsen: Treasury-Daten (Schulden in Händen der Öffentlichkeit ÷ BIP; Nettozinsen ÷ Einnahmen).",
+      "Stadien: regelbasierte Markerprüfung im Schuldenzyklus und in der inneren Ordnung.",
+      "Phase: Musteranpassung an den Archetyp (siehe Grafik im Lagebild).",
+      "Anlagebarometer: die drei am höchsten und die drei am niedrigsten eingestuften Anlagen mit Stufe positiv bzw. negativ."],
+    r: [`Machtindex USA ${fmt(lu[1], 1)}, China ${fmt(lc[1], 1)}, Abstand ${fmt(lu[1] - lc[1], 1)} (2000: ${fmt(gap2000, 1)})`,
+      L.mts_net_interest ? `Zinsen ÷ Einnahmen = ${fmt(L.mts_net_interest.current, 1)} ÷ ${fmt(L.mts_ytd.current.rcpt, 1)} × 100 = ${fmt(100 * L.mts_net_interest.current / L.mts_ytd.current.rcpt, 1)} %` : null] }, "Lagetext"));
 }

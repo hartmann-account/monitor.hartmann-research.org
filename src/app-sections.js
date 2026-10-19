@@ -30,7 +30,14 @@ function renderStagePanel(hostId, cfg) {
   const host = document.getElementById(hostId);
   const evald = evalMarkers(cfg.markers);
   const est = estimateStage(evald, cfg.stages, cfg.baseline);
-  const sh = sheet(host, { title: cfg.title, sub: cfg.sub, src: cfg.src });
+  const sh = sheet(host, { title: cfg.title, sub: cfg.sub, src: cfg.src, info: () => ({
+    d: "Ordnet die heutige Lage einem Stadium aus Dalios Zyklusbeschreibung zu, allein anhand beobachtbarer Marker.",
+    f: ["Jeder Marker vergleicht einen aktuellen Wert mit einer festen Schwelle (Spalten „Schwelle“ und „Wert“): erfüllt oder nicht erfüllt.",
+      "Ein Stadium gilt als erreicht, wenn mindestens die Hälfte seiner Marker mit Daten erfüllt ist. Geschätzt wird das höchste erreichte Stadium, mindestens das Ausgangsstadium.",
+      "Sind beim nächsten Stadium schon mindestens 25 % der Marker erfüllt, wird es auf der Leiste als möglicher Übergang markiert."],
+    r: cfg.stages.map(st => { const ms = evald.filter(m => m.stage === st.n && m.ok != null); return ms.length ? `Stadium ${st.n}: ${ms.filter(m => m.ok).length} von ${ms.length} Markern erfüllt (${fmt(100 * ms.filter(m => m.ok).length / ms.length, 0)} %)` : null; }),
+    s: "Die Schwellen sind Setzungen dieses Monitors; die Zuordnung der Marker zu den Stadien steht offen in pipeline/curated.json.",
+  }) });
   const cur = cfg.stages.find(s => s.n === est.stage);
   const nextShare = est.next && est.next.share;
   const left = h("div", { style: "display:grid;gap:10px;align-content:start" },
@@ -58,7 +65,7 @@ function renderStagePanel(hostId, cfg) {
       h("td", { class: "status-cell" }, statusPill(m.ok))));
   }
   tbl.append(tb);
-  sh.body.append(h("div", { class: "stage-grid" }, left, h("div", { style: "overflow-x:auto;min-width:0" }, tbl)));
+  sh.body.append(h("div", { class: "stage-grid" }, left, h("div", { style: "overflow-x:auto;min-width:0" }, stackTable(tbl, 1))));
   return est;
 }
 function stageTrack(n, cur, next) {
@@ -103,7 +110,8 @@ function renderDebt() {
 
   const host = document.getElementById("debt-charts");
   const weo = A("us_debt_gdp_weo");
-  chartSheet(host, { title: "Staatsschulden in % des BIP", sub: "USA ab 1800, Großbritannien ab 1727, Niederlande ab 1814, Japan ab 1875; gestrichelt: IWF-Projektion USA", src: srcOf("us_debt_gdp", "us_debt_gdp_weo", "uk_debt_gdp", "nl_debt_gdp"), cls: "span-2" },
+  chartSheet(host, { title: "Staatsschulden in % des BIP", sub: "USA ab 1800, Großbritannien ab 1727, Niederlande ab 1814, Japan ab 1875; gestrichelt: IWF-Projektion USA", src: srcOf("us_debt_gdp", "us_debt_gdp_weo", "uk_debt_gdp", "nl_debt_gdp"), cls: "span-2",
+      info: { f: "Bruttoschulden des Staates ÷ BIP × 100. Historische Werte aus der Historical Public Debt Database und Public Finances in Modern History des IWF (USA vor 1929 aus der historischen Datenbank, danach aus der jüngeren), Großbritannien aus den Millennium-Daten der Bank of England; gestrichelt die Projektion des IWF (World Economic Outlook).", r: (() => { const u = lastPt(A("us_debt_gdp")); return u ? `USA ${Math.round(u[0])}: ${fmt(u[1], 1)} %` : null; })() } },
     { series: [
       { id: "USA", label: "USA", color: "--s1", data: A("us_debt_gdp") },
       { id: "USAp", label: "USA, IWF-Projektion", short: "USA (Proj.)", color: "--s1", data: weo, dash: "5 4", noLegend: false },
@@ -111,14 +119,18 @@ function renderDebt() {
       { id: "NLD", label: "Niederlande", color: "--s4", data: A("nl_debt_gdp") },
       { id: "JPN", label: "Japan", color: "--s6", data: A("jp_debt_gdp") },
     ], height: 320, zero: true, shades: WARS, endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 1) + " %" });
-  chartSheet(host, { title: "Zinsausgaben des Staates in % des BIP", sub: "Großbritannien ab 1800, USA ab 1929", src: srcOf("us_interest_gdp", "uk_interest_gdp") },
+  chartSheet(host, { title: "Zinsausgaben des Staates in % des BIP", sub: "Großbritannien ab 1800, USA ab 1929", src: srcOf("us_interest_gdp", "uk_interest_gdp"),
+      info: { f: "Zinsausgaben des Staates ÷ BIP × 100. USA: IWF Public Finances in Modern History, jüngste Jahre aus FRED FYOIGDA188S (Bund, Fiskaljahr); Großbritannien: Bank of England, Millennium-Daten." } },
     { series: [{ id: "GBR", label: "Großbritannien", color: "--s3", data: A("uk_interest_gdp") }, { id: "USA", label: "USA", color: "--s1", data: A("us_interest_gdp") }],
       height: 250, zero: true, shades: WARS, endValFmt: v => fmt(v, 1), tipFmt: v => fmt(v, 2) + " %" });
   const irData = ir.slice();
   if (intRevNow != null && L.fy_gdp_est) irData.push([L.fy_gdp_est.fy, intRevNow]);
-  chartSheet(host, { title: "Zinsen in % der Bundeseinnahmen", sub: `Fiskaljahre 1940–${L.fy_gdp_est ? L.fy_gdp_est.fy : ""}; letzter Wert aus dem Monthly Treasury Statement`, src: srcOf("us_interest_revenue").concat(["treasury_mts"]) },
+  chartSheet(host, { title: "Zinsen in % der Bundeseinnahmen", sub: `Fiskaljahre 1940–${L.fy_gdp_est ? L.fy_gdp_est.fy : ""}; letzter Wert aus dem Monthly Treasury Statement`, src: srcOf("us_interest_revenue").concat(["treasury_mts"]),
+      info: { f: ["Zinsausgaben des Bundes im Fiskaljahr ÷ Bundeseinnahmen im Fiskaljahr × 100 (FRED FYOINT, FYFR).", "Letzter Punkt: Nettozinsen vom Beginn des laufenden Fiskaljahres bis zum Stichtag ÷ Einnahmen im selben Zeitraum (Monthly Treasury Statement)."],
+        r: intRevNow != null ? `${fmt(L.mts_net_interest.current, 1)} ÷ ${fmt(L.mts_ytd.current.rcpt, 1)} Mrd. US-$ × 100 = ${fmt(intRevNow, 1)} %` : null } },
     { series: [{ id: "ir", label: "Zinsen/Einnahmen", color: "--s1", data: irData, area: true }], height: 250, zero: true, endValFmt: v => fmt(v, 1) + " %", tipFmt: v => fmt(v, 1) + " %" });
-  chartSheet(host, { title: "Zinsen und Inflation in den USA", sub: "Jahresmittel; Inflation und Realrendite (10-jährige Rendite minus Inflation) als zentrierte 3-Jahres-Mittel", src: srcOf("us_10y", "us_cpi_infl", "us_3m"), cls: "span-2" },
+  chartSheet(host, { title: "Zinsen und Inflation in den USA", sub: "Jahresmittel; Inflation und Realrendite (10-jährige Rendite minus Inflation) als zentrierte 3-Jahres-Mittel", src: srcOf("us_10y", "us_cpi_infl", "us_3m"), cls: "span-2",
+      info: { f: ["Rendite 10 Jahre und Schatzwechsel 3 Monate: Jahresmittel der Monatswerte (vor 1953 Shiller-Daten).", "Inflation: Jahresmittel des Verbraucherpreisindex gegenüber dem Vorjahresmittel, in %, anschließend zentriert über drei Jahre gemittelt (Vorjahr, Jahr, Folgejahr).", "Realrendite = Rendite 10 Jahre − Inflation desselben Jahres, ebenfalls zentriert über drei Jahre gemittelt."] } },
     { series: [
       { id: "ten", label: "Rendite 10 Jahre", short: "10 J.", color: "--s1", data: A("us_10y") },
       { id: "infl", label: "Inflation (3-Jahres-Mittel)", short: "Inflation", color: "--s2", data: smooth(A("us_cpi_infl"), 3) },
@@ -127,21 +139,27 @@ function renderDebt() {
     ], hidden: ["bill"], height: 300, shades: WARS.slice(1), refs: [{ y: 0 }], endValFmt: v => fmt(v, 1), tipFmt: v => fmt(v, 2) + " %" });
   const GV = (C.values || {}).gold, WG = (C.values || {}).wgc;
   const gNote = GV && WG ? `Rekord 2026: ${fmt(GV.athLbmaPm, 0)} US-$ je Unze (LBMA, ${deDate(GV.athDate)}). Zentralbanken kauften 2025 netto ${fmt(WG.cb2025, 0)} t Gold, im ersten Halbjahr 2026 ${fmt(WG.cbH1_2026, 0)} t (World Gold Council). Wert 2026 = Mittel bis zum letzten Monat.` : null;
-  chartSheet(host, { title: "Gold in US-Dollar", sub: "Jahresmittel, logarithmische Skala; real in Preisen des letzten Jahres", src: srcOf("gold_usd", "gold_real"), note: gNote },
+  chartSheet(host, { title: "Gold in US-Dollar", sub: "Jahresmittel, logarithmische Skala; real in Preisen des letzten Jahres", src: srcOf("gold_usd", "gold_real"), note: gNote,
+      info: { f: ["Nominal: Jahresmittel des Goldpreises in US-Dollar je Feinunze.", "Real: nominaler Preis × (Verbraucherpreisindex des letzten Jahres ÷ Index des jeweiligen Jahres), also in heutiger Kaufkraft.", "Logarithmische Skala: gleiche Abstände bedeuten gleiche prozentuale Veränderungen."] } },
     { series: [{ id: "nom", label: "nominal", color: "--s4", data: A("gold_usd") }, { id: "real", label: "real", color: "--s1", data: A("gold_real") }],
       height: 260, log: true, endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 0) + " US-$",
       vlines: [{ x: 1933, label: "1933" }, { x: 1971, label: "1971" }] });
-  chartSheet(host, { title: "Geldschöpfung der Federal Reserve", sub: "Bilanzsumme ab 2002 und Geldbasis ab 1959, jeweils in % des BIP", src: srcOf("us_fed_assets_gdp", "us_base_gdp") },
+  chartSheet(host, { title: "Geldschöpfung der Federal Reserve", sub: "Bilanzsumme ab 2002 und Geldbasis ab 1959, jeweils in % des BIP", src: srcOf("us_fed_assets_gdp", "us_base_gdp"),
+      info: { f: "Bilanzsumme der Federal Reserve (FRED WALCL) bzw. Geldbasis (BOGMBASE), jeweils ÷ nominales BIP × 100; Jahreswert = Stand zum Jahresende." } },
     { series: [{ id: "bs", label: "Bilanzsumme", color: "--s1", data: A("us_fed_assets_gdp") }, { id: "mb", label: "Geldbasis", color: "--s7", data: A("us_base_gdp") }],
       height: 260, zero: true, endValFmt: v => fmt(v, 1), tipFmt: v => fmt(v, 1) + " %" });
   const defData = A("us_deficit_gdp");
   if (defNow != null && L.fy_gdp_est) defData.push([L.fy_gdp_est.fy, -defNow]);
-  chartSheet(host, { title: "Haushaltssaldo des Bundes in % des BIP", sub: "Fiskaljahre ab 1929; negativ = Defizit; Referenzlinie bei −3 %", src: srcOf("us_deficit_gdp").concat(["treasury_mts"]) },
+  chartSheet(host, { title: "Haushaltssaldo des Bundes in % des BIP", sub: "Fiskaljahre ab 1929; negativ = Defizit; Referenzlinie bei −3 %", src: srcOf("us_deficit_gdp").concat(["treasury_mts"]),
+      info: { f: ["Haushaltssaldo des Bundes ÷ BIP × 100 je Fiskaljahr (FRED FYFSGDA188S); negativ = Defizit.", "Letzter Punkt: −(Defizit seit Beginn des Fiskaljahres) ÷ BIP-Schätzung des Fiskaljahres × 100."],
+        r: defNow != null ? `−${fmt(L.mts_ytd.current.def, 1)} ÷ ${fmt(L.fy_gdp_est.value, 0)} Mrd. US-$ × 100 = ${fmt(-defNow, 1)} %` : null } },
     { series: [{ id: "def", label: "Saldo", color: "--s8", data: defData, area: true }], height: 260, refs: [{ y: -3, label: "−3 %" }], shades: WARS.slice(2), endValFmt: v => fmt(v, 1), tipFmt: v => fmt(v, 1) + " %" });
-  chartSheet(host, { title: "Kredite an Staat und Privatsektor", sub: "USA, % des BIP (BIS-Gesamtkredit, Quartalsende)", src: srcOf("us_private_credit_gdp", "us_gov_credit_gdp") },
+  chartSheet(host, { title: "Kredite an Staat und Privatsektor", sub: "USA, % des BIP (BIS-Gesamtkredit, Quartalsende)", src: srcOf("us_private_credit_gdp", "us_gov_credit_gdp"),
+      info: { f: "Kreditbestand ÷ BIP × 100 laut BIZ-Gesamtkreditstatistik (FRED QUSPAM770A für den privaten Nichtfinanzsektor, QUSGAM770A für den Gesamtstaat zu Marktwerten); Jahreswert = letztes Quartal des Jahres." } },
     { series: [{ id: "priv", label: "Privater Nichtfinanzsektor", short: "privat", color: "--s1", data: A("us_private_credit_gdp") }, { id: "gov", label: "Gesamtstaat", short: "Staat", color: "--s2", data: A("us_gov_credit_gdp") }],
       height: 260, zero: true, endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 1) + " %" });
-  chartSheet(host, { title: "Britischer Zyklus: Zinsen und Inflation", sub: "Rendite der Consols, Bank Rate und Inflation (zentriertes 3-Jahres-Mittel), 1700–2016", src: srcOf("uk_consol", "uk_infl", "uk_bankrate"), cls: "span-2" },
+  chartSheet(host, { title: "Britischer Zyklus: Zinsen und Inflation", sub: "Rendite der Consols, Bank Rate und Inflation (zentriertes 3-Jahres-Mittel), 1700–2016", src: srcOf("uk_consol", "uk_infl", "uk_bankrate"), cls: "span-2",
+      info: { f: "Consols-Rendite und Bank Rate: Jahreswerte aus den Millennium-Daten der Bank of England. Inflation: jährliche Veränderung der Verbraucherpreise, zentriert über drei Jahre gemittelt." } },
     { series: [{ id: "consol", label: "Consols-Rendite", short: "Consols", color: "--s3", data: A("uk_consol") }, { id: "infl", label: "Inflation (3-Jahres-Mittel)", short: "Inflation", color: "--s2", data: smooth(A("uk_infl"), 3) }, { id: "bank", label: "Bank Rate", color: "--s7", data: A("uk_bankrate") }],
       hidden: ["bank"], xMin: 1700, height: 280, shades: WARS, refs: [{ y: 0 }], endValFmt: v => fmt(v, 1), tipFmt: v => fmt(v, 1) + " %" });
 }
@@ -157,22 +175,29 @@ function renderInternal() {
   }) : null;
   ST.intStage = est;
   const host = document.getElementById("int-charts");
-  chartSheet(host, { title: "Konzentration von Vermögen und Einkommen in den USA", sub: "Anteil des obersten 1 %; WID ab 1820 bzw. 1913, Fed-Verteilungsrechnung ab 1989", src: srcOf("top1_wealth_usa", "us_top1_income", "us_top1_wealth_dfa"), cls: "span-2" },
+  chartSheet(host, { title: "Konzentration von Vermögen und Einkommen in den USA", sub: "Anteil des obersten 1 %; WID ab 1820 bzw. 1913, Fed-Verteilungsrechnung ab 1989", src: srcOf("top1_wealth_usa", "us_top1_income", "us_top1_wealth_dfa"), cls: "span-2",
+      info: { f: ["Vermögen (WID): Anteil des obersten 1 % am gesamten Privatvermögen, geschätzt aus Steuer- und Vermögensdaten (World Inequality Database).", "Vermögen (Fed DFA): Nettovermögen des obersten 1 % ÷ Nettovermögen aller Haushalte × 100 (Distributional Financial Accounts, Jahresendstand).", "Einkommen: Anteil des obersten 1 % am Einkommen vor Steuern (WID)."] } },
     { series: [
       { id: "w", label: "Vermögen (WID)", color: "--s1", data: A("top1_wealth_usa"), markers: false },
       { id: "dfa", label: "Vermögen (Fed DFA)", color: "--s7", data: A("us_top1_wealth_dfa") },
       { id: "inc", label: "Einkommen vor Steuern (WID)", short: "Einkommen", color: "--s2", data: A("us_top1_income") },
     ], height: 290, xMin: 1870, zero: true, shades: WARS.slice(2), endValFmt: v => fmt(v, 1), tipFmt: v => fmt(v, 1) + " %" });
-  chartSheet(host, { title: "Polarisierung im US-Kongress", sub: "Abstand der Parteimediane auf der ersten DW-NOMINATE-Dimension, Republikaner minus Demokraten", src: srcOf("us_congress_polar_house") },
+  chartSheet(host, { title: "Polarisierung im US-Kongress", sub: "Abstand der Parteimediane auf der ersten DW-NOMINATE-Dimension, Republikaner minus Demokraten", src: srcOf("us_congress_polar_house"),
+      info: { f: "Je Kongress (zwei Jahre): Median der DW-NOMINATE-Werte aller republikanischen Abgeordneten minus Median aller demokratischen auf der ersten Dimension (wirtschaftlich links–rechts, −1 bis +1). Größerer Abstand = stärkere Polarisierung (Voteview).",
+        r: (() => { const p = lastPt(A("us_congress_polar_house")); return p ? `Repräsentantenhaus ${Math.round(p[0])}: ${fmt(p[1], 2)}` : null; })() } },
     { series: [{ id: "h", label: "Repräsentantenhaus", short: "Haus", color: "--s1", data: A("us_congress_polar_house") }, { id: "s", label: "Senat", color: "--s2", data: A("us_congress_polar_senate") }],
       height: 260, shades: [{ x0: 1861, x1: 1865, label: "Bürgerkr." }], endValFmt: v => fmt(v, 2), tipFmt: v => fmt(v, 2) });
-  chartSheet(host, { title: "Polarisierung der Gesellschaft", sub: "V-Dem-Expertenschätzung; höhere Werte = feindseligere politische Lager", src: srcOf("polar_usa") },
+  chartSheet(host, { title: "Polarisierung der Gesellschaft", sub: "V-Dem-Expertenschätzung; höhere Werte = feindseligere politische Lager", src: srcOf("polar_usa"),
+      info: { f: "Keine eigene Rechnung: V-Dem-Expertenschätzung „Polarization of society“ (v2cacamps), Mittelwert des Messmodells. Höhere Werte = politische Lager stehen sich feindseliger gegenüber." } },
     { series: ["USA", "GBR", "DEU", "CHN"].map(c => ({ id: c, label: SHORT[c], color: CC[c], data: A("polar_" + c.toLowerCase()) })), height: 260, shades: WARS.slice(2), endValFmt: v => fmt(v, 1), tipFmt: v => fmt(v, 2) });
-  chartSheet(host, { title: "Liberaler Demokratieindex", sub: "V-Dem, 0 bis 1", src: srcOf("libdem_usa") },
+  chartSheet(host, { title: "Liberaler Demokratieindex", sub: "V-Dem, 0 bis 1", src: srcOf("libdem_usa"),
+      info: { f: "Keine eigene Rechnung: V-Dem-Index der liberalen Demokratie (0 bis 1), zusammengesetzt aus Wahlen, Rechtsstaat, Gewaltenteilung und Bürgerrechten." } },
     { series: ["USA", "GBR", "DEU", "CHN"].map(c => ({ id: c, label: SHORT[c], color: CC[c], data: A("libdem_" + c.toLowerCase()) })), height: 260, yMin: 0, yMax: 1, xMin: 1900, endValFmt: v => fmt(v, 2), tipFmt: v => fmt(v, 3) });
-  chartSheet(host, { title: "Vertrauen in die Bundesregierung", sub: "Anteil, der der Regierung in Washington fast immer oder meistens vertraut (geglättet)", src: srcOf("us_trust_gov") },
+  chartSheet(host, { title: "Vertrauen in die Bundesregierung", sub: "Anteil, der der Regierung in Washington fast immer oder meistens vertraut (geglättet)", src: srcOf("us_trust_gov"),
+      info: { f: "Anteil der Befragten, die der Regierung in Washington „fast immer“ oder „meistens“ vertrauen; Pew Research Center fasst die einzelnen Umfragen zu einer geglätteten Reihe zusammen (Our World in Data)." } },
     { series: [{ id: "t", label: "Vertrauen", color: "--s1", data: A("us_trust_gov"), area: true }], height: 240, yMin: 0, yMax: 100, endValFmt: v => fmt(v, 0) + " %", tipFmt: v => fmt(v, 0) + " %" });
-  chartSheet(host, { title: "Misery-Index", sub: "Arbeitslosenquote plus Inflationsrate, Jahresmittel", src: srcOf("us_misery") },
+  chartSheet(host, { title: "Misery-Index", sub: "Arbeitslosenquote plus Inflationsrate, Jahresmittel", src: srcOf("us_misery"),
+      info: () => { const m = lastPt(A("us_misery")); return { f: "Arbeitslosenquote (Jahresmittel) + Inflationsrate (Jahresmittel des Verbraucherpreisindex gegenüber dem Vorjahr)", r: m ? `${Math.round(m[0])}: ${fmt(m[1], 1)}` : null }; } },
     { series: [{ id: "m", label: "Misery-Index", color: "--s8", data: A("us_misery") }], height: 240, zero: true, endValFmt: v => fmt(v, 1), tipFmt: v => fmt(v, 1) });
 }
 
@@ -181,7 +206,10 @@ function renderExternal() {
   const C = D.curated || {};
   const wars = (C.wars || []);
   const wHost = document.getElementById("wars");
-  const sh = sheet(wHost, { title: "Fünf Formen des Konflikts zwischen USA und China", sub: "Status nach Daten und kuratierten Ereignissen; Stand des Datensatzes" });
+  const sh = sheet(wHost, { title: "Fünf Formen des Konflikts zwischen USA und China", sub: "Status nach Daten und kuratierten Ereignissen; Stand des Datensatzes",
+    info: () => ({ d: "Dalio unterscheidet Handels-, Technologie-, Kapital-, geopolitischen und militärischen Konflikt.",
+      f: ["Status je Konfliktform aus der kuratierten Liste mit Belegen (pipeline/curated.json).", "Ergänzt um den aktuellen effektiven US-Zollsatz (Zolleinnahmen ÷ Warenimporte) und den geopolitischen Risikoindex mit seinem Perzentil: Anteil der Monate seit 1985 mit gleichem oder niedrigerem Wert."],
+      r: gprNow ? `GPR ${fmt(gprNow[1], 0)} → ${fmt(gprPct, 0)}. Perzentil seit 1985` : null }) });
   const tariff = D.latest.tariff_eff_q;
   const gprM = A("gpr_hist_m").filter(p => p[1] != null);
   const gprNow = lastPt(gprM);
@@ -197,7 +225,7 @@ function renderExternal() {
       h("td", null, evidence, (w.links || []).length ? h("div", { class: "small" }, ...w.links.flatMap((l, i) => [i ? " · " : "", h("a", { href: l.url, target: "_blank", rel: "noopener", text: l.label })])) : null)));
   }
   tbl.append(tb);
-  sh.body.append(h("div", { style: "overflow-x:auto" }, tbl));
+  sh.body.append(h("div", { style: "overflow-x:auto" }, stackTable(tbl)));
 
   const eHost = document.getElementById("events");
   const es = sheet(eHost, { title: "Kuratierte Ereignisse 2026", sub: "Auswahl mit Quellenangabe, Stand 18. Oktober 2026; im GitHub-Projekt in pipeline/curated.json gepflegt. Keine vollständige Chronik." });
@@ -210,37 +238,47 @@ function renderExternal() {
   if (!evs.length) es.body.append(h("p", { class: "small", text: "Keine kuratierten Ereignisse hinterlegt." }));
 
   const host = document.getElementById("ext-charts");
-  chartSheet(host, { title: "Geopolitisches Risiko seit 1900", sub: "Caldara-Iacoviello-Index auf Basis von Zeitungsartikeln, Monatswerte; 1985–2019 = 100", src: srcOf("gpr_hist_m"), cls: "span-2" },
+  chartSheet(host, { title: "Geopolitisches Risiko seit 1900", sub: "Caldara-Iacoviello-Index auf Basis von Zeitungsartikeln, Monatswerte; 1985–2019 = 100", src: srcOf("gpr_hist_m"), cls: "span-2",
+      info: { f: "Keine eigene Rechnung: Caldara und Iacoviello zählen in drei großen Zeitungen (seit 1900) den Anteil der Artikel mit Begriffen zu Kriegsgefahr, militärischem Aufmarsch und Terror und normieren das Mittel 1985–2019 auf 100." } },
     { series: [{ id: "g", label: "GPR (historisch)", color: "--s8", data: A("gpr_hist_m"), area: true, width: 1.5 }], freq: "M", height: 280, zero: true, endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 0),
       shades: WARS.slice(2), refs: [{ y: 100, label: "100" }] });
   const cl = A("conflict_deaths_longrun"), cu = A("conflict_deaths_ucdp");
-  chartSheet(host, { title: "Todesopfer in Kriegen und Konflikten weltweit", sub: "Logarithmische Skala; Conflict Catalog 1400–2000, UCDP/PRIO ab 1946 (abweichende Definitionen)", src: srcOf("conflict_deaths_longrun", "conflict_deaths_ucdp") },
+  chartSheet(host, { title: "Todesopfer in Kriegen und Konflikten weltweit", sub: "Logarithmische Skala; Conflict Catalog 1400–2000, UCDP/PRIO ab 1946 (abweichende Definitionen)", src: srcOf("conflict_deaths_longrun", "conflict_deaths_ucdp"),
+      info: { f: "Summe der Todesopfer aller in einem Jahr laufenden Konflikte. Conflict Catalog: Kriege 1400–2000; UCDP/PRIO: staatliche Konflikte ab 1946 mit mindestens 25 Todesopfern pro Jahr. Die Definitionen weichen voneinander ab." } },
     { series: [{ id: "cc", label: "Conflict Catalog", color: "--s7", data: cl }, { id: "u", label: "UCDP/PRIO", color: "--s8", data: cu }], height: 260, log: true, logFloor: 100, endValFmt: v => fmtAuto(v), tipFmt: v => fmt(v, 0) });
-  chartSheet(host, { title: "Globalisierung", sub: "Weltwarenexporte in % des Welt-BIP (CEPII, bis 2014) und Welthandel in % des Welt-BIP (Weltbank, ab 1970)", src: srcOf("world_exports_gdp", "world_trade_gdp") },
+  chartSheet(host, { title: "Globalisierung", sub: "Weltwarenexporte in % des Welt-BIP (CEPII, bis 2014) und Welthandel in % des Welt-BIP (Weltbank, ab 1970)", src: srcOf("world_exports_gdp", "world_trade_gdp"),
+      info: { f: ["Warenexporte (CEPII): Weltwarenexporte ÷ Welt-BIP × 100.", "Handel (Weltbank): (Exporte + Importe von Waren und Dienstleistungen) ÷ Welt-BIP × 100; daher etwa doppelt so hoch."] } },
     { series: [{ id: "x", label: "Warenexporte (CEPII)", short: "Exporte", color: "--s1", data: A("world_exports_gdp") }, { id: "t", label: "Exporte + Importe (Weltbank)", short: "Handel", color: "--s3", data: A("world_trade_gdp") }],
       height: 260, zero: true, shades: WARS.slice(2), endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 1) + " %" });
   const V = (D.curated && D.curated.values) || {};
   const tNote = V.tariffs ? `Vergleich: Der durchschnittliche gesetzliche Zollsatz lag laut Yale Budget Lab am ${deDate(V.tariffs.yaleDate)} bei ${fmt(V.tariffs.yaleStatutory, 1)} %; die Tax Foundation beziffert den 2025 tatsächlich erhobenen Satz auf ${fmt(V.tariffs.tfEffective2025, 1)} %, den höchsten seit 1947. Abweichungen ergeben sich aus Abgrenzung der Importe und Erstattungen.` : null;
-  chartSheet(host, { title: "Effektiver US-Zollsatz", sub: "Zolleinnahmen in % der Warenimporte (NIPA), Jahreswerte ab 1929; letzter Wert Quartalsdurchschnitt", src: srcOf("us_tariff_eff"), note: tNote },
+  chartSheet(host, { title: "Effektiver US-Zollsatz", sub: "Zolleinnahmen in % der Warenimporte (NIPA), Jahreswerte ab 1929; letzter Wert Quartalsdurchschnitt", src: srcOf("us_tariff_eff"), note: tNote,
+      info: { f: "Zolleinnahmen des Bundes ÷ Warenimporte × 100 (NIPA, FRED B235RC1A027NBEA und A255RC1A027NBEA); letzter Punkt: Quartalswerte auf ein Jahr hochgerechnet.", r: tariff ? `${fmt(tariff.value, 2)} % im ${deQuarter(tariff.date)}` : null } },
     { series: [{ id: "t", label: "Zollsatz", color: "--s2", data: A("us_tariff_eff"), area: true }], height: 260, zero: true, vlines: [{ x: 1930, label: "Smoot-Hawley" }], endValFmt: v => fmt(v, 1) + " %", tipFmt: v => fmt(v, 2) + " %" });
   const mNote = V.sipri2025 ? `SIPRI für 2025 in laufenden Preisen: Welt ${fmt(V.sipri2025.world, 0)} Mrd. US-$, USA ${fmt(V.sipri2025.usa, 0)} Mrd. (${V.sipri2025.usaShare} %), China ${fmt(V.sipri2025.chn, 0)} Mrd. (${V.sipri2025.chnShare} %, Schätzung).` : null;
-  chartSheet(host, { title: "Militärausgaben", sub: "SIPRI, Mrd. US-$ in konstanten Preisen", src: srcOf("milex_usa"), note: mNote },
+  chartSheet(host, { title: "Militärausgaben", sub: "SIPRI, Mrd. US-$ in konstanten Preisen", src: srcOf("milex_usa"), note: mNote,
+      info: { f: "Keine eigene Rechnung: SIPRI-Militärausgaben in konstanten US-Dollar (inflationsbereinigt), China als SIPRI-Schätzung." } },
     { series: ["USA", "CHN", "RUS"].map(c => ({ id: c, label: SHORT[c], color: CC[c], data: A("milex_" + c.toLowerCase()) })), xMin: 1988, height: 260, zero: true, endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 0) + " Mrd." });
-  chartSheet(host, { title: "Atomsprengköpfe", sub: "Geschätzte Bestände (Federation of American Scientists)", src: srcOf("nukes_usa") },
+  chartSheet(host, { title: "Atomsprengköpfe", sub: "Geschätzte Bestände (Federation of American Scientists)", src: srcOf("nukes_usa"),
+      info: { f: "Keine eigene Rechnung: geschätzte Bestände an Atomsprengköpfen (Federation of American Scientists)." } },
     { series: ["USA", "RUS", "CHN"].map(c => ({ id: c, label: SHORT[c], color: CC[c], data: A("nukes_" + c.toLowerCase()) })), height: 260, zero: true, endValFmt: v => fmtAuto(v), tipFmt: v => fmt(v, 0) });
 }
 
 /* ------------------------------------------------------------------ Natur und Technik */
 function renderNature() {
   const host = document.getElementById("nat-charts");
-  chartSheet(host, { title: "Globale Temperaturabweichung", sub: "Gegenüber 1861–1890, °C (HadCRUT5)", src: srcOf("temp_anomaly") },
+  chartSheet(host, { title: "Globale Temperaturabweichung", sub: "Gegenüber 1861–1890, °C (HadCRUT5)", src: srcOf("temp_anomaly"),
+      info: { f: "Keine eigene Rechnung: Abweichung der globalen bodennahen Mitteltemperatur vom Mittel 1861–1890 in °C (HadCRUT5 über Our World in Data)." } },
     { series: [{ id: "t", label: "Abweichung", color: "--s8", data: A("temp_anomaly") }], height: 250, refs: [{ y: 0 }, { y: 1.5, label: "1,5 °C" }], endValFmt: v => fmt(v, 2) + " °C", tipFmt: v => fmt(v, 2) + " °C" });
-  if (D.series.disasters_n) chartSheet(host, { title: "Erfasste Naturkatastrophen", sub: "EM-DAT; der Anstieg spiegelt auch bessere Erfassung", src: srcOf("disasters_n") },
+  if (D.series.disasters_n) chartSheet(host, { title: "Erfasste Naturkatastrophen", sub: "EM-DAT; der Anstieg spiegelt auch bessere Erfassung", src: srcOf("disasters_n"),
+      info: { f: "Anzahl der in der Katastrophendatenbank EM-DAT erfassten Ereignisse je Jahr. Der Anstieg spiegelt auch die bessere Erfassung." } },
     { series: [{ id: "d", label: "Ereignisse", color: "--s7", data: A("disasters_n") }], height: 250, zero: true, endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 0) });
   const comp = (cid, c) => D.power.years.map((y, i) => [y, D.power.components[cid].share[c][i]]);
-  chartSheet(host, { title: "Forschung und Entwicklung", sub: "Anteil an den weltweiten F&E-Ausgaben zu Kaufkraftparitäten, %", src: D.power.components.rd.src },
+  chartSheet(host, { title: "Forschung und Entwicklung", sub: "Anteil an den weltweiten F&E-Ausgaben zu Kaufkraftparitäten, %", src: D.power.components.rd.src,
+      info: { f: "F&E-Ausgaben des Landes zu Kaufkraftparitäten ÷ Summe aller erfassten Länder × 100 (Komponente des Machtindex, Messgröße Innovation)." } },
     { series: ["USA", "CHN", "JPN", "DEU"].map(c => ({ id: c, label: SHORT[c], color: CC[c], data: comp("rd", c) })), xMin: 1996, height: 250, zero: true, endValFmt: v => fmt(v, 1), tipFmt: v => fmt(v, 1) + " %" });
-  chartSheet(host, { title: "Naturwissenschaftliche Nobelpreise", sub: "Anteil nach Land der Forschungseinrichtung, gleitende 20 Jahre, %", src: D.power.components.nobel.src },
+  chartSheet(host, { title: "Naturwissenschaftliche Nobelpreise", sub: "Anteil nach Land der Forschungseinrichtung, gleitende 20 Jahre, %", src: D.power.components.nobel.src,
+      info: { f: "Nobelpreise in Physik, Chemie und Medizin der letzten 20 Jahre, deren Preisträger zur Zeit der Vergabe an einer Einrichtung im Land forschten ÷ alle vergebenen Preise der letzten 20 Jahre × 100 (Nobelpreis-API)." } },
     { series: ["USA", "GBR", "DEU", "JPN", "CHN"].map(c => ({ id: c, label: SHORT[c], color: CC[c], data: comp("nobel", c) })), xMin: 1910, height: 250, zero: true, endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 1) + " %" });
 }
 
@@ -266,6 +304,17 @@ function renderSim() {
     title: "Monte-Carlo-Projektion der US-Staatsverschuldung",
     sub: `${fmt(2000, 0)} Pfade über 30 Jahre ab Fiskaljahr ${y0}; Startwerte aus Treasury- und FRED-Daten, Zufallsschocks bei Wachstum, Inflation, Zinsen und Rezessionen`,
     src: ["treasury_debt", "treasury_rates", "treasury_mts", "fred"],
+    info: () => ({
+      d: "Zeigt die Bandbreite möglicher Entwicklungen der US-Schuldenquote und der Zinslast unter Zufallsschocks.",
+      f: ["Schuldenquote: dₜ = dₜ₋₁ × (1 + r) ÷ (1 + g) + Primärdefizit (alles in % des BIP); g = nominales Wachstum = (1 + reales Wachstum) × (1 + Inflation) − 1.",
+        "Durchschnittszins r nähert sich jedes Jahr um 1/Restlaufzeit dem Zins für Neuemissionen m; m kehrt zu 35 % pro Jahr zum gewählten Niveau zurück und schwankt zufällig (Zinsschwankung).",
+        "Wachstum und Inflation schwanken zufällig (Standardabweichung 0,7 bzw. 0,5 Prozentpunkte). Rezessionen treten mit der gewählten Wahrscheinlichkeit auf: −3,5 Pp. Wachstum im ersten Jahr, höheres Primärdefizit, sinkende Zinsen.",
+        "Zinsen in % der Einnahmen = r × Schuld ÷ (1 + g) ÷ Einnahmenquote × 100.",
+        "2.000 Pfade; Band = 5.–95. bzw. 25.–75. Perzentil, Linie = Median."],
+      r: [`Start: Schuldenquote ${fmt(base.d0, 1)} %, Durchschnittszins ${fmt(base.r0, 2)} %, Marktzins ${fmt(base.m0, 2)} % (0,3 × 3-Monats-Satz + 0,7 × 10-Jahres-Rendite)`,
+        `Primärdefizit ${fmt(base.pd, 1)} % und Einnahmen ${fmt(base.rev, 1)} % des BIP aus dem laufenden Fiskaljahr`],
+      s: "Ein Rechenmodell, keine Prognose; die Startwerte stammen aus Treasury- und FRED-Daten.",
+    }),
   });
   const presets = [
     { id: "base", label: "Marktzinsen fortgeschrieben", set: { ...base } },
@@ -361,6 +410,11 @@ function renderAnalogs() {
     title: "Historische Analogien zur Lage der USA",
     sub: `Nächste Nachbarn unter ${fmt(D.analogs.rows.length, 0)} Land-Jahren (18 Industrieländer, 1870–2016), standardisierte Distanz über die gewählten Merkmale; je Episode der nächstgelegene Jahrgang`,
     src: ["jst", "imf_fpp", "imf_hpdd", "wid", "vdem", "gpr", "maddison", "imf_weo", "fred"],
+    info: { d: "Sucht historische Länder-Jahre, deren Profil der heutigen Lage der USA am nächsten kommt, und zeigt, was danach geschah.",
+      f: ["Für jedes Merkmal: z = (Wert des Land-Jahres − Wert der Abfrage) ÷ Standardabweichung des Merkmals über alle Land-Jahre.",
+        "Distanz = √(Σ Gewicht × z² ÷ Σ Gewicht) ÷ √Abdeckung; Abdeckung = Anteil der Gewichte mit vorhandenen Daten. Fehlende Merkmale erhöhen so die Distanz.",
+        "Je Land werden Jahrgänge innerhalb von acht Jahren zu einer Episode zusammengefasst; Land-Jahre unter 75 % Abdeckung entfallen.",
+        "Unten: Median über die gelisteten Analogien für die zehn folgenden Jahre (Veränderung der Schuldenquote, Inflation, reale Renditen, Anteil mit Bankenkrise, höchster GPR-Wert)."] },
   });
   const chips = h("div", { class: "chips", "aria-label": "Merkmale und Gewichte" });
   const cycle = [0, 0.5, 1, 2];
@@ -394,7 +448,7 @@ function renderAnalogs() {
         h("td", { text: x.r.o && x.r.o.infl != null ? (x.r.o.infl > 100 ? "> 100 %" : fmt(x.r.o.infl, 1) + " %") : "–" }),
         h("td", { text: x.r.o && x.r.o.bond != null ? fmt(x.r.o.bond, 1) + " %" : "–" }),
         h("td", { text: x.r.o && x.r.o.crisis != null ? (x.r.o.crisis ? "ja" : "nein") : "–" })))));
-    tblWrap.replaceChildren(t);
+    tblWrap.replaceChildren(stackTable(t));
     const s = r.summary;
     outc.replaceChildren(
       h("div", { class: "outcome" }, h("div", { class: "o-v", text: s.dDebt == null ? "–" : signed(s.dDebt, 0) + " Pp." }), h("div", { class: "o-l", text: "Veränderung der Schuldenquote" })),
@@ -413,6 +467,12 @@ function renderPhase() {
   const sh = sheet(host, {
     title: "Phasenschätzung aus dem Muster der Messgrößen",
     sub: "Kurve: relative Plausibilität jeder Phase in Prozent je Jahr (Summe 100 %). Verglichen werden für jede Messgröße das Niveau relativ zum eigenen Höchststand und der Trend über 15 Jahre",
+    info: () => ({ d: "Vergleicht das heutige Muster der acht Machtmessgrößen mit Dalios Archetyp des Auf- und Abstiegs.",
+      f: ["Archetyp: Höhepunkt jeder Messgröße zu einer festen Phase (Spalte „Höhepunkt im Archetyp“), Glockenkurve mit 45 Jahren Breite.",
+        "Beobachtung je Messgröße: Niveau = Wert ÷ bisheriger Höchststand des Landes; Trend = Veränderung über 15 Jahre ÷ Höchststand.",
+        "Abweichung je Phase = Σ (Niveau − Archetyp-Niveau)² + (Trend − Archetyp-Trend)². Kleinste Abweichung = Schätzung; Plausibilität ∝ e^(−(Abweichung − Minimum) ÷ T), T = 0,02 × Zahl der Messgrößen.",
+        "Zellen der Tabelle: beste Phase, wenn man nur diese eine Messgröße betrachtet."],
+      r: fits.map(f => `${SHORT[f.c]}: ${signed(f.best, 0)} Jahre (80-%-Bereich ${signed(f.lo, 0)} bis ${signed(f.hi, 0)}, ${f.n} Messgrößen)`) }),
   });
   const g = h("div", { class: "grid-2", style: "align-items:start" });
   sh.body.append(g);
@@ -430,7 +490,7 @@ function renderPhase() {
       ...keys.map(k => h("tr", null, h("td", { text: MSHORT[k] }), h("td", { text: signed(MODEL.arch.offsets[k], 0) + " J." }),
         ...fits.map(f => { const p = f.per[k]; return h("td", { title: p ? `Niveau ${fmt(100 * p.L, 0)} % des Höchststands, Trend ${signed(100 * p.S, 0)} Pp. in 15 Jahren` : "keine Daten", text: p ? signed(p.phi, 0) : "–" }); }))),
       h("tr", null, h("td", null, h("b", { text: "Gesamtschätzung" })), h("td", { text: "" }), ...fits.map(f => h("td", null, h("b", { text: signed(f.best, 0) }), h("div", { class: "small", text: `${signed(f.lo, 0)} bis ${signed(f.hi, 0)}` }))))));
-  g.append(h("div", { style: "display:grid;gap:8px;min-width:0" }, h("div", { class: "table-wrap", style: "max-height:none" }, t),
+  g.append(h("div", { style: "display:grid;gap:8px;min-width:0" }, h("div", { class: "table-wrap", style: "max-height:none" }, stackTable(t)),
     h("p", { class: "small", text: "Zellen: Phase, die die jeweilige Messgröße für sich allein nahelegt. Streuen diese Werte stark, passt das Land schlecht zum Archetyp. " + (() => {
       const u = fits.find(f => f.c === "USA");
       if (!u) return "";
@@ -454,7 +514,7 @@ function renderMethods() {
   const sh = sheet(host, { title: "Quellenregister", sub: `Abruf und Verarbeitung: ${deDate(D.meta.generated.slice(0, 10))}; Zitate der Our-World-in-Data-Reihen aus deren Metadaten übernommen` });
   const tbl = h("table", { class: "sources" }, h("thead", null, h("tr", null, h("th", { text: "Kennung" }), h("th", { text: "Quelle" }), h("th", { text: "Zitat bzw. Bezug" }), h("th", { text: "Stand" }))),
     h("tbody", null, ...ids.map(id => { const s = D.sources[id]; return h("tr", null, h("td", { class: "id", text: id }), h("td", null, h("a", { href: s.url, target: "_blank", rel: "noopener", text: s.name }), s.via ? h("div", { class: "small", text: "über " + s.via }) : null), h("td", { class: "small", text: s.citation || "–" }), h("td", { class: "small", text: s.lastUpdated || "Abruf " + D.meta.generated.slice(0, 10) })); })));
-  sh.body.append(h("div", { style: "overflow-x:auto" }, tbl));
+  sh.body.append(h("div", { style: "overflow-x:auto" }, stackTable(tbl, 1)));
   const fl = D.meta.fredLabels || {};
   sh.body.append(h("details", { class: "more", style: "margin-top:10px" }, h("summary", { text: `Verwendete FRED-Reihen (${Object.keys(fl).length})` }),
     h("ul", { class: "small", style: "columns:2;column-gap:28px;margin:0;padding-left:18px" }, ...Object.entries(fl).map(([k, v]) => h("li", null, h("a", { href: `https://fred.stlouisfed.org/series/${k}`, target: "_blank", rel: "noopener", class: "mono", text: k }), " ", v)))));
