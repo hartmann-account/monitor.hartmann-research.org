@@ -37,6 +37,8 @@ const LSRC = {
   eurostat: { name: "Eurostat, Economic Sentiment Indicator", url: "https://ec.europa.eu/eurostat/web/euro-indicators/business-and-consumer-surveys" },
   shiller: { name: "Robert Shiller, Online Data", url: "https://shillerdata.com/" },
   dbnomics: { name: "DBnomics (Datensätze von IWF, OECD, Eurostat, EZB, BIZ, Weltbank, Fed u. a.)", url: "https://db.nomics.world/" },
+  wgc: { name: "World Gold Council, Goldhub (hochgeladene Excel-Dateien)", url: "https://www.gold.org/goldhub/data" },
+  r2: { name: "Eigener Eingang im R2-Bucket", url: "https://developers.cloudflare.com/r2/" },
   pictet: { name: "Pictet Research Institute: Demographics and Technology (Oktober 2025)", url: "https://am.pictet.com/content/dam/am-pictet/media/global/investment-research/demographics-and-technology/PictetResearchInstitute_Demographics-and-Technology.pdf" },
 };
 
@@ -476,6 +478,41 @@ function goldFacts() {
   ];
   return out.filter(Boolean);
 }
+/* Nachfrage nach Gold (World Gold Council, hochgeladene Goldhub-Dateien): nur zur Information, ohne Gewicht im Signal */
+const WGC_NOTE = "Zählt nicht im Signal (Prüfung 2003–2026): Die ETF-Zuflüsse folgen dem Kursmomentum, das schon im Trend-Baustein steckt; ohne dieses Momentum bleibt kein Vorhersagewert. Die übrigen Größen hielten ihr Vorzeichen nicht in beiden Hälften des Zeitraums.";
+function goldDemand() {
+  const et = LP("wgc_etf_t"), ef = LP("wgc_etf_flow"), ea = LP("wgc_etf_flow_asia"), cb = LP("wgc_cb_world"), cq = LP("wgc_q_cb"), pc = LP("wgc_prem_cn"), pi = LP("wgc_prem_in");
+  const last = a => a[a.length - 1];
+  const sumLast = (a, n) => (a.length >= n ? a.slice(-n).reduce((x, q) => x + q.v, 0) : null);
+  const qLabel = t => { const iso = SIG.isoOf(t); return `${Math.floor((+iso.slice(5, 7) - 1) / 3) + 1}. Quartal ${iso.slice(0, 4)}`; };
+  const out = [];
+  if (et.length > 12) {
+    const a = last(et), b = et[et.length - 13];
+    out.push({ label: "Bestand der Gold-ETFs", value: fmt(a.v, 0), unit: "Tonnen", meta: [deMonth(SIG.isoOf(a.t)), `12 Monate ${signed(a.v - b.v, 0)} t`],
+      info: { t: "Bestand der Gold-ETFs weltweit", d: "Gold, das physisch besicherte Gold-ETFs und ähnliche Fonds weltweit halten.", f: ["Monatsende in Tonnen (World Gold Council, Goldhub).", "Veränderung = Bestand heute − Bestand vor zwölf Monaten.", WGC_NOTE], r: calc(fmt(a.v, 0), "−", fmt(b.v, 0), "=", signed(a.v - b.v, 0) + " t") } });
+  }
+  if (ea.length >= 3) {
+    const v = sumLast(ea, 3), w = sumLast(ef, 3);
+    out.push({ label: "ETF-Zuflüsse Asien", value: signed(v, 0), unit: "t in 3 Monaten", meta: [`bis ${deMonth(SIG.isoOf(last(ea).t))}`, w == null ? "" : `weltweit ${signed(w, 0)} t`],
+      info: { t: "Zuflüsse der Gold-ETFs in Asien", d: "Käufe (positiv) und Verkäufe (negativ) der Gold-ETFs in Asien, vor allem China, Indien und Japan.", f: ["Summe der Monatszuflüsse der letzten drei Monate in Tonnen (World Gold Council).", "In beiden Hälften 2007–2026 positiv mit der Goldrendite der folgenden zwölf Monate verbunden (Rangkorrelation +0,26), der Zufallstest liegt mit p = 0,07 aber über 5 %.", WGC_NOTE], r: `Summe der letzten drei Monate: ${signed(v, 0)} t` } });
+  }
+  if (cb.length >= 12) {
+    const v = sumLast(cb, 12);
+    out.push({ label: "Zentralbanken (gemeldet)", value: signed(v, 0), unit: "t in 12 Monaten", meta: [`bis ${deMonth(SIG.isoOf(last(cb).t))}`, `letzter Monat ${signed(last(cb).v, 0)} t`],
+      info: { t: "Goldkäufe der Zentralbanken laut IWF-Meldungen", d: "Veränderung der Goldreserven aller Länder, wie sie die Zentralbanken an den IWF melden (International Financial Statistics, aufbereitet vom World Gold Council). Nicht gemeldete Käufe fehlen.", f: ["Summe der Monatsveränderungen aller Länder über die letzten zwölf Monate in Tonnen; die Meldungen kommen rund zwei Monate verzögert.", WGC_NOTE], r: `Summe der letzten zwölf Monate: ${signed(v, 0)} t` } });
+  }
+  if (cq.length >= 4) {
+    const v = sumLast(cq, 4);
+    out.push({ label: "Zentralbanken (geschätzt)", value: fmt(v, 0), unit: "t in 4 Quartalen", meta: [`bis ${qLabel(last(cq).t)}`, `letztes Quartal ${fmt(last(cq).v, 0)} t`],
+      info: { t: "Goldnachfrage der Zentralbanken (Gold Demand Trends)", d: "Käufe der Zentralbanken und anderer Institutionen einschließlich der nicht gemeldeten, geschätzt von Metals Focus für den World Gold Council.", f: ["Summe der letzten vier Quartale in Tonnen; erscheint rund fünf Wochen nach Quartalsende.", "In der Prüfung stark in der zweiten Hälfte (ab 2019, Kaufwelle der Zentralbanken), davor aber gegenläufig.", WGC_NOTE], r: `Summe der letzten vier Quartale: ${fmt(v, 0)} t` } });
+  }
+  if (pc.length) {
+    const a = last(pc), b = pi.length ? last(pi) : null;
+    out.push({ label: "Aufschlag in China", value: signed(a.v, 1), unit: "US-$/Unze", meta: [deShort(SIG.isoOf(a.t)), b ? `Indien ${signed(b.v, 1)} US-$` : ""],
+      info: { t: "Preisaufschlag am chinesischen Goldmarkt", d: "Wie viel mehr (oder weniger) Gold in Shanghai kostet als in London. Ein hoher Aufschlag zeigt starke Nachfrage in China.", f: ["Preis an der Shanghai Gold Exchange, in US-Dollar je Unze umgerechnet, minus Goldpreis in London (World Gold Council). Indien entsprechend gegenüber dem Inlandspreis.", WGC_NOTE], r: `${signed(a.v, 1)} US-$ je Unze am ${deShort(SIG.isoOf(a.t))}` } });
+  }
+  return out;
+}
 const GOLD_INFO = () => ({
   d: ["Eigene Monatsübersicht für Gold: Gold in US-Dollar, Franken und Euro, Silber sowie Gold im Verhältnis zu Aktien und Anleihen, jeweils mit Stufe und Änderung zum Vormonat.", `Horizont: ${BARO.horizon.title}. Die Treiber darunter zeigen die Säulen des Signals für Gold in US-Dollar.`],
   f: ["Gold in Franken und Euro: Dollarpreis ÷ Wechselkurs; gleiche Säulenlogik wie Gold in Dollar, die Währungsentwicklung fließt über Trend und Momentum ein.",
@@ -519,8 +556,16 @@ function renderGold() {
     sh.body.append(h("div", { style: "overflow-x:auto" }, dg));
     fitBars(dg);
   }
+  const dem = goldDemand();
+  if (dem.length) {
+    sh.body.append(h("h4", { class: "gold-sub" }, "Nachfrage nach Gold (World Gold Council)", info(() => ({ t: "Nachfrage nach Gold", d: "ETF-Bestände und -Zuflüsse, Käufe der Zentralbanken und Preisaufschläge in China und Indien aus den Daten des World Gold Council (Goldhub).", f: ["Die Dateien werden hochgeladen (privater Eingang des Monitors) und täglich übernommen; Stand je Kachel.", WGC_NOTE] }), "Nachfrage nach Gold")));
+    sh.body.append(h("div", { class: "gold-facts" }, ...dem.map(x => h("div", { class: "tile" },
+      h("div", { class: "label" }, x.label, info(x.info, x.label)),
+      h("div", { class: "value" }, x.value, x.unit ? h("small", { text: x.unit }) : null),
+      h("div", { class: "meta" }, ...x.meta.filter(Boolean).map(m => h("span", { text: m })))))));
+  }
   const f = h("footer", { class: "src" });
-  srcLinks(f, liveSrcIds("gold_usd", "gold_usd_imf", "silver_usd", "fx_chf", "eq_us", "y10_us", "real10_us", "cpi_us_index"));
+  srcLinks(f, liveSrcIds("gold_usd", "gold_usd_imf", "silver_usd", "fx_chf", "eq_us", "y10_us", "real10_us", "cpi_us_index", "wgc_etf_t"));
   sh.el.append(f);
 }
 
