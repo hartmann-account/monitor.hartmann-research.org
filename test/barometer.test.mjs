@@ -58,3 +58,17 @@ test("Barometer auf dem Startbestand", { skip: !existsSync(snapFile) }, () => {
   console.log("ohne Daten:", B.rows.filter(r => !r.now).map(r => r.row.id).join(", "));
   console.log("Risikoappetit", B.risk && B.risk.s.toFixed(2), B.risk && B.risk.parts.map(p => `${p.k}: ${p.v == null ? "" : p.v.toFixed(2)}`).join("; "));
 });
+
+test("Signalverlauf: Rückrechnung zu Monatsenden", { skip: !existsSync(snapFile) }, async () => {
+  const { historyWithoutDb } = await import("../worker/jobs-signals.js");
+  const snap = JSON.parse(readFileSync(snapFile, "utf8"));
+  const hist = existsSync(histFile) ? JSON.parse(readFileSync(histFile, "utf8")) : null;
+  const h = historyWithoutDb(snap, hist);
+  assert.ok(h.dates.length >= 20, `nur ${h.dates.length} Stichtage`);
+  assert.deepEqual(h.dates, h.dates.slice().sort());
+  assert.ok(Object.keys(h.rows).length >= 25);
+  for (const r of Object.values(h.rows)) {
+    assert.equal(r.c.length, h.dates.length);
+    for (const c of r.c) assert.ok(c == null || (c >= -2 && c <= 2));
+  }
+});

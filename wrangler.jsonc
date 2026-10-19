@@ -19,6 +19,10 @@
   "kv_namespaces": [
     { "binding": "DATA" }
   ],
+  // Signalverlauf des Anlagebarometers; ohne "database_id" legt Wrangler die Datenbank beim Deploy automatisch an.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "monitor-signals" }
+  ],
   "triggers": {
     "crons": ["*/10 * * * *"]
   },

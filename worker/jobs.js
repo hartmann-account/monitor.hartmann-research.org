@@ -10,6 +10,7 @@ import { fredMulti } from "./providers/official.js";
 import { ecbData, snbCube, snbRssRates, sixDaily, bundesbank, boe, mofJgb, bis, imfSdmx, nbpGoldUsd, bojApi } from "./providers/markets.js";
 import { MACRO_JOBS } from "./jobs-macro.js";
 import { GEO_JOBS } from "./jobs-geo.js";
+import { SIGNAL_JOBS } from "./jobs-signals.js";
 
 /* ------------------------------------------------------------------ Märkte */
 const MARKET_JOBS = [
@@ -289,4 +290,4 @@ const MARKET_JOBS = [
   },
 ];
 
-export const JOBS = [...MARKET_JOBS, ...MACRO_JOBS, ...GEO_JOBS];
+export const JOBS = [...MARKET_JOBS, ...MACRO_JOBS, ...GEO_JOBS, ...SIGNAL_JOBS];

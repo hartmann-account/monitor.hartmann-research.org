@@ -1,10 +1,12 @@
 /* Big-Cycle-Monitor: Worker.
    GET  /api/snapshot   alle Live-Reihen und der Abrufstatus (KV, Fallback: statischer Seed data/live.json)
    GET  /api/status     nur der Abrufstatus
+   GET  /api/signals    Signalverlauf des Anlagebarometers aus D1 (?daily=Tage mit Tageswerten, Standard 120)
    POST /api/run        Abruf sofort anstoßen (nur mit Secret ADMIN_TOKEN; ?jobs=a,b für bestimmte Jobs)
    Alles andere liefert die statische Seite aus public/. Der Cron-Trigger ruft scheduled() auf. */
 import { runDueJobs, META_KEY, SNAP_KEY } from "./runner.js";
 import { JOBS } from "./jobs.js";
+import { readHistory } from "./jobs-signals.js";
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -51,6 +53,19 @@ async function status(env) {
   return json({ updatedAt: meta.updatedAt || null, jobs });
 }
 
+async function signals(request, env, ctx) {
+  if (!env.DB) return json({ error: "Keine D1-Datenbank gebunden" }, 404);
+  const url = new URL(request.url);
+  const cache = caches.default;
+  const key = new Request(url.toString());
+  const hit = await cache.match(key);
+  if (hit) return hit;
+  const daily = Math.min(2000, Math.max(0, +(url.searchParams.get("daily") ?? 120) || 0));
+  const res = json(await readHistory(env.DB, { days: 2000, daily }), 200, { "cache-control": "public, max-age=600" });
+  ctx.waitUntil(cache.put(key, res.clone()));
+  return res;
+}
+
 async function manualRun(request, env, ctx) {
   const auth = request.headers.get("authorization") || "";
   if (!env.ADMIN_TOKEN || auth !== `Bearer ${env.ADMIN_TOKEN}`) return json({ error: "nicht berechtigt" }, 401);
@@ -67,6 +82,7 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
     if (url.pathname === "/api/snapshot" && request.method === "GET") return snapshot(request, env, ctx);
     if (url.pathname === "/api/status" && request.method === "GET") return status(env);
+    if (url.pathname === "/api/signals" && request.method === "GET") return signals(request, env, ctx);
     if (url.pathname === "/api/run" && request.method === "POST") return manualRun(request, env, ctx);
     if (url.pathname.startsWith("/api/")) return json({ error: "unbekannter Endpunkt" }, 404);
     return env.ASSETS.fetch(request);

@@ -5,16 +5,17 @@
 import { JOBS } from "./jobs.js";
 import { makeFetcher } from "./lib/http.js";
 import { lastObs } from "./lib/series.js";
+import { META_KEY, SNAP_KEY } from "./keys.js";
 
-export const META_KEY = "meta:v2";
-export const SNAP_KEY = "snapshot:v2";
+export { META_KEY, SNAP_KEY };
 const HOUR = 3600000;
 
 function backoff(fails) { return [1, 2, 4, 8, 12, 24][Math.min(fails - 1, 5)] * HOUR; }
 
-export function dueJobs(meta, now, jobs = JOBS) {
+export function dueJobs(meta, now, jobs = JOBS, env = null) {
   const due = [];
   for (const j of jobs) {
+    if (env && !hasBindings(j, env)) continue;
     const s = (meta.jobs && meta.jobs[j.id]) || {};
     if (s.retryAt && s.retryAt > now) continue;
     const last = s.okAt ? Date.parse(s.okAt) : 0;
@@ -25,6 +26,9 @@ export function dueJobs(meta, now, jobs = JOBS) {
   due.sort((a, b) => b.age - a.age);
   return due.map(d => d.job);
 }
+
+/* Jobs mit Bindings (etwa D1) laufen nur, wenn diese vorhanden sind */
+export function hasBindings(job, env) { return !job.requires || job.requires.every(b => env && env[b]); }
 
 /* Kennzahlen einer Jobausgabe für den Datenstatus */
 export function summarize(out) {
@@ -62,7 +66,7 @@ export async function runDueJobs(env, opts = {}) {
   const maxJobs = Math.max(1, +(opts.maxJobs ?? env.MAX_JOBS_PER_RUN ?? 5));
   const budget = Math.max(1, +(env.SUBREQUEST_BUDGET ?? 40));
   const only = opts.only ? new Set(opts.only) : null;
-  const queue = only ? JOBS.filter(j => only.has(j.id)) : dueJobs(meta, now);
+  const queue = only ? JOBS.filter(j => only.has(j.id) && hasBindings(j, env)) : dueJobs(meta, now, JOBS, env);
   const fetcher = makeFetcher(budget);
   const ran = [];
   for (const job of queue) {

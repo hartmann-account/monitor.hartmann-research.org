@@ -201,12 +201,20 @@ function detailPanel(r) {
     if (!w[p.id]) return null;
     const pp = r.now.pillars[p.id];
     return h("div", { class: "pillar" },
-      h("h5", null, h("span", null, p.label, info(pillarInfo(r, p), `${p.label} für ${r.row.label}`), ` · Gewicht ${fmt(100 * w[p.id], 0)} %`), h("span", null, pp ? signed(pp.s, 2) : "keine Daten", " ", pillarBar(pp ? pp.s : null))),
+      h("h5", null, h("span", null, p.label, info(pillarInfo(r, p), `${p.label} für ${r.row.label}`), h("span", { class: "nowrap", text: ` · Gewicht ${fmt(100 * w[p.id], 0)} %` })), h("span", null, pp ? signed(pp.s, 2) : "keine Daten", " ", pillarBar(pp ? pp.s : null))),
       pp ? h("ul", null, ...pp.parts.map(q => h("li", null, h("span", { text: q.k + (q.d ? ` (${q.d})` : "") }), h("span", { class: "v", text: q.v == null ? (q.s != null ? signed(q.s, 2) : "") : fmtPart(q) }))))
         : h("p", { class: "small", text: "Für diese Säule liegen keine Daten vor; sie entfällt, die übrigen Gewichte werden hochgerechnet." }));
   }).filter(Boolean);
+  const H = signalHistory();
+  const strip = H && H.rows[r.row.id] ? (() => {
+    const cols = historyCols(H, 13);
+    const out = h("div", { class: "small hist-mini-read", text: "" });
+    return h("div", { class: "hist-mini" }, h("span", { class: "small", text: "Verlauf 12 Monate" }),
+      h("span", { class: "hist-mini-cells" }, ...cols.map(c => histCell(H, r.row.id, c, t => { out.textContent = t; }))), out);
+  })() : null;
   return h("div", { class: "pg-detail", hidden: true },
     h("div", { class: "pillars" }, ...cards),
+    strip,
     h("p", { class: "small", style: "margin-top:8px" },
       `${r.row.label}${r.row.sub ? " (" + r.row.sub + ")" : ""}: Gesamtwert ${signed(r.now.score, 2)} auf der Skala −2 bis +2, Datenstand ${deShort(SIG.isoOf(r.now.date))}; abgedeckt sind ${fmt(100 * r.now.coverage, 0)} % der Säulengewichte.`,
       r.prev && r.prev.cat ? ` Vor einem Monat: ${signed(r.prev.score, 2)} (${r.prev.cat.label}).` : "",
@@ -267,6 +275,8 @@ function renderBarometer() {
       const f = h("footer", { class: "src" });
       srcLinks(f, liveSrcIds(...new Set(BARO.rows.flatMap(r => collectIds(r.row.price)))));
       sh.el.append(f);
+    } else if (view === "hist") {
+      renderHistory(host);
     } else {
       for (const g of BARO.groups) {
         const rows = BARO.rows.filter(r => r.row.group === g.id && r.now);
@@ -316,6 +326,61 @@ const BARO_INFO = {
     "1 Monat und 12 Monate: letzter Kurs ÷ Kurs vor 30 bzw. 365 Tagen − 1. „Stand …“: jüngster Wert älter als eine Woche oder nur als Monatswert verfügbar."],
   s: "Rechenweg je Anlage: Zeile antippen, dann ⓘ an der Säule oder am Gesamtwert.",
 };
+/* ------------------------------------------------------------------ Signalverlauf (D1) */
+function signalHistory() { return LIVE && LIVE.items && LIVE.items.signal_history && LIVE.items.signal_history[0]; }
+/* je Monat der letzte gespeicherte Tag, dazu der jüngste Tag; höchstens `max` Spalten */
+function historyCols(H, max = 25) {
+  const cols = H.dates.map((d, i) => ({ d, i, kind: H.kinds[i] })).filter((c, k, a) => k === a.length - 1 || a[k + 1].d.slice(0, 7) !== c.d.slice(0, 7));
+  return cols.slice(-max);
+}
+// Verlauf in zweifarbiger Skala (rot negativ, grau neutral, blau positiv), damit die Richtung ohne Skala lesbar ist
+const DIV_VARS = ["--neg2", "--neg1", "--neu", "--pos1", "--pos2"];
+const MONTH_SHORT = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+function histCell(H, id, c, onShow) {
+  const n = H.rows[id] ? H.rows[id].c[c.i] : null, sc = H.rows[id] ? H.rows[id].s[c.i] : null;
+  const cat = n == null ? null : SIG.cfg.cats.find(x => x.n === n);
+  const text = `${deShort(c.d)}: ${cat ? `${cat.sym} ${cat.label}, Gesamtwert ${signed(sc, 2)}` : "keine Einstufung"} (${c.kind === "live" ? "gespeichert" : "rückgerechnet"})`;
+  const el = h("span", { class: `hc${n == null ? " none" : ""}${c.kind === "live" ? " live" : ""}`, style: n == null ? null : `background:var(${DIV_VARS[n + 2]})`, title: text, role: "img", "aria-label": text });
+  el.addEventListener("mouseenter", () => onShow(text));
+  el.addEventListener("click", () => onShow(text));
+  return el;
+}
+function renderHistory(host) {
+  const H = signalHistory();
+  if (!H || !H.dates || !H.dates.length) {
+    host.append(h("p", { class: "note-box", text: "Der Signalverlauf erscheint, sobald der Worker die Einstufungen in der D1-Datenbank gespeichert hat (Job „signal_history“, alle sechs Stunden)." }));
+    return;
+  }
+  const cols = historyCols(H, window.innerWidth <= 560 ? 13 : 25);
+  const firstLive = H.dates[H.kinds.indexOf("live")];
+  const sh = sheet(host, {
+    title: "Signalverlauf der letzten Monate", sub: `Stufe jeder Anlage zum Monatsende, rechts der jüngste Tag; Feld antippen für den Wert`,
+    info: { d: "Wie sich die Einstufung jeder Anlage über die Zeit entwickelt hat.",
+      f: ["Monatsenden vor dem Start der Datenbank: rückgerechnet mit demselben Modell und nur mit Daten, die zum jeweiligen Monatsende veröffentlicht gewesen wären (Monatsreihen nach ihrer üblichen Frist); das Shiller-KGV fehlt in der Rückrechnung.",
+        "Ab dem Start: der Worker rechnet das Barometer alle sechs Stunden und speichert den Stand des Tages in einer D1-Datenbank. Spätere Datenrevisionen ändern diese Werte nicht mehr.",
+        "Farbe = Stufe (gleiche Skala wie im Barometer, Toleranzband zur Vorperiode). Umrandete Felder: gespeicherte Tageswerte."],
+      r: [`${H.dates.length} Stichtage, ${Object.keys(H.rows).length} Anlagen`, firstLive ? `gespeichert seit ${deShort(firstLive)}` : "noch keine gespeicherten Tageswerte"],
+      s: "Abrufbar auch als JSON unter /api/signals." },
+  });
+  const readout = h("div", { class: "hist-readout", "aria-live": "polite", text: "Feld antippen oder mit der Maus darüberfahren, um Datum und Wert zu sehen." });
+  const show = name => text => { readout.textContent = `${name} · ${text}`; };
+  const head = h("div", { class: "hist-row hist-head" }, h("span", { class: "hist-name" }),
+    ...cols.map((c, k) => { const m = +c.d.slice(5, 7) - 1; const lab = k === cols.length - 1 ? "jetzt" : (m % 3 === 0 || k === 0) ? `${MONTH_SHORT[m]} ${c.d.slice(2, 4)}` : ""; return h("span", { class: "hist-m", text: lab }); }));
+  const grid = h("div", { class: "hist-grid", style: `--cols:${cols.length}` }, head);
+  for (const g of BARO.groups) {
+    const rows = BARO.rows.filter(r => r.row.group === g.id && H.rows[r.row.id]);
+    if (!rows.length) continue;
+    grid.append(h("div", { class: "hist-group", text: GROUP_LABELS[g.id] || g.label }));
+    for (const r of rows) {
+      const name = r.row.label;
+      grid.append(h("div", { class: "hist-row" }, h("span", { class: "hist-name", text: name, title: moverName(r) }), ...cols.map(c => histCell(H, r.row.id, c, show(moverName(r))))));
+    }
+  }
+  const legend = h("div", { class: "hist-legend" }, ...SIG.cfg.cats.map(c => h("span", { class: "lg" }, h("span", { class: "hc", style: `background:var(${DIV_VARS[c.n + 2]})` }), `${c.sym} ${c.label}`)),
+    h("span", { class: "lg" }, h("span", { class: "hc live", style: "background:var(--neu)" }), "gespeicherter Tageswert"));
+  sh.body.append(legend, h("div", { class: "hist-wrap" }, grid), readout);
+}
+
 /* Indikatoren für die Risikoausrichtung: die Säulen des Weltaktien-Signals als eigene Zeilen */
 function riskScorecard(host) {
   const w = BARO.rows.find(r => r.row.id === "eq_world" && r.now);

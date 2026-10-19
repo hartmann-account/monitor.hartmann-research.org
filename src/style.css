@@ -575,3 +575,31 @@ a.brand { text-decoration: none; color: inherit; }
   .verdict { font-size: 1.02rem; line-height: 1.5; }
   .movers-head a, .force .f-head a { padding: 6px 2px; }
 }
+
+/* Signalverlauf: Stufen je Anlage und Monatsende */
+.hist-wrap { overflow-x: auto; }
+.hist-grid { display: grid; gap: 2px; min-width: 0; font-size: 12.5px; }
+.hist-row { display: grid; grid-template-columns: minmax(96px, 170px) repeat(var(--cols), minmax(9px, 1fr)); gap: 2px; align-items: center; }
+.hist-head .hist-m { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: visible; height: 16px; }
+.hist-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 6px; color: var(--ink); }
+.hist-group { font-weight: 650; font-size: 12px; margin-top: 8px; padding-bottom: 2px; border-bottom: 1px solid var(--rule); }
+.hc { display: block; height: 18px; border-radius: 2px; cursor: pointer; }
+.hc.none { background: repeating-linear-gradient(45deg, var(--rule) 0 2px, transparent 2px 5px); }
+.hc.live { box-shadow: inset 0 0 0 1.5px var(--ink); }
+.hc:hover { outline: 2px solid var(--ink); outline-offset: 1px; }
+.hist-head .hist-m:last-child { direction: rtl; }
+.hist-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 10px; font-size: 12px; color: var(--ink-2); }
+.hist-legend .lg { display: inline-flex; align-items: center; gap: 6px; }
+.hist-legend .hc { width: 16px; height: 12px; cursor: default; }
+.hist-legend .hc:hover { outline: none; }
+.hist-readout { margin-top: 10px; font-size: 13px; color: var(--ink-2); min-height: 1.4em; }
+.hist-mini { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 10px; }
+.hist-mini-cells { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 14px; gap: 2px; }
+.hist-mini-cells .hc { height: 14px; }
+.hist-mini-read { flex-basis: 100%; min-height: 1.3em; }
+@media (max-width: 560px) {
+  .hist-row { grid-template-columns: minmax(78px, 110px) repeat(var(--cols), minmax(8px, 1fr)); }
+  .hist-head .hist-m { font-size: 9.5px; }
+  .hc { height: 16px; }
+}
+.nowrap { white-space: nowrap; }

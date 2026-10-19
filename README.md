@@ -11,7 +11,7 @@ Jede berechnete Größe trägt ein ⓘ. Ein Klick öffnet ein kleines Fenster mi
 | Kapitel | Inhalt | Aktualisierung |
 |---|---|---|
 | Lagebild | Kennzahlen, „Was steigt, was fällt?“, Kurzurteil | täglich |
-| Anlagebarometer | Signale für 41 Anlagen (Anlageklassen, Aktienregionen, Staatsanleihen, Unternehmensanleihen, Währungen inkl. Gold, Rohstoffe, relative Stärke) im Stil der Monatsübersicht von Pictet Asset Management, dazu Indikatoren für die Risikoausrichtung und ein Kurzüberblick | täglich |
+| Anlagebarometer | Signale für 41 Anlagen (Anlageklassen, Aktienregionen, Staatsanleihen, Unternehmensanleihen, Währungen inkl. Gold, Rohstoffe, relative Stärke) im Stil der Monatsübersicht von Pictet Asset Management, dazu Indikatoren für die Risikoausrichtung, ein Kurzüberblick und der Signalverlauf über 24 Monate | täglich |
 | Konjunktur und Märkte | Konjunkturuhr (OECD-Frühindikatoren), Inflation, Arbeitslosigkeit, Wachstum, Märkte, Risikokacheln | täglich bis monatlich |
 | Schuldenzyklus | Staatsschulden mit IWF-Projektionen, reale Leitzinsen, Währungen in Gold, Reservewährungsanteile, Zentralbankbilanzen; lange Historien der USA | täglich bzw. wöchentlich |
 | Machtindex | Acht Machtfaktoren nach Dalio seit 1500 | wöchentlich |
@@ -30,7 +30,8 @@ Cloudflare-Cron (alle 10 Min.)
           ├─► KV  job:<id>      letzte gute Ausgabe je Job
           ├─► KV  state:<k>     Arbeitszustand (GDELT-Tageswerte)
           ├─► KV  meta:v2       Status, Fehler, Backoff je Job
-          └─► KV  snapshot:v2   alle Ausgaben, als Zeichenkette zusammengesetzt
+          ├─► KV  snapshot:v2   alle Ausgaben, als Zeichenkette zusammengesetzt
+          └─► D1  signals       Einstufung jeder Anlage je Tag (Signalverlauf, Job signal_history)
 
 Browser ─► GET /api/snapshot ─► Edge-Cache (5 Min.) ─► KV snapshot:v2
                                    Rückfall: statischer Startbestand public/data/live.json
@@ -42,6 +43,7 @@ Browser ─► GET /data/bigcycle.json   lange Historien (wöchentlich über Git
 - **Letzter guter Stand:** Schlägt ein Abruf fehl, bleibt die alte Ausgabe stehen. Der Job wartet dann 1, 2, 4, 8, 12 bzw. 24 Stunden bis zum nächsten Versuch (wie bei World Monitor).
 - **Historien wachsen mit:** Viele Jobs laden nur die letzten Wochen nach und hängen sie an die gespeicherte Reihe an (`keep: true`). Tageswerte, die älter als 800 Tage sind, werden auf Wochenwerte ausgedünnt.
 - **GDELT:** Alle 30 Minuten verarbeitet der Worker die neuesten 15-Minuten-Dateien der GDELT-Ereignisdatenbank und führt Tagessummen je Länderpaar für 150 Tage (Startbestand: `public/data/gdelt-state.json`).
+- **Signalverlauf (D1):** Alle sechs Stunden rechnet der Worker das Anlagebarometer mit demselben Modell wie die Seite (`src/signals.js`). Den Stand des Tages speichert er in der D1-Datenbank `monitor-signals`, Tabelle `signals`. Beim ersten Lauf rechnet er zusätzlich 24 Monatsenden zurück, und zwar nur mit Daten, die damals veröffentlicht gewesen wären. Gespeicherte Tageswerte ändern sich danach nicht mehr, so entsteht eine echte Historie der Signale.
 - **Wöchentliche Pipeline** (`pipeline/build_data.py`, GitHub Actions montags 05:17 UTC): baut die langen Historien (Machtindex seit 1500, US-Schulden seit 1790, Shiller-Daten, geopolitischer Risikoindex usw.). Danach übernimmt sie den aktuellen Worker-Snapshot als neuen Startbestand.
 
 ```
@@ -74,7 +76,7 @@ Alternativ geht es lokal: `npx wrangler login` und danach `npm run deploy`.
 
 ### 3. Speicher und Cron
 
-Hier ist nichts zu tun. Den KV-Namespace für das Binding `DATA` legt Wrangler beim ersten Deploy automatisch an (ab Wrangler 4.45). Der Cron-Trigger `*/10 * * * *` steht in `wrangler.jsonc`.
+Hier ist nichts zu tun. Den KV-Namespace für das Binding `DATA` und die D1-Datenbank `monitor-signals` für das Binding `DB` legt Wrangler beim Deploy automatisch an (ab Wrangler 4.45). Die Tabelle erzeugt der Worker selbst. Der Cron-Trigger `*/10 * * * *` steht in `wrangler.jsonc`.
 
 ### 4. Optionale Secrets und Variablen
 
@@ -135,6 +137,7 @@ Für `POST /api/run` lokal eine Datei `.dev.vars` mit `ADMIN_TOKEN=…` anlegen;
 |---|---|
 | `GET /api/snapshot` | alle Live-Reihen, Listen (Prognosemärkte, Naturgefahren) und der Status aller Jobs; 5 Minuten im Edge-Cache |
 | `GET /api/status` | nur der Status der Jobs (Zeitpunkt, Fehler, jüngster Wert, Größe, Dauer) |
+| `GET /api/signals` | Signalverlauf aus D1: Stichtage, Art (rückgerechnet oder gespeichert), Gesamtwert und Stufe je Anlage; `?daily=365` liefert die Tageswerte der letzten 365 Tage statt nur der Monatsenden |
 | `POST /api/run?jobs=a,b` | Jobs sofort ausführen (Header `Authorization: Bearer <ADMIN_TOKEN>`) |
 
 Reihenformat im Snapshot: `{f: "D", s: "2014-01-02", d: [Tagesabstände], v: [Werte], l, u, src}` für Tageswerte. Monats-, Quartals- und Jahresreihen (`f: "M" | "Q" | "A"`) bestehen nur aus Startperiode und Werten.
@@ -172,6 +175,7 @@ Alle Quellen sind ohne Schlüssel und dauerhaft abrufbar. Fast alle sind amtlich
 | `gdelt_tension` | Spannungsmonitor aus der GDELT-Ereignisdatenbank | GDELT Project | 30 Min. |
 | `polymarket` | Prognosemärkte zu Konflikten, Rezession und Zinsen | Polymarket | 6 Std. |
 | `gdacs` | Naturgefahren mit oranger oder roter Warnstufe | GDACS (EU/UN) | 6 Std. |
+| `signal_history` | Signalverlauf des Anlagebarometers (eigene Berechnung, D1) | – | 6 Std. |
 
 Die wöchentliche Pipeline nutzt zusätzlich Our World in Data, die Weltbank, den IWF (DataMapper, COFER), FRED, U.S. Treasury Fiscal Data und die Shiller-Daten (shillerdata.com). Hinzu kommen der Geopolitical Risk Index und der Trade Policy Uncertainty Index (Caldara, Iacoviello), die Jordà-Schularick-Taylor Macrohistory Database, Correlates of War, die Millennium-Daten der Bank of England, Voteview und die Nobelpreis-API. Die Quellenangaben stehen an jeder Grafik und in `public/data/bigcycle.json` unter `sources`.
 

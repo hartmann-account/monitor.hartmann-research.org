@@ -9,7 +9,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { JOBS } from "../worker/jobs.js";
 import { makeFetcher, sleep } from "../worker/lib/http.js";
-import { runJob, summarize, statusOf } from "../worker/runner.js";
+import { runJob, summarize, statusOf, hasBindings } from "../worker/runner.js";
+import { historyWithoutDb } from "../worker/jobs-signals.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "public", "data", "live.json");
@@ -25,7 +26,7 @@ const data = { ...prevSnap.data };
 const now = Date.now();
 let failed = 0;
 for (const job of JOBS) {
-  if ((only.length && !only.includes(job.id)) || except.includes(job.id)) {
+  if ((only.length && !only.includes(job.id)) || except.includes(job.id) || !hasBindings(job, env)) {
     if (prevSnap.status && prevSnap.status[job.id]) meta.jobs[job.id] = { ...prevSnap.status[job.id] };
     continue;
   }
@@ -55,6 +56,15 @@ for (const job of JOBS) {
   if (job.source === "oecd") await sleep(8000);
 }
 meta.updatedAt = new Date().toISOString();
+// Signalverlauf ohne D1: Rückrechnung aus dem Startbestand, damit die Verlaufsansicht von Anfang an etwas zeigt
+try {
+  const histFile = join(root, "public", "data", "bigcycle.json");
+  const hist = existsSync(histFile) ? JSON.parse(readFileSync(histFile, "utf8")) : null;
+  const h = historyWithoutDb({ schema: 2, data, status: {} }, hist);
+  data.signal_history = { series: {}, items: [h] };
+  meta.jobs.signal_history = { n: 1, latest: h.dates[h.dates.length - 1], ok: true, okAt: meta.updatedAt, error: null };
+  console.log(`ok    signal_history     ${h.dates.length} Stichtage (rückgerechnet, ohne D1)`);
+} catch (e) { console.log("FEHLER signal_history", e.message); }
 const snap = { schema: 2, generated: meta.updatedAt, origin: "seed", status: statusOf(meta), data };
 writeFileSync(out, JSON.stringify(snap));
 console.log(`\ngeschrieben: public/data/live.json (${(JSON.stringify(snap).length / 1024).toFixed(0)} KB), ${failed} Fehler`);

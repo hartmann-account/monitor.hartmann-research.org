@@ -555,10 +555,9 @@ const SIG = (() => {
     if (hy.length > 100) { const d = change(hy, 91, "diff"); if (d != null) parts.push({ k: "Hochzins-Risikoprämie, 3 Monate", v: d, u: "Pp.", s: clip2(-d / 0.6) }); }
     const fs = asOf(L.s["stlfsi"], cut);
     if (fs.length > 20) parts.push({ k: "Finanzstressindex (St. Louis Fed)", v: last(fs).v, u: "", s: clip2(-last(fs).v / 1.2) });
-    const gpr = L.tension && L.tension.global;
-    if (gpr && gpr.z != null && cut == null) parts.push({ k: "Geopolitisches Risiko (Abweichung vom Jahresmittel)", v: gpr.z, u: "σ", s: clip2(-gpr.z / 1.5) });
-    const gprPrev = L.tension && L.tension.globalPrev;
-    if (gprPrev && gprPrev.z != null && cut != null) parts.push({ k: "Geopolitisches Risiko (Abweichung vom Jahresmittel)", v: gprPrev.z, u: "σ", s: clip2(-gprPrev.z / 1.5) });
+    const T = L.tension;
+    const gz = !T ? null : cut == null ? (T.global ? T.global.z : null) : T.zAt ? T.zAt(cut) : (T.globalPrev ? T.globalPrev.z : null);
+    if (gz != null) parts.push({ k: "Geopolitisches Risiko (Abweichung vom Viermonatsmittel)", v: gz, u: "σ", s: clip2(-gz / 1.5) });
     if (!parts.length) return null;
     return { s: mean(parts.map(q => q.s)), parts };
   }
@@ -571,7 +570,7 @@ const SIG = (() => {
     if (ra) { s = b * ra.s; parts.push({ k: `Risikoappetit × Risikobeta (${b > 0 ? "+" : ""}${b})`, v: ra.s, u: "", s }); }
     for (const [pair, w] of row.geo || []) {
       const t = L.tension && L.tension.pairs && L.tension.pairs[pair];
-      const z = t ? (cut == null ? t.z : t.zPrev) : null;
+      const z = t ? (cut == null ? t.z : t.zAt ? t.zAt(cut) : t.zPrev) : null;
       if (z == null) continue;
       const g = clip2(w * z);
       parts.push({ k: `Spannung ${t.label}`, v: z, u: "σ", s: g });
@@ -651,6 +650,33 @@ const SIG = (() => {
     return { rows, groups: GROUPS, risk: raNow, riskPrev: raPrev, tNow, tPrev };
   }
 
+  /* Signalverlauf: Einstufung aller Zeilen zu früheren Monatsenden, mit dem Datenstand, der damals
+     veröffentlicht gewesen wäre (Veröffentlichungsfristen wie beim Vormonat). Das Shiller-KGV liegt nur als
+     aktueller Wert vor und bleibt in der Rückrechnung außen vor. Stufen mit Toleranzband zur Vorperiode. */
+  function backfill(L, months = 24, tNow = null) {
+    const t0 = tNow ?? Math.max(...["eq_us", "y10_us", "fx_chf", "gold_usd"].map(id => last((L.s[id] || { pts: [] }).pts)).filter(Boolean).map(p => p.t));
+    const d0 = new Date(t0 * DAY);
+    const cuts = [];
+    for (let m = months; m >= 1; m--) cuts.push(Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth() - m + 1, 0) / DAY);
+    const cape = L.cape;
+    L.cape = null;
+    const out = [];
+    const prevCat = {};
+    try {
+      for (const cut of cuts) {
+        const ra = riskAppetite(L, cut);
+        for (const row of ROWS) {
+          const e = evaluate(L, row, cut, ra);
+          if (!e) continue;
+          const cat = category(e.score, prevCat[row.id]);
+          prevCat[row.id] = cat;
+          out.push({ d: isoOf(cut), id: row.id, score: e.score, cat: cat.n, p: Object.fromEntries(Object.entries(e.pillars).map(([k, v]) => [k, v ? v.s : null])) });
+        }
+      }
+    } finally { L.cape = cape; }
+    return out;
+  }
+
   /* Konjunkturphase aus dem Frühindikator: Niveau über/unter 100, Dynamik positiv/negativ */
   function cyclePhase(p) {
     if (!p || p.length < 6) return null;
@@ -694,7 +720,7 @@ const SIG = (() => {
       const k14 = kser ? mean(kser.pts.filter(q => q.t > a.t - 14).map(q => q.v)) : null;
       const events7 = nser ? nser.pts.filter(q => q.t > a.t - 7).reduce((x, q) => x + q.v, 0) : null;
       out.pairs[pair] = {
-        label: (s.l || pair).replace(/^Konfliktintensität:\s*/, ""), pct, z, zPrev, wow, now7: cur.v,
+        label: (s.l || pair).replace(/^Konfliktintensität:\s*/, ""), pct, z, zPrev, zAt, wow, now7: cur.v,
         share: c14 != null && k14 != null && c14 + k14 > 0 ? c14 / (c14 + k14) : null, events7,
         spark: m7.map(q => [yearFrac(q.t), q.v]), last: isoOf(a.t),
       };
@@ -704,6 +730,8 @@ const SIG = (() => {
     }
     if (zs.length) out.global = { z: mean(zs), n: zs.length };
     if (zsPrev.length) out.globalPrev = { z: mean(zsPrev), n: zsPrev.length };
+    // Abweichung über alle Konfliktlinien zu einem beliebigen Stichtag (für Vormonat und Rückrechnung)
+    out.zAt = t => { const v = Object.values(out.pairs).map(p => p.zAt(t)).filter(z => z != null); return v.length ? mean(v) : null; };
     return out;
   }
 
@@ -760,7 +788,7 @@ const SIG = (() => {
   return {
     cfg, ROWS, GROUPS, decodeSeries, decodeSnapshot, asOf, last, valueAt, change, annVol, trendDeviation, zScore, yoy,
     combine, bondIndex, priceSeries, pillarTrend, growthScore, riskAppetite, evaluate, barometer, category, cyclePhase,
-    tensionFromGdelt, prepareLive, basketSeries, isoOf, dayOf, yearFrac, mean, median, sd, clip2,
+    tensionFromGdelt, prepareLive, basketSeries, isoOf, dayOf, yearFrac, mean, median, sd, clip2, backfill,
   };
 })();
 
