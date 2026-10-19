@@ -2,7 +2,8 @@
 /* Backtest des Anlagebarometers auf der Historie im Datenarchiv (D1), dieselbe Rechnung wie die Worker-Jobs backtest_*.
    Aufruf: node scripts/backtest.mjs [--local] [--api https://monitor.hartmann-it.workers.dev] [--from 1970-01]
                                     [--hz m1,y1,lt] [--panel datei.json] [--out datei.json] [--alfred datei.json]
-   --local liest die lokale D1-Datenbank von wrangler dev (.wrangler/state), sonst die öffentliche API des Workers.
+   --local liest die lokale D1-Datenbank von wrangler dev (.wrangler/state), sonst die API des Workers (bei
+   passwortgeschützter Seite mit dem Passwort in der Umgebungsvariable SITE_PASSWORD).
    --panel speichert alle Einzelwerte (Säulen, Gesamtwert, spätere Renditen), --out die Zusammenfassungen
    (public/data/backtest.json: Rückfall der Seite, solange der Worker noch keine eigenen Ergebnisse liefert). */
 import { writeFileSync, readdirSync, readFileSync, existsSync } from "node:fs";
@@ -30,14 +31,17 @@ async function loadLocal() {
   for (const id of btSeriesIds(catalog.map(r => r.id))) raw[id] = { freq: freq[id], points: db.prepare(freq[id] === "D" ? THIN_SQL : FULL_SQL).all(id).map(r => [r.d, r.v]) };
   return raw;
 }
+const headers = process.env.SITE_PASSWORD ? { authorization: `Bearer ${process.env.SITE_PASSWORD}` } : {};
 async function loadApi(base) {
-  const cat = await (await fetch(`${base}/api/archive`)).json();
+  const c = await fetch(`${base}/api/archive`, { headers });
+  if (!c.ok) throw new Error(`API ${c.status} für /api/archive${c.status === 401 ? " (Passwort in SITE_PASSWORD angeben)" : ""}`);
+  const cat = await c.json();
   const freq = Object.fromEntries(cat.series.map(s => [s.id, s.freq]));
   const ids = btSeriesIds(cat.series.map(s => s.id));
   const raw = {};
   for (let i = 0; i < ids.length; i += 5) {
     const part = ids.slice(i, i + 5);
-    const r = await fetch(`${base}/api/series?id=${part.join(",")}&thin=w`);
+    const r = await fetch(`${base}/api/series?id=${part.join(",")}&thin=w`, { headers });
     if (!r.ok) throw new Error(`API ${r.status} für ${part.join(",")}`);
     const j = await r.json();
     for (const id of part) if (j[id]) raw[id] = { freq: freq[id], points: j[id].points };

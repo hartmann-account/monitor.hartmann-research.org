@@ -130,13 +130,15 @@ Im Dashboard unter Worker → **Einstellungen** → **Variablen und Secrets**, o
 | `MAX_JOBS_PER_RUN`, `SUBREQUEST_BUDGET` | Variable | Jobs und Subrequests je Cron-Lauf (in `wrangler.jsonc`: 8 und 80); der DBnomics-Import hat ein eigenes Budget von 300 Abrufen je Lauf |
 | `DBNOMICS_MIRROR` | Variable | schaltet den Job `dbnomics_mirror` ein: Anbieterkennungen mit Komma (etwa `Eurostat,OECD`) oder `*` für alle; lädt deren Datensätze nur als Rohdaten nach R2 |
 
-### 5. Passwortschutz (private Seite)
+### 5. Passwortschutz (erledigt)
 
 Die Seite ist für den eigenen Gebrauch gedacht; lizenzierte Daten (World Gold Council: persönliche, nicht-kommerzielle Nutzung) gehören hinter ein Passwort:
 
 1. Im Dashboard unter Worker `monitor` → **Einstellungen** → **Variablen und Secrets** → **Hinzufügen**, Typ **Secret**, Name `SITE_PASSWORD`, Wert: ein langes Passwort. Ab dem Speichern verlangt die Seite die Anmeldung; alle Anfragen laufen dafür zuerst durch den Worker (`run_worker_first: true` in `wrangler.jsonc`).
 2. Damit der wöchentliche Workflow den Snapshot weiter abholen kann: auf GitHub unter **Settings** → **Secrets and variables** → **Actions** dasselbe Passwort als Secret `SITE_PASSWORD` anlegen.
 3. Das Repository ist öffentlich. Lizenzierte Daten landen dort nicht: Der Startbestand `public/data/live.json` wird ohne die WGC-Daten geschrieben, die Rohdaten liegen im privaten Eingang des R2-Buckets. Wer auch den Code nicht zeigen will, stellt das Repository unter **Settings** → **General** → **Danger Zone** auf privat; Workers Builds funktioniert weiter.
+
+Die Seite ist seit dem 19.10.2026 geschützt. Ohne Anmeldung leiten Seitenaufrufe zu `/login` weiter, Daten, Dateien und API antworten mit 401; offen bleiben nur `/login`, `/favicon.svg` und `/robots.txt` (sperrt Suchmaschinen aus). Skripte, die Daten der Seite lesen (`scripts/refresh_seed.mjs`, `scripts/backtest.mjs` ohne `--local`), nehmen das Passwort aus der Umgebungsvariable `SITE_PASSWORD`. Ein neues Passwort an beiden Stellen eintragen; es meldet alle Geräte ab.
 
 Solange `SITE_PASSWORD` fehlt, gibt die API die vollen WGC-Reihen nicht heraus (nur die Kennzahlen der Seite).
 
@@ -178,6 +180,7 @@ npm test                     # Tests des Signalmodells
 npm run build                # Seite neu bauen (public/index.html, app.css, app.js)
 npm run fetch:live           # alle Jobs in Node ausführen und public/data/live.json schreiben
 node scripts/backtest.mjs --local --out public/data/backtest.json   # Backtest auf der lokalen D1 (Bericht + Datei)
+SITE_PASSWORD=… node scripts/backtest.mjs --hz m1                   # Backtest mit den Daten der Seite (Anmeldung per Passwort)
 python3 -I pipeline/build_data.py --cache .cache --refresh       # lange Historien
 ```
 
