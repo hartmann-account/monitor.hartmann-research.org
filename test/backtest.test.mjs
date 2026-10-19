@@ -77,8 +77,11 @@ test("Backtest-Jobs warten, bis ihre Quellen die ganze Historie archiviert haben
   for (const id of bt.after) {
     const d = JOBS.find(j => j.id === id);
     done[id] = d.noArchive ? { okAt: "2026-10-19T00:00:00Z" } : { arch: { at: "2026-10-19T00:00:00Z" }, deepFrom: d.deep };
+    if (d.version) done[id].version = d.version;
   }
   assert.equal(inputsReady(bt, { jobs: done }), true);
+  // Kreditlücken noch mit der alten Länderliste abgerufen: Backtest wartet auf den neuen Lauf
+  assert.equal(inputsReady(bt, { jobs: { ...done, bis_credit: { ...done.bis_credit, version: "US+XM" } } }), false);
   // OECD-Frühindikatoren noch mit der alten Startzeit archiviert: Backtest nicht fällig
   const pending = { ...done, oecd_cli: { arch: { at: "2026-10-19T00:00:00Z" }, deepFrom: "1990-01-01" } };
   assert.equal(inputsReady(bt, { jobs: pending }), false);

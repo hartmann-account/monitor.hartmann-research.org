@@ -56,9 +56,10 @@ async function weoSdmx(F, codes) {
   if (!Object.keys(out).length) throw new Error("IWF WEO: keine Daten");
   return out;
 }
+// Länderliste als Version: kommt ein Land hinzu, ruft der Runner den Job sofort neu ab statt erst nach Ablauf seines Takts
 function weoJob(n, inds) {
   return {
-    id: "imf_weo_" + n, label: "IWF World Economic Outlook: " + inds.map(i => i[2]).join(", "), source: "imf", every: 24 * 3, cost: 1 + inds.length,
+    id: "imf_weo_" + n, label: "IWF World Economic Outlook: " + inds.map(i => i[2]).join(", "), source: "imf", every: 24 * 3, cost: 1 + inds.length, version: WEO_C.join("+"),
     async run(F, ctx) {
       let all = null, sdmxErr = null;
       try { all = await weoSdmx(F, inds.map(i => i[0])); } catch (e) { all = null; sdmxErr = e; }
@@ -84,7 +85,7 @@ function weoJob(n, inds) {
 const WB_C = ["USA", "CHN", "EUU", "DEU", "JPN", "GBR", "IND", "RUS", "CHE", "KOR", "BRA", "MEX", "ZAF", "IDN", "TUR"];
 function wbJob(id, label, inds, every = 24 * 7) {
   return {
-    id, label, source: "wb", every, cost: inds.length,
+    id, label, source: "wb", every, cost: inds.length, version: WB_C.join("+"),
     async run(F) {
       const s = {};
       for (const [ind, pre, l, u, opts] of inds) {

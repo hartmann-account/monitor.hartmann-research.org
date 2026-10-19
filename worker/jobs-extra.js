@@ -54,6 +54,9 @@ async function eurostat(F, dataset, params) {
   return out;
 }
 
+// Länder der Kreditlücken (BIZ): große Volkswirtschaften und acht Schwellenländer
+const BIS_CREDIT_C = "US+XM+CH+JP+GB+CN+IN+DE+BR+MX+KR+ZA+ID+TR";
+
 export const EXTRA_JOBS = [
   {
     // Wechselkurse seit 1971 (Fed H.10 über FRED) für Backtests vor dem Start des Euro und der EZB-Referenzkurse
@@ -241,9 +244,10 @@ export const EXTRA_JOBS = [
     },
   },
   {
-    id: "bis_credit", label: "Kreditlücke und Schuldendienstquote des Privatsektors (BIZ, Frühwarnindikatoren)", source: "bis", every: 24 * 7, cost: 2,
+    // Länderliste als Version: kommt ein Land hinzu, läuft der Job sofort statt erst nach einer Woche
+    id: "bis_credit", label: "Kreditlücke und Schuldendienstquote des Privatsektors (BIZ, Frühwarnindikatoren)", source: "bis", every: 24 * 7, cost: 2, version: BIS_CREDIT_C,
     async run(F) {
-      const cs = "US+XM+CH+JP+GB+CN+IN+DE+BR+MX+KR+ZA+ID+TR";
+      const cs = BIS_CREDIT_C;
       const [gap, dsr] = await Promise.all([bis(F, "WS_CREDIT_GAP", `Q.${cs}.P.A.C+A`, "1960"), bis(F, "WS_DSR", `Q.${cs}.P`, "1990")]);
       const iso = c => (c === "XM" ? "ea" : c.toLowerCase());
       const s = {};

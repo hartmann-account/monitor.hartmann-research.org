@@ -25,11 +25,13 @@ function deepPending(j, s) {
 const ARCHIVE_CATCHUP_PER_RUN = 4;
 
 /* Job mit "after": erst fällig, wenn diese Jobs ihre Daten (bei "deep" die ganze Historie) archiviert haben; Jobs, die
-   selbst in D1 schreiben (noArchive, etwa archive_hist), müssen einmal erfolgreich gelaufen sein */
+   selbst in D1 schreiben (noArchive, etwa archive_hist), müssen einmal erfolgreich gelaufen sein. Quellen mit "version"
+   (etwa einer erweiterten Länderliste) müssen in dieser Version gelaufen sein */
 export function inputsReady(j, meta, jobs = JOBS) {
   return !j.after || j.after.every(id => {
     const d = jobs.find(x => x.id === id), s = (meta.jobs && meta.jobs[id]) || {};
     if (!d) return true;
+    if (d.version && s.version !== d.version) return false;
     return d.noArchive ? !!s.okAt : !!(s.arch && s.arch.at && !deepPending(d, s));
   });
 }
