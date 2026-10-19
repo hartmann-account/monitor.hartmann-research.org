@@ -134,7 +134,7 @@ function histSeries(hist) {
 
 export const SIGNAL_JOBS = [
   {
-    id: "signal_history", label: "Signalverlauf des Anlagebarometers, drei Horizonte (D1)", source: "d1", every: 6, cost: 0, requires: ["DB"], noArchive: true,
+    id: "signal_history", label: "Signalverlauf des Anlagebarometers, drei Horizonte (D1)", source: "d1", every: 6, cost: 0, requires: ["DB"], noArchive: true, version: SIG.cfg.version,
     async run(F, ctx) {
       const db = ctx.env.DB;
       const txt = await ctx.env.DATA.get(SNAP_KEY);

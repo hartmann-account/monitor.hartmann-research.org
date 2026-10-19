@@ -29,7 +29,8 @@ export function dueJobs(meta, now, jobs = JOBS, env = null) {
     const last = s.okAt ? Date.parse(s.okAt) : 0;
     // 10 % Toleranz, damit ein Job nicht wegen weniger Minuten auf den nächsten Lauf rutscht
     if (now - last >= j.every * HOUR * 0.9) due.push({ job: j, age: last ? (now - last) / (j.every * HOUR) : 1e9 });
-    else if (archivePending(j, s, env)) due.push({ job: j, age: 0.5, catchup: true });
+    // ebenso Jobs mit neuer Version (etwa ein geändertes Signalmodell: Verlauf sofort neu rechnen)
+    else if (archivePending(j, s, env) || (j.version && s.version !== j.version)) due.push({ job: j, age: 0.5, catchup: true });
   }
   // nie geladene Jobs zuerst, dann nach relativer Überfälligkeit; nachzuholende Archivläufe zuletzt und begrenzt
   due.sort((a, b) => b.age - a.age);
@@ -125,6 +126,7 @@ export async function runDueJobs(env, opts = {}) {
       const body = JSON.stringify(out);
       await env.DATA.put("job:" + job.id, body);
       Object.assign(s, summarize(out), { ok: true, okAt: new Date(now).toISOString(), error: null, fails: 0, retryAt: null, bytes: body.length, ms: Date.now() - t0 });
+      if (job.version) s.version = job.version;
     } catch (e) {
       // scheitert der Abruf der ganzen Historie zweimal, läuft der Job danach mit dem üblichen Zeitraum weiter
       if (deep) { s.deepFails = (s.deepFails || 0) + 1; if (s.deepFails >= 2) s.deepAt = "übersprungen"; }
