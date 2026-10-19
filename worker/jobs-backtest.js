@@ -64,6 +64,10 @@ async function liveTrack(db, L, hz) {
 const REQUIRED = { h_sp500_m: "1960", h_cape_m: "1960", aiae_us: "1960", eqh_de: "1965", eqh_jp: "1965", baa_m: "1960", gs10_m: "1960",
   cli_us: "1965", cpi_us: "1965", fxh_chf: "1972", h_gold_usd_m: "1965", umcsent: "1970" };
 
+// Jobs, deren lange Historie der Backtest braucht: er wartet, bis sie archiviert ist (Runner: "after")
+const BT_INPUT_JOBS = ["fred_markets", "fred_rates", "fred_risk", "fred_credit", "fred_cycle", "fred_fxhist", "fred_intl", "fred_z1",
+  "oecd_cli", "oecd_prices", "imf_commodities", "bis_reer", "archive_hist"];
+
 export async function runBacktest(db, hz, nowIso) {
   await ensureBacktestSchema(db);
   let raw = await loadArchive(db);
@@ -85,7 +89,7 @@ export async function runBacktest(db, hz, nowIso) {
 
 export const BACKTEST_JOBS = SIG.cfg.horizons.map(H => ({
   id: "backtest_" + H.id, label: `Backtest des Anlagebarometers seit 1970: ${H.title} (D1)`, source: "d1", every: 24 * 7, cost: 0,
-  requires: ["DB"], noArchive: true, solo: true, version: `${SIG.cfg.version}/${BT_VERSION}`,
+  requires: ["DB"], noArchive: true, solo: true, version: `${SIG.cfg.version}/${BT_VERSION}`, after: BT_INPUT_JOBS,
   async run(F, ctx) {
     const s = await runBacktest(ctx.env.DB, H.id, new Date(ctx.now).toISOString());
     return { series: {}, items: [s] };
