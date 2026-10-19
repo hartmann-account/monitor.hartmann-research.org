@@ -152,7 +152,7 @@ function renderDataStatus() {
       return h("tr", null,
         h("td", null, s.label, h("div", { class: "small mono", text: id })),
         h("td", null, src ? h("a", { href: src.url, target: "_blank", rel: "noopener", text: src.name }) : s.source === "d1" ? "Cloudflare D1 (eigene Datenbank)" : s.source),
-        h("td", { class: "when", text: s.every >= 24 ? `${fmt(s.every / 24, 0)} T.` : `${fmt(s.every, s.every < 1 ? 2 : 0)} h` }),
+        h("td", { class: "when", text: s.every >= 24 ? `${fmt(s.every / 24, 0)} T.` : s.every < 1 ? `${fmt(s.every * 60, 0)} min` : `${fmt(s.every, 0)} h` }),
         h("td", { class: "when", text: s.okAt ? `${deShort(s.okAt.slice(0, 10))} ${s.okAt.slice(11, 16)}` : "–" }),
         h("td", { class: "when", text: s.latest || "–" }),
         h("td", { class: "small", text: archCell(s), title: s.arch && s.arch.err ? s.arch.err : null }),
@@ -163,7 +163,7 @@ function renderDataStatus() {
 }
 
 /* ------------------------------------------------------------------ Datenarchiv (D1) */
-const FREQ_DE = { D: "täglich", W: "wöchentlich", M: "monatlich", Q: "vierteljährlich", A: "jährlich" };
+const FREQ_DE = { D: "täglich", W: "wöchentlich", M: "monatlich", B: "zweimonatlich", Q: "vierteljährlich", S: "halbjährlich", A: "jährlich" };
 function apiBase() { const m = document.querySelector('meta[name="live-api"]'); return (m ? m.content : "/api/snapshot").replace(/\/api\/snapshot$/, ""); }
 function renderArchive(host) {
   const box = h("div");
@@ -204,8 +204,79 @@ function renderArchive(host) {
     q.addEventListener("input", fill);
     fill();
     sh.body.append(h("details", { class: "more" }, h("summary", { text: `Alle ${fmt(A.series.length, 0)} archivierten Reihen anzeigen` }), q, h("div", { style: "overflow-x:auto" }, tbl)));
+    if (A.dbnomics && A.dbnomics.providers) renderDbnomics(box, A.dbnomics, base);
   }).catch(() => {
     box.append(h("p", { class: "note-box", text: "Das Datenarchiv (Cloudflare D1) ist über den Worker erreichbar, sobald die Datenbank gebunden ist und die ersten Abrufe gespeichert sind; in der statischen Vorschau gibt es kein Archiv." }));
   });
+}
+/* ------------------------------------------------------------------ DBnomics-Bestand (eigene D1-Datenbank, Rohdaten in R2) */
+const DBN_P = { IMF: "Internationaler Währungsfonds", OECD: "OECD", Eurostat: "Eurostat", ECB: "Europäische Zentralbank", BIS: "Bank für Internationalen Zahlungsausgleich",
+  WB: "Weltbank", FED: "Federal Reserve", ISM: "Institute for Supply Management", EC: "Europäische Kommission (Konjunkturumfragen)", NBS: "Statistikamt China",
+  BCB: "Banco Central do Brasil", TCMB: "Zentralbank der Türkei", SARB: "South African Reserve Bank", BI: "Bank Indonesia", MOSPI: "Statistikministerium Indien",
+  INEGI: "Statistikamt Mexiko", SAFE: "Devisenbehörde China" };
+function renderDbnomics(box, D, base) {
+  const t = D.totals || {}, P = D.progress || null;
+  const prog = !P ? ["–", "noch nicht begonnen"]
+    : P.doneAt ? ["vollständig", `Durchgang ${P.round} am ${deShort(P.doneAt.slice(0, 10))}; nächste Prüfung ab ${deShort(P.nextRound.slice(0, 10))}`]
+      : [`${fmt(P.at, 0)} / ${fmt(P.datasets || 0, 0)}`, P.current ? `Durchgang ${P.round}, gerade ${P.current.ds}` : P.planned ? `Durchgang ${P.round} läuft (Datensätze bearbeitet / geplant)` : `Durchgang ${P.round}, Liste wird aufgestellt`];
+  const sh = sheet(box, { title: "DBnomics-Bestand (eigene D1-Datenbank und R2)",
+    sub: "Relevante Datensätze von IWF (alle WEO-Ausgaben seit 2008), OECD, Eurostat, EZB, BIZ, Weltbank, Fed, ISM, EU-Kommission und Schwellenländern als eigener Bestand; die Antworten der Schnittstelle liegen zusätzlich unverändert im R2-Bucket",
+    info: { d: "DBnomics bündelt die Daten von über 90 Statistikanbietern. Der Monitor übernimmt die für Konjunktur, Zinsen, Kredit, Preise und Prognosen relevanten Datensätze in eine eigene Datenbank, damit sie auch dann verfügbar bleiben, wenn eine Quelle ältere Stände nicht mehr anbietet.",
+      f: ["Der Job dbnomics lädt alle zehn Minuten einige Seiten (je Seite bis zu 1.000 Reihen mit allen Beobachtungen), bis alle Datensätze übernommen sind; danach prüft er wöchentlich, welche Datensätze DBnomics neu indexiert hat, und lädt nur diese neu.",
+        "Große Datensätze sind auf die rund 25 Länder des Monitors begrenzt (etwa IFS des IWF, Weltbank-Indikatoren); die Echtzeit-Datensätze (WEO-Ausgaben, Eurostat-Vintages, EZB-Projektionen und -Umfragen) bleiben vollständig.",
+        "Reihen: Anzahl der übernommenen Reihen. Beobachtungen: gespeicherte Werte ohne fehlende (NA). Kennung im Monitor: dbn.<Anbieter>.<Datensatz>.<Reihe>.",
+        "R2 (Bucket monitor): dbnomics/<Anbieter>/<Datensatz>/<Stand>/… mit jeder Antwort der Schnittstelle, dazu datensatz.json mit Dimensionen, Filter und Umfang; ältere Stände bleiben erhalten. Fed Z.1 (42.000 Reihen) liegt nur in R2."],
+      r: `${fmt(t.datasets || 0, 0)} Datensätze, ${fmt(t.series || 0, 0)} Reihen, ${fmt(t.obs || 0, 0)} Beobachtungen` } });
+  sh.body.append(h("div", { class: "arch-sum" },
+    ...[["Datensätze", fmt(t.datasets || 0, 0), ""], ["Reihen", fmt(t.series || 0, 0), ""], ["Beobachtungen", fmt(t.obs || 0, 0), ""], ["Import", prog[0], prog[1]]]
+      .map(([l, v, m]) => h("div", { class: "tile" }, h("div", { class: "label", text: l }), h("div", { class: "value", text: v }), h("div", { class: "meta" }, h("span", { text: m }))))));
+  const pt = h("table", { class: "sources ds-table" },
+    h("thead", null, h("tr", null, h("th", { text: "Anbieter" }), h("th", { text: "Datensätze" }), h("th", { text: "Reihen" }), h("th", { text: "Beobachtungen" }), h("th", { text: "Zuletzt übernommen" }))),
+    h("tbody", null, ...(D.providers || []).map(r => h("tr", null,
+      h("td", null, h("a", { href: `https://db.nomics.world/${r.p}`, target: "_blank", rel: "noopener", text: DBN_P[r.p] || r.p }), h("div", { class: "small mono", text: r.p })),
+      h("td", { class: "when", text: fmt(r.datasets, 0) }),
+      h("td", { class: "when", text: fmt(r.series || 0, 0) }),
+      h("td", { class: "when", text: r.raw === r.datasets ? "nur R2" : fmt(r.obs || 0, 0) }),
+      h("td", { class: "when", text: r.updated ? `${deShort(r.updated.slice(0, 10))} ${r.updated.slice(11, 16)}` : "–" })))));
+  stackTable(pt);
+  sh.body.append(h("div", { style: "overflow-x:auto" }, pt));
+  sh.body.append(h("div", { class: "arch-links" }, h("span", { class: "small", text: "Verzeichnis (JSON):" }),
+    h("a", { href: `${base}/api/dbnomics?datasets=1`, text: "alle Datensätze" }), h("a", { href: `${base}/api/dbnomics?q=`, text: "Reihen (erste 200)" }),
+    h("a", { href: `${base}/api/rohdaten?prefix=dbnomics/`, text: "Rohdaten im R2-Bucket" })));
+  // Suche über die Schnittstelle (der Bestand ist zu groß für eine Liste auf der Seite)
+  const q = h("input", { type: "search", placeholder: "DBnomics-Reihe suchen, etwa unemployment, NGDP_RPCH, PMI …", "aria-label": "Reihe im DBnomics-Bestand suchen", class: "arch-q" });
+  const tb = h("tbody"), note = h("p", { class: "small" });
+  const tbl = h("table", { class: "sources ds-table" }, h("thead", null, h("tr", null, h("th", { text: "Reihe" }), h("th", { text: "Frequenz, Einheit" }), h("th", { text: "von" }), h("th", { text: "bis" }), h("th", { text: "Werte" }), h("th", { text: "Abruf" }))), tb);
+  let timer = null, seq = 0, list = [], shown = 0;
+  // Treffer in Schritten von 50 zeigen (auf dem Telefon wird jede Zeile zur Karte)
+  const more = h("button", { type: "button", class: "btn-more", text: "Weitere Treffer zeigen" });
+  more.hidden = true;
+  const show = n => {
+    shown = Math.min(list.length, n);
+    more.hidden = shown >= list.length;
+    tb.replaceChildren(...list.slice(0, shown).map(x => h("tr", null,
+        h("td", null, x.label || x.id, h("div", { class: "small mono", text: x.id })),
+        h("td", { class: "small", text: [FREQ_DE[x.freq] || x.freq, x.unit].filter(Boolean).join(", ") }),
+        h("td", { class: "when", text: x.first ? (x.freq === "A" ? x.first.slice(0, 4) : x.first) : "–" }),
+        h("td", { class: "when", text: x.last ? (x.freq === "A" ? x.last.slice(0, 4) : x.last) : "–" }),
+        h("td", { class: "when", text: fmt(x.n || 0, 0) }),
+        h("td", null, h("a", { href: `${base}/api/series?id=${encodeURIComponent(x.id)}&format=csv`, text: "CSV" }), " · ", h("a", { href: `${base}/api/series?id=${encodeURIComponent(x.id)}`, text: "JSON" })))));
+    stackTable(tbl);
+  };
+  more.addEventListener("click", () => show(shown + 50));
+  const search = () => {
+    const s = q.value.trim();
+    if (s.length < 2) { list = []; show(0); note.textContent = "Mindestens zwei Zeichen eingeben; gesucht wird in Bezeichnung und Kennung."; return; }
+    const my = ++seq;
+    note.textContent = "Suche …";
+    fetch(`${base}/api/dbnomics?q=${encodeURIComponent(s)}`).then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))).then(R => {
+      if (my !== seq) return;
+      list = R.series || [];
+      note.textContent = list.length ? `${list.length >= 200 ? "Mehr als 200 Treffer, gezeigt werden die ersten 200; die Suche lässt sich mit weiteren Wörtern der Bezeichnung oder Kennung eingrenzen" : `${fmt(list.length, 0)} Treffer`}` : "Keine Treffer";
+      show(50);
+    }).catch(() => { if (my === seq) note.textContent = "Suche gerade nicht möglich"; });
+  };
+  q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(search, 350); });
+  sh.body.append(h("details", { class: "more" }, h("summary", { text: "Im DBnomics-Bestand suchen" }), q, note, h("div", { style: "overflow-x:auto" }, tbl), more));
 }
 document.addEventListener("DOMContentLoaded", boot);

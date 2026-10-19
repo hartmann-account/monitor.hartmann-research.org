@@ -21,8 +21,15 @@
   ],
   // Datenarchiv (alle abgerufenen Beobachtungen) und Signalverlauf des Anlagebarometers; ohne "database_id" legt
   // Wrangler die Datenbank beim Deploy automatisch an. Der Name bleibt, damit die gespeicherte Historie erhalten bleibt.
+  // DBN: Datensätze aus DBnomics (IWF, OECD, Eurostat, EZB, BIZ, Weltbank, Fed, Schwellenländer) in einer eigenen
+  // Datenbank, damit der große Import das Datenarchiv der Seite nicht bremst (Job dbnomics, worker/dbnomics.js)
   "d1_databases": [
-    { "binding": "DB", "database_name": "monitor-signals" }
+    { "binding": "DB", "database_name": "monitor-signals" },
+    { "binding": "DBN", "database_name": "monitor-dbnomics" }
+  ],
+  // Rohdatenarchiv: Rohausgaben aller Abrufe und DBnomics-Datensätze, nach Quellen geordnet (Aufbau in worker/r2.js)
+  "r2_buckets": [
+    { "binding": "ARCHIVE", "bucket_name": "monitor" }
   ],
   // Reserve für den ersten Archivlauf (ganze Historie der Quellen) und die Rückrechnung der drei Horizonte
   "limits": { "cpu_ms": 60000 },
@@ -34,6 +41,8 @@
     "MAX_JOBS_PER_RUN": "8",
     // Externe Subrequests je Lauf (Workers Paid erlaubt deutlich mehr; die Grenze schont die Quellen)
     "SUBREQUEST_BUDGET": "80"
+    // Weitere DBnomics-Anbieter als Rohdaten nach R2 (Job dbnomics_mirror): Anbieterkennungen mit Komma oder "*" für alle
+    // "DBNOMICS_MIRROR": "Eurostat,OECD"
   },
   "observability": {
     "enabled": true

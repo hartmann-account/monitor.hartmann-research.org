@@ -28,10 +28,11 @@ const UPSERT_EVENT = `INSERT INTO events (src, id, d, kind, name, level, country
 // Größe eines Schreibvorgangs: D1 erlaubt höchstens 2 MB je gebundenem Wert; die JSON-Liste bleibt unter 0,9 MB
 const CHUNK_BYTES = 900000;
 
-let ready = null;
+// je Datenbank (DB oder DBN für den DBnomics-Bestand) einmal je Isolate
+const ready = new WeakMap();
 export async function ensureArchive(db) {
-  if (!ready) ready = db.batch(SCHEMA.map(q => db.prepare(q))).catch(e => { ready = null; throw e; });
-  return ready;
+  if (!ready.has(db)) ready.set(db, db.batch(SCHEMA.map(q => db.prepare(q))).catch(e => { ready.delete(db); throw e; }));
+  return ready.get(db);
 }
 
 const pad = n => String(n).padStart(2, "0");
@@ -81,6 +82,15 @@ export async function writeObs(db, rows) {
     size += n;
   }
   await flush();
+}
+
+/* Reihen-Metadaten schreiben ({ id, l, u, f, src, note }, job) und danach Umfang und Zeitraum aus obs nachführen */
+export async function writeSeriesMeta(db, list, job, nowIso) {
+  if (!list.length) return;
+  await db.batch([
+    db.prepare(UPSERT_SERIES).bind(JSON.stringify(list.map(e => ({ ...e, job }))), nowIso),
+    db.prepare(STATS).bind(JSON.stringify(list.map(e => e.id))),
+  ]);
 }
 
 /* Ausgabe eines Jobs archivieren. ctx.raw: ungekürzte neue Punkte je Reihe (aus den Hilfen D und M), sonst die

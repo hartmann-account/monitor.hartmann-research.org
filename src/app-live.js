@@ -36,6 +36,7 @@ const LSRC = {
   ofr: { name: "Office of Financial Research, Financial Stress Index", url: "https://www.financialresearch.gov/financial-stress-index/" },
   eurostat: { name: "Eurostat, Economic Sentiment Indicator", url: "https://ec.europa.eu/eurostat/web/euro-indicators/business-and-consumer-surveys" },
   shiller: { name: "Robert Shiller, Online Data", url: "https://shillerdata.com/" },
+  dbnomics: { name: "DBnomics (Datensätze von IWF, OECD, Eurostat, EZB, BIZ, Weltbank, Fed u. a.)", url: "https://db.nomics.world/" },
   pictet: { name: "Pictet Research Institute: Demographics and Technology (Oktober 2025)", url: "https://am.pictet.com/content/dam/am-pictet/media/global/investment-research/demographics-and-technology/PictetResearchInstitute_Demographics-and-Technology.pdf" },
 };
 

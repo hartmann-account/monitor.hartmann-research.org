@@ -3,9 +3,14 @@
    GET  /api/status     nur der Abrufstatus
    GET  /api/signals    Signalverlauf des Anlagebarometers aus D1: ?h=m1|y1|lt (Horizont), ?daily=Tage mit allen
                         Tageswerten (sonst Monatsenden), ?pillars=1 mit Säulenwerten, ?format=csv
-   GET  /api/archive    Datenarchiv (D1): alle Reihen mit Zeitraum und Anzahl der Beobachtungen
+   GET  /api/archive    Datenarchiv (D1): alle Reihen mit Zeitraum und Anzahl der Beobachtungen, dazu der DBnomics-Bestand
+                        (Summen je Anbieter und Stand des Imports)
    GET  /api/series     Beobachtungen aus dem Archiv: ?id=a,b (höchstens 20), ?from=, ?to=, ?thin=w (letzter Wert je
-                        Kalenderwoche), ?format=csv
+                        Kalenderwoche), ?format=csv; Kennungen dbn.… aus der DBnomics-Datenbank
+   GET  /api/dbnomics   DBnomics-Bestand: ?q= Suche in Bezeichnung und Kennung (höchstens 200 Reihen je Abfrage, ?offset=),
+                        ?p= Anbieter, ?d= Datensatz; ?datasets=1 alle Datensätze mit Umfang und Stand
+   GET  /api/rohdaten   Rohdatenarchiv (R2): ?prefix=dbnomics/IMF/ Ordner und Dateien einer Ebene (?cursor= für weitere),
+                        ?key= eine Datei herunterladen (.json.gz unverändert)
    GET  /api/backtest   Backtest des Anlagebarometers: ohne Parameter die Kennzahlen aller Horizonte, mit ?h=m1|y1|lt&id=
                         die Einzelwerte einer Anlage (Monatsende, Gesamtwert, Stufe, Rendite danach), ?format=csv
    GET  /api/events     archivierte Meldungen (GDACS): ?from=
@@ -15,6 +20,7 @@ import { runDueJobs, META_KEY, SNAP_KEY } from "./runner.js";
 import { JOBS } from "./jobs.js";
 import { readHistory, ensureSchema } from "./jobs-signals.js";
 import { archiveSummary, readSeries, ensureArchive } from "./archive.js";
+import { dbnomicsSummary, dbnomicsSearch, dbnomicsDatasets } from "./dbnomics.js";
 import { readBacktest } from "./jobs-backtest.js";
 
 const CORS = {
@@ -103,8 +109,46 @@ async function archive(request, env, ctx) {
   if (!env.DB) return json({ error: "Keine D1-Datenbank gebunden" }, 404);
   return cached(request, ctx, async () => {
     const A = await archiveSummary(env.DB);
+    // DBnomics (eigene Datenbank): Summen je Anbieter und Stand des Imports
+    if (env.DBN) A.dbnomics = await dbnomicsSummary(env.DBN, await env.DATA.get("state:dbnomics", "json")).catch(e => ({ error: String((e && e.message) || e).slice(0, 200) }));
     // ein noch leeres Archiv nicht zwischenspeichern, damit die ersten Abrufe sofort sichtbar werden
     return json(A, 200, { "cache-control": A.totals && A.totals.series ? "public, max-age=600" : "no-store" });
+  });
+}
+
+async function rohdaten(request, env, ctx) {
+  if (!env.ARCHIVE) return json({ error: "Kein R2-Bucket gebunden" }, 404);
+  const url = new URL(request.url);
+  const ok = v => /^[\w.@/:-]{1,300}$/.test(v) && !v.includes("..");
+  const key = url.searchParams.get("key");
+  if (key) {
+    if (!ok(key)) return json({ error: "ungültiger Schlüssel" }, 400);
+    const o = await env.ARCHIVE.get(key);
+    if (!o) return json({ error: "nicht gefunden" }, 404);
+    const gz = o.httpMetadata && o.httpMetadata.contentEncoding === "gzip";
+    // komprimierte Dateien unverändert als .json.gz, die übrigen als JSON
+    return new Response(o.body, { headers: { "content-type": gz ? "application/gzip" : "application/json; charset=utf-8",
+      ...(gz ? { "content-disposition": `attachment; filename="${key.split("/").pop()}"` } : {}), "cache-control": "public, max-age=600", ...CORS } });
+  }
+  const prefix = url.searchParams.get("prefix") || "";
+  if (prefix && !ok(prefix)) return json({ error: "ungültiges Präfix" }, 400);
+  const cursor = url.searchParams.get("cursor") || undefined;
+  return cached(request, ctx, async () => {
+    const r = await env.ARCHIVE.list({ prefix, delimiter: "/", limit: 1000, cursor });
+    return json({ prefix, folders: r.delimitedPrefixes || [], files: r.objects.map(o => ({ key: o.key, size: o.size, uploaded: o.uploaded })),
+      cursor: r.truncated ? r.cursor : null }, 200, { "cache-control": "public, max-age=600" });
+  });
+}
+
+async function dbnomics(request, env, ctx) {
+  if (!env.DBN) return json({ error: "Keine DBnomics-Datenbank gebunden" }, 404);
+  const url = new URL(request.url);
+  const code = k => (/^[\w.:@-]{1,100}$/.test(url.searchParams.get(k) || "") ? url.searchParams.get(k) : null);
+  return cached(request, ctx, async () => {
+    if (url.searchParams.get("datasets") === "1") return json({ datasets: await dbnomicsDatasets(env.DBN) }, 200, { "cache-control": "public, max-age=600" });
+    const q = (url.searchParams.get("q") || "").slice(0, 80);
+    const offset = Math.max(0, Math.min(1e6, +(url.searchParams.get("offset") || 0) || 0));
+    return json(await dbnomicsSearch(env.DBN, { q, p: code("p"), d: code("d"), offset }), 200, { "cache-control": "public, max-age=600" });
   });
 }
 
@@ -117,7 +161,12 @@ async function series(request, env, ctx) {
   const to = /^\d{4}(-\d{2}(-\d{2})?)?$/.test(url.searchParams.get("to") || "") ? url.searchParams.get("to") + "~" : null;
   const weekly = url.searchParams.get("thin") === "w";
   return cached(request, ctx, async () => {
-    const data = await readSeries(env.DB, ids, { from, to, weekly });
+    // Kennungen dbn.… liegen in der DBnomics-Datenbank
+    const own = ids.filter(id => !id.startsWith("dbn.")), dbn = env.DBN ? ids.filter(id => id.startsWith("dbn.")) : [];
+    const data = {
+      ...(own.length ? await readSeries(env.DB, own, { from, to, weekly }) : {}),
+      ...(dbn.length ? await readSeries(env.DBN, dbn, { from, to, weekly }) : {}),
+    };
     if (url.searchParams.get("format") !== "csv") return json(data, 200, { "cache-control": "public, max-age=600" });
     const out = [["reihe", "datum", "wert", "einheit", "bezeichnung"]];
     for (const [id, s] of Object.entries(data)) for (const [d, v] of s.points) out.push([id, d, v, s.unit, s.label]);
@@ -169,6 +218,8 @@ export default {
     if (url.pathname === "/api/signals" && request.method === "GET") return signals(request, env, ctx);
     if (url.pathname === "/api/archive" && request.method === "GET") return archive(request, env, ctx);
     if (url.pathname === "/api/series" && request.method === "GET") return series(request, env, ctx);
+    if (url.pathname === "/api/dbnomics" && request.method === "GET") return dbnomics(request, env, ctx);
+    if (url.pathname === "/api/rohdaten" && request.method === "GET") return rohdaten(request, env, ctx);
     if (url.pathname === "/api/events" && request.method === "GET") return events(request, env, ctx);
     if (url.pathname === "/api/backtest" && request.method === "GET") return backtest(request, env, ctx);
     if (url.pathname === "/api/run" && request.method === "POST") return manualRun(request, env, ctx);

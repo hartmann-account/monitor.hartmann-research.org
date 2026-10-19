@@ -6,6 +6,7 @@ import { JOBS } from "./jobs.js";
 import { makeFetcher } from "./lib/http.js";
 import { lastObs, trimFrom } from "./lib/series.js";
 import { archiveOutput, isoDate } from "./archive.js";
+import { putJsonGz, sourceKey } from "./r2.js";
 import { META_KEY, SNAP_KEY } from "./keys.js";
 
 export { META_KEY, SNAP_KEY };
@@ -45,8 +46,9 @@ export function dueJobs(meta, now, jobs = JOBS, env = null) {
     const s = (meta.jobs && meta.jobs[j.id]) || {};
     if (s.retryAt && s.retryAt > now) continue;
     const last = s.okAt ? Date.parse(s.okAt) : 0;
-    // 10 % Toleranz, damit ein Job nicht wegen weniger Minuten auf den nächsten Lauf rutscht
-    if (now - last >= j.every * HOUR * 0.9) due.push({ job: j, age: last ? (now - last) / (j.every * HOUR) : 1e9 });
+    // 10 % Toleranz, damit ein Job nicht wegen weniger Minuten auf den nächsten Lauf rutscht; Hintergrundjobs (DBnomics)
+    // laufen nach allen anderen fälligen Jobs mit dem verbleibenden Budget
+    if (now - last >= j.every * HOUR * 0.9) due.push({ job: j, age: j.background ? 0.1 : last ? (now - last) / (j.every * HOUR) : 1e9 });
     // Jobs mit neuer Version (etwa ein geändertes Signalmodell: Verlauf sofort neu rechnen) vor den Archivläufen
     else if (j.version && s.version !== j.version) due.push({ job: j, age: 0.7 });
     else if (archivePending(j, s, env)) due.push({ job: j, age: 0.5, catchup: true });
@@ -170,6 +172,10 @@ export async function runDueJobs(env, opts = {}) {
         } catch (e) {
           s.arch = { ...(s.arch || {}), err: String((e && e.message) || e).slice(0, 300), errAt: new Date(now).toISOString() };
         }
+      }
+      // Rohdatenarchiv (R2): ungekürzte Ausgabe des Laufs, je Job und Tag der letzte Stand (noRaw: Ausgabe ist nur ein Status)
+      if (env.ARCHIVE && !job.noRaw && out && (Object.keys(out.series || {}).length || (out.items || []).length)) {
+        await putJsonGz(env.ARCHIVE, sourceKey(job, new Date(now).toISOString()), out, { job: job.id, at: new Date(now).toISOString() });
       }
       if (deep) out = trimOutput(out, ctx);
       const sum = summarize(out);
