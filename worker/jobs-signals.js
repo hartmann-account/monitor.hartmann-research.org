@@ -86,9 +86,14 @@ export const SIGNAL_JOBS = [
       const today = SIG.isoOf(B.tNow);
       const live = B.rows.filter(r => r.now).map(r => ({ d: today, id: r.row.id, score: r.now.score, cat: r.now.cat.n, p: Object.fromEntries(PILLARS.map(k => [k, r.now.pillars[k] ? r.now.pillars[k].s : null])) }));
       await writeRows(db, live, "live");
-      // einmalige Rückrechnung, solange noch keine Monatsenden gespeichert sind
-      const { n } = await db.prepare("SELECT COUNT(DISTINCT d) AS n FROM signals WHERE kind = 'calc'").first();
-      if (!n) await writeRows(db, SIG.backfill(L, 24, B.tNow).filter(r => r.d < today), "calc");
+      // Rückrechnung für Anlagen, die noch keine Monatsenden haben (beim ersten Lauf alle, später etwa
+      // Anlagen, deren Quellen erst nach dem Start geladen wurden); gespeicherte Tage bleiben unberührt
+      const { results: done } = await db.prepare("SELECT DISTINCT id FROM signals WHERE kind = 'calc'").all();
+      const have = new Set(done.map(r => r.id));
+      if (live.some(r => !have.has(r.id))) {
+        const { first } = await db.prepare("SELECT MIN(d) AS first FROM signals WHERE kind = 'live'").first();
+        await writeRows(db, SIG.backfill(L, 24, B.tNow).filter(r => !have.has(r.id) && r.d < (first || today)), "calc");
+      }
       const h = await readHistory(db);
       return { series: {}, items: [h], info: { today, rows: live.length, dates: h.dates.length } };
     },
