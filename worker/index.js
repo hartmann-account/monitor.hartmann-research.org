@@ -10,7 +10,8 @@
    GET  /api/dbnomics   DBnomics-Bestand: ?q= Suche in Bezeichnung und Kennung (höchstens 200 Reihen je Abfrage, ?offset=),
                         ?p= Anbieter, ?d= Datensatz; ?datasets=1 alle Datensätze mit Umfang und Stand
    GET  /api/rohdaten   Rohdatenarchiv (R2): ?prefix=dbnomics/IMF/ Ordner und Dateien einer Ebene (?cursor= für weitere),
-                        ?key= eine Datei herunterladen (.json.gz unverändert)
+                        ?key= eine Datei herunterladen (.json.gz unverändert); der Eingang (eingang/) ist privat, nur seine
+                        Vorschauen unter eingang/_vorschau/ sind abrufbar
    GET  /api/backtest   Backtest des Anlagebarometers: ohne Parameter die Kennzahlen aller Horizonte, mit ?h=m1|y1|lt&id=
                         die Einzelwerte einer Anlage (Monatsende, Gesamtwert, Stufe, Rendite danach), ?format=csv
    GET  /api/events     archivierte Meldungen (GDACS): ?from=
@@ -21,6 +22,7 @@ import { JOBS } from "./jobs.js";
 import { readHistory, ensureSchema } from "./jobs-signals.js";
 import { archiveSummary, readSeries, ensureArchive } from "./archive.js";
 import { dbnomicsSummary, dbnomicsSearch, dbnomicsDatasets } from "./dbnomics.js";
+import { INBOX, PREVIEW } from "./inbox.js";
 import { readBacktest } from "./jobs-backtest.js";
 
 const CORS = {
@@ -123,6 +125,8 @@ async function rohdaten(request, env, ctx) {
   const key = url.searchParams.get("key");
   if (key) {
     if (!ok(key)) return json({ error: "ungültiger Schlüssel" }, 400);
+    // hochgeladene Dateien (etwa Excel-Dateien des World Gold Council) nicht weitergeben, nur ihre Vorschau
+    if (key.startsWith(INBOX) && !key.startsWith(PREVIEW)) return json({ error: "Der Eingang ist privat; die Vorschau liegt unter " + PREVIEW }, 403);
     const o = await env.ARCHIVE.get(key);
     if (!o) return json({ error: "nicht gefunden" }, 404);
     const gz = o.httpMetadata && o.httpMetadata.contentEncoding === "gzip";

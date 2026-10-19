@@ -17,6 +17,7 @@ import { EXTRA_JOBS } from "./jobs-extra.js";
 import { BACKTEST_JOBS, ALFRED_JOBS } from "./jobs-backtest.js";
 import { EM_JOBS } from "./jobs-em.js";
 import { DBNOMICS_JOBS } from "./dbnomics.js";
+import { INBOX_JOBS } from "./inbox.js";
 
 /* ------------------------------------------------------------------ Märkte */
 const MARKET_JOBS = [
@@ -301,4 +302,4 @@ const MARKET_JOBS = [
 
 // Reihenfolge zählt bei gleich dringlichen Jobs: die Backtests zuletzt, damit neue Quellen vorher im Archiv liegen;
 // der DBnomics-Bestand läuft als Hintergrundjob ohnehin nach allen anderen
-export const JOBS = [...MARKET_JOBS, ...MACRO_JOBS, ...EXTRA_JOBS, ...EM_JOBS, ...GEO_JOBS, ...SIGNAL_JOBS, ...ALFRED_JOBS, ...BACKTEST_JOBS, ...DBNOMICS_JOBS];
+export const JOBS = [...MARKET_JOBS, ...MACRO_JOBS, ...EXTRA_JOBS, ...EM_JOBS, ...GEO_JOBS, ...SIGNAL_JOBS, ...INBOX_JOBS, ...ALFRED_JOBS, ...BACKTEST_JOBS, ...DBNOMICS_JOBS];

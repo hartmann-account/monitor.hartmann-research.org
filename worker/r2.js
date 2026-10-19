@@ -10,6 +10,8 @@
                                                            Datei (<stand>: Indexierungsdatum bei DBnomics, <reihe>: Nummer
                                                            der ersten Reihe der Seite); frühere Stände bleiben erhalten
    echtzeit/<quelle>/…                                     Echtzeit-Datenstände (OECD-Frühindikatoren, ALFRED)
+   eingang/<quelle>/<datei>                                hochgeladene Dateien (etwa eingang/wgc/ für das World Gold
+                                                           Council), privat; Vorschau unter eingang/_vorschau/<quelle>/
 
    Schlüssel nur aus Buchstaben, Ziffern und . _ @ - (andere Zeichen werden zu _), Dateien JSON, gzip-komprimiert. */
 
@@ -19,6 +21,7 @@ export const LAYOUT = {
   "dbnomics/<anbieter>/<datensatz>/datensatz.json": "Metadaten eines DBnomics-Datensatzes, Umfang und Stände der Importe",
   "dbnomics/<anbieter>/<datensatz>/<stand>/<reihe>.json.gz": "Antworten der DBnomics-Schnittstelle je Seite, Stand = Indexierungsdatum",
   "echtzeit/<quelle>/...": "Echtzeit-Datenstände (OECD-Frühindikatoren, ALFRED)",
+  "eingang/<quelle>/<datei>": "hochgeladene Dateien (etwa eingang/wgc/), privat; Vorschau unter eingang/_vorschau/",
 };
 
 export const safeKey = s => String(s).replace(/[^A-Za-z0-9._@-]+/g, "_");
