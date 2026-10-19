@@ -1,0 +1,12 @@
+node_modules/
+.wrangler/
+.dev.vars
+.env
+.cache/
+__pycache__/
+*.pyc
+.DS_Store
+# wird bei jedem Build aus src/ erzeugt (node scripts/build.mjs, läuft auch vor "wrangler deploy")
+public/index.html
+public/app.css
+public/app.js

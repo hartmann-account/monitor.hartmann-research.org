@@ -1,0 +1,36 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // Big-Cycle-Monitor: statische Seite (public/) plus Worker für die täglichen Datenabrufe.
+  // Der Cron-Trigger läuft alle zehn Minuten und arbeitet jeweils nur die fälligen Abrufjobs ab
+  // (Batch-Betrieb, damit auch der Free-Plan mit 10 ms CPU und 50 Subrequests je Lauf reicht).
+  "name": "bigcycle-monitor",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "build": {
+    "command": "node scripts/build.mjs"
+  },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  // Ohne "id": Wrangler legt den KV-Namespace beim ersten Deploy automatisch an (automatic provisioning).
+  "kv_namespaces": [
+    { "binding": "DATA" }
+  ],
+  "triggers": {
+    "crons": ["*/10 * * * *"]
+  },
+  "vars": {
+    // Höchstzahl Abrufjobs je Cron-Lauf. Im Paid-Plan kann der Wert auf 50 steigen.
+    "MAX_JOBS_PER_RUN": "5",
+    // Externe Subrequests je Lauf (Free-Plan: höchstens 50).
+    "SUBREQUEST_BUDGET": "40"
+  },
+  "observability": {
+    "enabled": true
+  }
+  // Eigene Domain (erst eintragen, wenn die Zone hartmann-research.org im selben Cloudflare-Konto liegt):
+  // "routes": [{ "pattern": "monitor.hartmann-research.org", "custom_domain": true }]
+}

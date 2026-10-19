@@ -1,0 +1,5 @@
+{
+  "type": "commonjs",
+  "private": true,
+  "description": "Browser-Skripte (ohne Module), für Tests in Node als CommonJS ladbar"
+}

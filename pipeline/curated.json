@@ -1,0 +1,545 @@
+{
+ "framework": {
+  "forces": [
+   "Schulden-, Kredit- und Geldzyklus",
+   "Innere Ordnung und Unordnung",
+   "Äußere (geopolitische) Ordnung",
+   "Naturereignisse",
+   "Menschlicher Erfindungsgeist"
+  ],
+  "internalStages": [
+   {
+    "n": 1,
+    "name": "Neue innere Ordnung und neue Führung",
+    "desc": "Nach einem Bürgerkrieg oder Umsturz festigt die neue Führung ihre Macht und schaltet die verbliebene Opposition aus."
+   },
+   {
+    "n": 2,
+    "name": "Aufbau von Ressourcenverteilung und Verwaltung",
+    "desc": "Die neue Führung baut Institutionen auf, die Ressourcen verteilen und den Staat tragen."
+   },
+   {
+    "n": 3,
+    "name": "Frieden und Wohlstand",
+    "desc": "Breite Chancen, wachsende Einkommen und Zuversicht; nach Dalio die günstigste Phase des Zyklus."
+   },
+   {
+    "n": 4,
+    "name": "Exzesse und wachsende Lücken bei Vermögen, Chancen und Werten",
+    "desc": "Ausgaben und Schulden laufen den Einkommen davon, schuldenfinanzierte Blasen entstehen, die Lücken zwischen Arm und Reich und zwischen politischen Lagern wachsen."
+   },
+   {
+    "n": 5,
+    "name": "Schlechte Finanzlage und intensiver Konflikt",
+    "desc": "Dem Gemeinwesen geht das Geld aus, während sich der Konflikt zwischen den Lagern verschärft."
+   },
+   {
+    "n": 6,
+    "name": "Bürgerkriege und Revolutionen",
+    "desc": "Ein Lager versucht, die bestehende Ordnung außerhalb ihrer Regeln zu stürzen."
+   }
+  ],
+  "debtStages": [
+   {
+    "n": 1,
+    "name": "Solides Geld",
+    "desc": "Geringe Verschuldung, hartes oder glaubwürdiges Geld, wettbewerbsfähige Wirtschaft; riskante Anlagen sind gegenüber sicheren billig."
+   },
+   {
+    "n": 2,
+    "name": "Schuldenblase",
+    "desc": "Schulden und Schuldendienst wachsen über lange Zeit schneller als die Einkommen; Vermögenspreise sind gemessen an den erwarteten Erträgen hoch."
+   },
+   {
+    "n": 3,
+    "name": "Wendepunkt",
+    "desc": "Die Blase platzt, meist weil sich Geld verknappt und das frühere Schuldenwachstum nicht fortgesetzt werden kann."
+   },
+   {
+    "n": 4,
+    "name": "Entschuldung",
+    "desc": "Die Probleme wandern vom Privatsektor zum Staat und zur Zentralbank: Netto-Verkäufe von Staatsanleihen, Gelddrucken, Abwertung, unter Umständen Kapitalverkehrskontrollen und Sondersteuern."
+   },
+   {
+    "n": 5,
+    "name": "Die große Schuldenkrise klingt ab",
+    "desc": "Ein neues Gleichgewicht entsteht: hohe Realzinsen machen Kreditvergabe wieder lohnend, die Währung wird unter Umständen wieder an etwas Hartes gebunden."
+   }
+  ],
+  "forcesSource": {
+   "label": "Dalio, How Countries Go Broke (2025), S. 165",
+   "url": "https://economicprinciples.org/downloads/How-Countries-Go-Broke.pdf"
+  },
+  "internalSource": {
+   "label": "Dalio: Delving into the Six Stages of the Internal Cycle (LinkedIn, 2. Dezember 2020)",
+   "url": "https://www.linkedin.com/pulse/delving-six-stages-internal-cycle-particular-focus-us-ray-dalio/"
+  },
+  "debtSource": {
+   "label": "Dalio, How Countries Go Broke (2025), S. 17–26",
+   "url": "https://economicprinciples.org/downloads/How-Countries-Go-Broke.pdf"
+  },
+  "debtMarkerStages": {
+   "debt_level": 2,
+   "debt_trend": 2,
+   "interest_trend": 2,
+   "deficit_peacetime": 2,
+   "interest_burden": 3,
+   "borrow_for_interest": 3,
+   "long_up_short_down": 3,
+   "gold_vs_usd": 3,
+   "foreign_demand": 3,
+   "cb_buying": 4,
+   "real_short_neg": 4,
+   "policy_zero": 4,
+   "usd_reserve_down": 4,
+   "gold_real_record": 4,
+   "capital_controls": 4,
+   "restructuring": 4,
+   "debt_falling": 5,
+   "real_high": 5
+  },
+  "durations": {
+   "long": "rund 80 Jahre, plus/minus 25",
+   "short": "rund 6 Jahre, plus/minus 3",
+   "source": {
+    "label": "How Countries Go Broke, S. 3 und S. 14",
+    "url": "https://economicprinciples.org/downloads/How-Countries-Go-Broke.pdf"
+   }
+  },
+  "archetypeSource": {
+   "label": "Principles for Dealing with the Changing World Order, Chart-PDF S. 5",
+   "url": "https://economicprinciples.org/DalioChangingWorldOrderCharts.pdf"
+  },
+  "warsSource": {
+   "label": "Changing World Order, Kapitel 6 (Neuveröffentlichung Februar 2026)",
+   "url": "https://raydalio.substack.com/p/its-official-the-world-order-has"
+  }
+ },
+ "wars": [
+  {
+   "id": "trade",
+   "name": "Handels- und Wirtschaftskrieg",
+   "short": "Handel",
+   "status": "aktiv",
+   "statusLabel": "aktiv",
+   "evidence": "Zölle nach Section 301 gegen China (Stufe 12,5 %) seit 24. Juli 2026; der im September verlängerte Waffenstillstand gilt bis 10. Januar 2027. Durchschnittlicher gesetzlicher US-Zollsatz laut Yale Budget Lab: 11,0 % (24. August 2026).",
+   "links": [
+    {
+     "label": "Yale Budget Lab",
+     "url": "https://budgetlab.yale.edu/research/state-us-tariffs"
+    },
+    {
+     "label": "Heritage Foundation",
+     "url": "https://www.heritage.org/node/25160637"
+    }
+   ]
+  },
+  {
+   "id": "tech",
+   "name": "Technologiekrieg",
+   "short": "Technologie",
+   "status": "aktiv",
+   "statusLabel": "aktiv",
+   "evidence": "KI-Chips der H200-Klasse nur mit Einzelfallgenehmigung (Januar 2026); China listet im Juni zehn US-Firmen für Exportkontrollen. Beim Gipfel im September blieben Exportkontrollen ausgeklammert.",
+   "links": [
+    {
+     "label": "Willkie",
+     "url": "https://www.willkie.com/publications/2026/01/bis-paves-the-way-for-chip-exports-to-china-while-privileging-domestic-investment"
+    },
+    {
+     "label": "Arnold & Porter",
+     "url": "https://arnoldporter.com/en/perspectives/advisories/2026/07/china-imposes-export-control-and-government-procurement-restrictions-on-designated-us-companies"
+    }
+   ]
+  },
+  {
+   "id": "geo",
+   "name": "Geopolitischer Krieg",
+   "short": "Geopolitik",
+   "status": "latent",
+   "statusLabel": "angespannt",
+   "evidence": "Durchfahrten der Taiwanstraße, Blockade philippinischer Versorgungsfahrten am Second Thomas Shoal, eingefrorenes Rüstungspaket für Taiwan; daneben der Krieg mit Iran seit Februar 2026.",
+   "links": [
+    {
+     "label": "USNI News",
+     "url": "https://news.usni.org/2026/01/17/u-s-destroyer-survey-vessel-conduct-first-taiwan-strait-transit-of-2026-say-chinese-officials"
+    },
+    {
+     "label": "IPD Forum",
+     "url": "https://ipdefenseforum.com/2026/10/philippines-u-s-condemn-chinas-dangerous-tactics-at-second-thomas-shoal"
+    }
+   ]
+  },
+  {
+   "id": "capital",
+   "name": "Kapitalkrieg",
+   "short": "Kapital",
+   "status": "teilweise",
+   "statusLabel": "teilweise",
+   "evidence": "Sanktionen gegen eine chinesische Raffinerie (April), Aufnahme von Alibaba, Baidu und BYD in die 1260H-Liste des Pentagons (Juni), erste Strafe nach den Regeln für Auslandsinvestitionen (Oktober). Ein gegenseitiges Einfrieren von Vermögen, Dalios schärfstes Kapitalkriegsmittel, findet nicht statt.",
+   "links": [
+    {
+     "label": "Al Jazeera",
+     "url": "https://www.aljazeera.com/amp/news/2026/4/25/us-sanctions-chinas-teapot-refinery-for-buying-iranian-oil"
+    },
+    {
+     "label": "Fortune",
+     "url": "https://www.fortune.com/2026/06/08/pentagon-accuses-alibaba-baidu-byd-china-military-companies/"
+    },
+    {
+     "label": "Debevoise",
+     "url": "https://www.debevoise.com/insights/publications/2026/10/treasurys-first-outbound-investment-penalty-implic"
+    }
+   ]
+  },
+  {
+   "id": "military",
+   "name": "Militärischer Krieg",
+   "short": "Militär",
+   "status": "nein",
+   "statusLabel": "kein direkter Krieg",
+   "evidence": "Für 2026 ist kein direkter militärischer Zwischenfall zwischen den USA und China belegt.",
+   "links": []
+  }
+ ],
+ "events": [
+  {
+   "date": "2026-01-15",
+   "dateLabel": "15. Jan. 2026",
+   "tag": "Technologie",
+   "kind": "external",
+   "text": "US-Handelsministerium (BIS): Exporte von KI-Chips der H200-Klasse nach China nur noch mit Einzelfallgenehmigung und Auflagen.",
+   "url": "https://www.willkie.com/publications/2026/01/bis-paves-the-way-for-chip-exports-to-china-while-privileging-domestic-investment",
+   "source": "Willkie Farr & Gallagher"
+  },
+  {
+   "date": "2026-01-17",
+   "dateLabel": "17. Jan. 2026",
+   "tag": "Geopolitik",
+   "kind": "external",
+   "text": "Erste Durchfahrt eines US-Zerstörers durch die Taiwanstraße im Jahr 2026, verfolgt von der Volksbefreiungsarmee; zuvor chinesische Manöver Ende Dezember 2025.",
+   "url": "https://news.usni.org/2026/01/17/u-s-destroyer-survey-vessel-conduct-first-taiwan-strait-transit-of-2026-say-chinese-officials",
+   "source": "USNI News"
+  },
+  {
+   "date": "2026-02-20",
+   "dateLabel": "20. Feb. 2026",
+   "tag": "Handel",
+   "kind": "external",
+   "text": "Der Supreme Court erklärt die auf Notstandsbefugnisse (IEEPA) gestützten Zölle für unzulässig (6:3); ab 24. Februar gilt ein befristeter Zuschlag nach Section 122.",
+   "url": "https://www.jonesday.com/en/insights/2026/02/united-states-supreme-court-invalidates-ieepa-tariffs",
+   "source": "Jones Day"
+  },
+  {
+   "date": "2026-02-28",
+   "dateLabel": "28. Feb. 2026",
+   "tag": "Geopolitik",
+   "kind": "external",
+   "text": "Angriffe der USA und Israels auf Iran; der folgende Krieg verändert Energiepreise und das Umfeld der Beziehungen zu China.",
+   "url": "https://jamaica-gleaner.com/article/news/20260228/us-and-israel-strike-iran",
+   "source": "Jamaica Gleaner"
+  },
+  {
+   "date": "2026-04-24",
+   "dateLabel": "24. Apr. 2026",
+   "tag": "Kapital",
+   "kind": "external",
+   "text": "Das US-Finanzministerium sanktioniert die chinesische Raffinerie Hengli (Dalian) wegen Käufen iranischen Öls.",
+   "url": "https://www.aljazeera.com/amp/news/2026/4/25/us-sanctions-chinas-teapot-refinery-for-buying-iranian-oil",
+   "source": "Al Jazeera"
+  },
+  {
+   "date": "2026-06-08",
+   "dateLabel": "8. Juni 2026",
+   "tag": "Kapital",
+   "kind": "external",
+   "text": "Das Pentagon setzt Alibaba, Baidu, BYD und weitere Unternehmen auf seine Liste chinesischer Militärunternehmen (1260H).",
+   "url": "https://www.fortune.com/2026/06/08/pentagon-accuses-alibaba-baidu-byd-china-military-companies/",
+   "source": "Fortune"
+  },
+  {
+   "date": "2026-06-22",
+   "dateLabel": "22. Juni 2026",
+   "tag": "Technologie",
+   "kind": "external",
+   "text": "China setzt zehn US-Unternehmen auf seine Exportkontrollliste und schließt 46 US-Rüstungsfirmen von öffentlichen Aufträgen aus.",
+   "url": "https://arnoldporter.com/en/perspectives/advisories/2026/07/china-imposes-export-control-and-government-procurement-restrictions-on-designated-us-companies",
+   "source": "Arnold & Porter"
+  },
+  {
+   "date": "2026-07-24",
+   "dateLabel": "24. Juli 2026",
+   "tag": "Handel",
+   "kind": "external",
+   "text": "Der Zuschlag nach Section 122 läuft aus; neue Zölle nach Section 301 treten an seine Stelle, China fällt in die Stufe von 12,5 Prozent.",
+   "url": "https://budgetlab.yale.edu/sites/default/files/page_to_pdf/1568/publication_1568.pdf",
+   "source": "Yale Budget Lab"
+  },
+  {
+   "date": "2026-09-25",
+   "dateLabel": "23.–25. Sep. 2026",
+   "tag": "Handel",
+   "kind": "external",
+   "text": "Staatsbesuch Xi Jinpings in Washington: Der Handelswaffenstillstand wird bis 10. Januar 2027 verlängert; Exportkontrollen bleiben ausgeklammert, ein Rüstungspaket für Taiwan über 14 Mrd. US-Dollar liegt weiter auf Eis.",
+   "url": "https://www.heritage.org/node/25160637",
+   "source": "Heritage Foundation"
+  },
+  {
+   "date": "2026-09-28",
+   "dateLabel": "Ende Sep. 2026",
+   "tag": "Geopolitik",
+   "kind": "external",
+   "text": "China blockiert eine philippinische Versorgungsfahrt zum Second Thomas Shoal; die USA verurteilen das Vorgehen.",
+   "url": "https://ipdefenseforum.com/2026/10/philippines-u-s-condemn-chinas-dangerous-tactics-at-second-thomas-shoal",
+   "source": "Indo-Pacific Defense Forum"
+  },
+  {
+   "date": "2026-10-07",
+   "dateLabel": "7. Okt. 2026",
+   "tag": "Kapital",
+   "kind": "external",
+   "text": "Erste Strafe nach den US-Regeln für Auslandsinvestitionen: 200.000 US-Dollar gegen Amidi LLC wegen einer Beteiligung an einem chinesischen KI-Unternehmen.",
+   "url": "https://www.debevoise.com/insights/publications/2026/10/treasurys-first-outbound-investment-penalty-implic",
+   "source": "Debevoise & Plimpton"
+  },
+  {
+   "date": "2026-01-24",
+   "dateLabel": "7./24. Jan. 2026",
+   "tag": "Innere Ordnung",
+   "kind": "unrest",
+   "text": "Minneapolis: Bundesbeamte der Einwanderungsbehörden erschießen bei Einsätzen zwei Menschen; der Präsident droht am 15. Januar mit dem Insurrection Act.",
+   "url": "https://www.npr.org/2026/01/25/nx-s1-5687361/minneapolis-shooting-latest-alex-pretti",
+   "source": "NPR"
+  },
+  {
+   "date": "2026-04-30",
+   "dateLabel": "31. Jan.–30. Apr. 2026",
+   "tag": "Innere Ordnung",
+   "kind": "institutions",
+   "text": "Haushaltsstreit: teilweiser Regierungsstillstand vom 31. Januar bis 3. Februar, danach 76 Tage Stillstand allein des Heimatschutzministeriums, ein Rekord.",
+   "url": "https://www.chds.us/c/timeline/early-2026-government-shutdowns/",
+   "source": "CHDS"
+  },
+  {
+   "date": "2026-04-25",
+   "dateLabel": "25. Apr. 2026",
+   "tag": "Innere Ordnung",
+   "kind": "political_violence",
+   "text": "Schüsse beim Dinner der White House Correspondents' Association; der Verdächtige wird wegen versuchten Mordes am Präsidenten angeklagt.",
+   "url": "https://www.michiganpublic.org/news/2026-04-27/suspected-correspondents-dinner-gunman-is-charged-with-trying-to-assassinate-trump",
+   "source": "Michigan Public"
+  },
+  {
+   "date": "2026-05-23",
+   "dateLabel": "4./23. Mai 2026",
+   "tag": "Innere Ordnung",
+   "kind": "security",
+   "text": "Zwei Zwischenfälle am Weißen Haus: ein Schusswechsel mit dem Secret Service (4. Mai) und ein Schütze an der Absperrung, der getötet wird (23. Mai).",
+   "url": "https://www.bostonglobe.com/2026/05/24/nation/white-house-shooting-know/",
+   "source": "Boston Globe"
+  },
+  {
+   "date": "2026-05-22",
+   "dateLabel": "22. Mai 2026",
+   "tag": "Institutionen",
+   "kind": "institutions",
+   "text": "Kevin Warsh wird als Vorsitzender der Federal Reserve vereidigt; der Senat hatte ihn mit 54 zu 45 Stimmen bestätigt.",
+   "url": "https://www.realestatenews.com/2026/05/13/new-era-at-the-fed-begins-as-kevin-warsh-confirmed-as-chair",
+   "source": "Real Estate News"
+  },
+  {
+   "date": "2026-06-29",
+   "dateLabel": "29. Juni 2026",
+   "tag": "Institutionen",
+   "kind": "institutions",
+   "text": "Supreme Court: Trump v. Slaughter hebt den Abberufungsschutz von FTC-Kommissaren auf (6:3); in Trump v. Cook bleibt die sofortige Abberufung der Fed-Gouverneurin Lisa Cook blockiert.",
+   "url": "https://www.axios.com/2026/06/29/trump-supreme-court-fed-lisa-cook",
+   "source": "Axios"
+  },
+  {
+   "date": "2026-09-02",
+   "dateLabel": "2. Sep. 2026",
+   "tag": "Institutionen",
+   "kind": "institutions",
+   "text": "Ein Übergangshaushalt finanziert die Bundesregierung bis 11. Dezember 2026; ein Stillstand zum 1. Oktober bleibt aus.",
+   "url": "https://www.whitehouse.gov/briefings-statements/2026/09/congressional-bill-h-r-6500/",
+   "source": "Weißes Haus"
+  },
+  {
+   "date": "2026-09-06",
+   "dateLabel": "6. Sep. 2026",
+   "tag": "Innere Ordnung",
+   "kind": "political_violence",
+   "text": "Ein bewaffneter Mann stürmt bei einer Messe auf die Gouverneurskandidatin Amy Acton (Ohio) zu und wird festgenommen.",
+   "url": "https://www.fox5vegas.com/2026/09/07/armed-suspect-charged-after-rushing-ohio-governor-candidate-amy-acton-fair/",
+   "source": "FOX5 Las Vegas"
+  }
+ ],
+ "methodText": [
+  "Der Monitor bildet Dalios Rahmenwerk nach, ohne dessen Daten zu verwenden. Jede der acht Machtmessgrößen ist durch offene Reihen ersetzt: Wirtschaftsleistung durch den Anteil am Welt-BIP zu Kaufkraftparitäten, Welthandel durch den Exportanteil, Militär durch Ausgaben, Streitkräfte und Atomsprengköpfe, Bildung durch Bestände an Schul- und Hochschuljahren sowie die durchschnittliche Schuldauer, Innovation durch Nobelpreise, F&E-Ausgaben und Patente, Wettbewerbsfähigkeit durch Industriebasis und Leistungsbilanz, Finanzzentrum durch die Börsenkapitalisierung, Reservewährung durch den Anteil an den Weltdevisenreserven.",
+  "Komponenten werden als Anteile an der Welt berechnet, mit einem zentrierten Fünfjahresmittel geglättet und auf das historische Maximum der acht Länder normiert. Kriegsjahre zählen nicht zum Maximum, weil die Weltsummen dort lückenhaft sind. Der Index ist das gewichtete Mittel der verfügbaren Größen; wo weniger als fünf vorliegen, ist die Kurve blass gezeichnet.",
+  "Die Stadienschätzung prüft beobachtbare Marker mit ausgewiesenen Schwellen. Ein Stadium gilt als erreicht, wenn mindestens die Hälfte seiner Marker erfüllt ist. Ereignisbasierte Marker stützen sich auf eine kuratierte, belegte Liste.",
+  "Die Phasenschätzung vergleicht für jede Messgröße das Niveau relativ zum eigenen Höchststand und den Trend über 15 Jahre mit einem Archetyp aus acht Glockenkurven. Die Lage der Höhepunkte ist aus Dalios Grafik der typischen Abfolge abgelesen (Bildung rund 60 Jahre vor dem Zenit, Reservewährung rund 65 Jahre danach); Glockenform und Breite sind Annahmen dieses Modells.",
+  "Die Monte-Carlo-Projektion schreibt die Schuldenquote mit d(t+1) = d(t)·(1+r)/(1+g) + Primärdefizit fort. Der Durchschnittszins nähert sich über die Restlaufzeit dem Zins für Neuemissionen; Rezessionen treten zufällig auf und erhöhen das Defizit. Die Analogiesuche standardisiert zehn Merkmale über 2.718 Land-Jahre der Jordà-Schularick-Taylor-Datenbank und beschreibt, was auf ähnliche Konstellationen folgte."
+ ],
+ "limitsText": [
+  "Dalios Zyklentheorie verallgemeinert aus wenigen Fällen: drei Reservewährungsimperien seit 1600 und einigen chinesischen Dynastien. Bei dieser Fallzahl lässt sich eine Regelmäßigkeit kaum von einer nachträglich erzählten Ordnung unterscheiden. Der Monitor macht die Bausteine der Theorie messbar; er prüft sie nicht.",
+  "Die Stadien sind qualitativ beschrieben. Jede Übersetzung in Schwellen ist eine Setzung, und andere, ebenso vertretbare Schwellen ergeben andere Stadien. Deshalb steht jeder Marker einzeln in der Prüfliste.",
+  "Anteile an der Welt begünstigen bevölkerungsreiche Länder und hängen von der Abdeckung der Weltsummen ab. Vor 1900 fehlen in den Handels- und Militärreihen Länder, die Anteile der erfassten Mächte sind dort eher zu hoch. Patentzahlen und Bildungsbestände messen Menge, nicht Qualität. Die Wirtschaftsleistung folgt dem Niveau der Maddison-Datenbank (Kaufkraftparitäten 2011): Sie weist Chinas Anteil höher aus als der IWF, der für 2025 China 19,6 % und den USA 14,6 % zuschreibt.",
+  "Finanzzentrum (ab 1975) und Reservewährung (ab 1995) fehlen für die Zeit des britischen Abstiegs. Gerade die Größen, die nach Dalio zuletzt nachgeben, sind historisch also nicht belegt; der Übergang vom Pfund zum Dollar bleibt im Index unsichtbar.",
+  "Die Phasenschätzung setzt die Reihenfolge der Höhepunkte voraus, die sie anschließend bestätigt. Aussagekräftig ist der Vergleich der Länder unter identischen Annahmen, nicht die Jahreszahl. Die Analogien stammen überwiegend aus Industrieländern ohne Reservewährung; die Schuldenprojektion kennt keine Rückkopplung höherer Schulden auf das Zinsniveau."
+ ],
+ "verifyNote": "Quellenangaben, Zitate und Stadienbeschreibungen vor einer wissenschaftlichen Verwendung manuell am Original prüfen. Die Zitate der über Our World in Data bezogenen Reihen stammen aus deren Metadaten, die übrigen wurden nach den Angaben der Anbieter formuliert. Kuratierte Ereignisse und Stichtagswerte entsprechen dem Recherchestand vom 18. Oktober 2026.",
+ "pipelineText": [
+  "Aktualisierung: pipeline/build_data.py lädt alle Quellen über offene Schnittstellen (FRED, IWF DataMapper und SDMX, Weltbank, U.S. Treasury Fiscal Data, Our World in Data, Nobel-API) oder als Datei (JST, COW, GPR, Shiller, Bank of England, Voteview), harmonisiert sie und schreibt data/bigcycle.json. Ein GitHub-Actions-Workflow führt das jeden Montag aus, prüft die Plausibilität und committet die neue Datei.",
+  "Kuratierte Inhalte wie Stadienbeschreibungen, Ereignisse und der Status der Konfliktformen liegen in pipeline/curated.json und werden von Hand gepflegt. Die Seite liest alle Daten zur Laufzeit, Code und Daten bleiben getrennt."
+ ],
+ "greatPowers2024": {
+  "label": "Dalio, The Great Powers Index: 2024 (Stand 31. Juli 2024), Stärkemaß 0–1",
+  "url": "https://economicprinciples.org/downloads/DalioRay_Power_Index_Appendix.pdf",
+  "values": {
+   "USA": 0.89,
+   "CHN": 0.8,
+   "DEU": 0.38,
+   "JPN": 0.33,
+   "IND": 0.3,
+   "GBR": 0.29,
+   "RUS": 0.26,
+   "NLD": 0.17
+  }
+ },
+ "dalioView": [
+  {
+   "date": "2025-06-01",
+   "dateLabel": "2025",
+   "topic": "Gesamtbild",
+   "text": "How Countries Go Broke: Der Big Cycle läuft seit rund 80 Jahren und ist zu 90 bis 95 Prozent durchlaufen; die USA stehen im Stadium 5 der inneren Ordnung und in der späten Phase des großen Schuldenzyklus.",
+   "url": "https://economicprinciples.org/downloads/How-Countries-Go-Broke.pdf",
+   "source": "How Countries Go Broke, S. 362–383"
+  },
+  {
+   "date": "2025-06-02",
+   "dateLabel": "2025",
+   "topic": "Schulden",
+   "text": "Wahrscheinlichkeit einer größeren Umschuldung oder Monetarisierung von Reservewährungsschulden: etwa 65 Prozent in fünf und etwa 80 Prozent in zehn Jahren.",
+   "url": "https://economicprinciples.org/downloads/How-Countries-Go-Broke.pdf",
+   "source": "How Countries Go Broke"
+  },
+  {
+   "date": "2026-01-26",
+   "dateLabel": "26. Jan. 2026",
+   "topic": "Innere Ordnung",
+   "text": "Essay auf X nach den Ereignissen in Minneapolis: Die USA seien ein Pulverfass; laut Fortune hält Dalio einen Übergang von Stadium 5 zu Stadium 6 für möglich.",
+   "url": "https://fortune.com/2026/01/26/ray-dalio-trump-minneapolis-shooting-civil-war-debt-tinderbox/",
+   "source": "Fortune"
+  },
+  {
+   "date": "2026-02-14",
+   "dateLabel": "14. Feb. 2026",
+   "topic": "Äußere Ordnung",
+   "text": "Die Weltordnung befinde sich im Stadium 6 des Big Cycle; die Nachkriegsordnung sei offiziell zerbrochen.",
+   "url": "https://raydalio.substack.com/p/its-official-the-world-order-has",
+   "source": "Dalio, Substack"
+  },
+  {
+   "date": "2026-03-14",
+   "dateLabel": "14. März 2026",
+   "topic": "Gesamtbild",
+   "text": "Gastbeitrag in Fortune: Die USA stünden in Stadium 5, unmittelbar vor dem Zusammenbruch in Stadium 6.",
+   "url": "https://fortune.com/2026/03/14/ray-dalio-big-cycle-debt-crisis-political-disorder-world-order/",
+   "source": "Fortune"
+  },
+  {
+   "date": "2026-04-07",
+   "dateLabel": "7. Apr. 2026",
+   "topic": "Äußere Ordnung",
+   "text": "Die Abfolge des äußeren Zyklus habe Schritt 9 von 13 erreicht (Konflikte auf mehreren Schauplätzen); Vergleich mit 1913/14 und 1938/39.",
+   "url": "https://www.linkedin.com/pulse/big-thing-we-world-war-isnt-going-end-anytime-soon-ray-dalio-sbrqe/",
+   "source": "Dalio, LinkedIn"
+  },
+  {
+   "date": "2026-08-21",
+   "dateLabel": "21. Aug. 2026",
+   "topic": "Schulden",
+   "text": "Einnahmen des Bundes rund 5,5 Bio. US-Dollar, Zinsen rund 1 Bio. (etwa 20 Prozent der Einnahmen), Schuldendienst einschließlich Tilgung rund 11 Bio. (etwa 200 Prozent). Vorschlag: Defizit auf 3 Prozent des BIP senken, je etwa 5 Prozent über Ausgaben und Steuern, dazu 1 bis 1,5 Prozentpunkte niedrigere Zinsen.",
+   "url": "https://www.linkedin.com/pulse/how-countries-go-broke-dynamic-behind-what-happening-now-ray-dalio-rvl6c/",
+   "source": "Dalio, LinkedIn"
+  },
+  {
+   "date": "2026-10-13",
+   "dateLabel": "13. Okt. 2026",
+   "topic": "Schulden",
+   "text": "Der Anleihemarkt folge im Großen der Vorlage der Endphase; die USA stünden mitten in diesem Abschnitt. Bills machten rund die Hälfte der Emissionen aus (üblich rund ein Fünftel), die Fed kaufe wieder Bills, die Nachfrage aus Japan und China lasse nach.",
+   "url": "https://www.linkedin.com/pulse/numbers-behind-bond-bear-market-look-equities-ray-dalio-he3jc/",
+   "source": "Dalio, LinkedIn"
+  }
+ ],
+ "flags": {
+  "domesticArmedConflict": false,
+  "unconstitutionalSeizure": false,
+  "debtRestructuring": false,
+  "capitalControls": false
+ },
+ "violenceSince": "2025-10-01",
+ "values": {
+  "cbo": {
+   "label": "CBO, The Budget and Economic Outlook: 2026 to 2036 (11. Februar 2026)",
+   "url": "https://www.cbo.gov/publication/61882",
+   "debt2036": 120.2,
+   "netInterest2036Gdp": 4.6,
+   "netInterest2036Rev": 25.8,
+   "avgRate2026": 3.4,
+   "avgRate2032": 3.9,
+   "nominalGrowth": 4.0,
+   "primaryDeficit2026": 2.5
+  },
+  "cboLong": {
+   "label": "CBO-Schreiben vom 24. September 2026",
+   "url": "https://www.cbo.gov/publication/62758",
+   "debt2056": 175,
+   "debt2056High": 222
+  },
+  "sipri2025": {
+   "label": "SIPRI Fact Sheet, April 2026",
+   "url": "https://www.sipri.org/publications/2026/sipri-fact-sheets/trends-world-military-expenditure-2025",
+   "world": 2887,
+   "usa": 954,
+   "usaShare": 33,
+   "chn": 336,
+   "chnShare": 12
+  },
+  "wgc": {
+   "label": "World Gold Council, Gold Demand Trends",
+   "url": "https://www.gold.org/goldhub/research/gold-demand-trends/gold-demand-trends-q2-2026/central-banks",
+   "cb2025": 863.3,
+   "cbH1_2026": 345
+  },
+  "gold": {
+   "athLbmaPm": 5405,
+   "athDate": "2026-01-29",
+   "athSource": "World Gold Council, Gold Demand Trends Q1 2026",
+   "athUrl": "https://www.gold.org/goldhub/research/gold-demand-trends/gold-demand-trends-q1-2026",
+   "lbmaPm": 4152.25,
+   "lbmaDate": "2026-10-15",
+   "lbmaSource": "LBMA über Bernama",
+   "lbmaUrl": "https://bernama.com/en/market/news.php?id=2621588"
+  },
+  "tariffs": {
+   "yaleStatutory": 11.0,
+   "yaleDate": "2026-08-24",
+   "yaleUrl": "https://budgetlab.yale.edu/research/state-us-tariffs",
+   "tfEffective2025": 7.7,
+   "tfUrl": "https://taxfoundation.org/tariff-tracker/"
+  },
+  "weo": {
+   "label": "IWF, World Economic Outlook Oktober 2026",
+   "url": "https://www.imf.org/en/publications/weo/issues/2026/10/13/world-economic-outlook-october-2026",
+   "world2026": 3.1,
+   "world2027": 3.4,
+   "usa2026": 2.3,
+   "chn2026": 4.5,
+   "pppUsa2025": 14.6,
+   "pppChn2025": 19.6
+  }
+ }
+}

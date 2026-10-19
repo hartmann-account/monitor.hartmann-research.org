@@ -1,0 +1,20 @@
+{
+  "name": "bigcycle-monitor",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Big-Cycle-Monitor: Weltwirtschaft, große Zyklen, Anlagebarometer und Geopolitik mit offenen Daten",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "wrangler dev --test-scheduled",
+    "deploy": "wrangler deploy",
+    "fetch:live": "node --env-file-if-exists=.env scripts/fetch_live.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.148.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

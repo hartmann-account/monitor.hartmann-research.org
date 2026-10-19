@@ -1,0 +1,57 @@
+name: Daten aktualisieren
+
+# Wöchentlich: lange Historien (Python-Pipeline) neu bauen und den statischen Live-Startbestand
+# erneuern. Die täglichen Live-Daten lädt der Cloudflare-Worker selbst (Cron-Trigger alle zehn Minuten).
+on:
+  schedule:
+    - cron: "17 5 * * 1"   # montags 05:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Abhängigkeiten
+        run: pip install -r pipeline/requirements.txt
+      - name: Historische Reihen laden und Datensatz bauen
+        run: python -I pipeline/build_data.py --cache .cache --out public/data/bigcycle.json --refresh
+      - name: Plausibilität prüfen
+        run: python -I pipeline/check_data.py public/data/bigcycle.json
+      - name: Live-Startbestand erneuern
+        # übernimmt den aktuellen Snapshot des Workers; ist er nicht erreichbar, laufen die Abrufjobs hier
+        continue-on-error: true
+        env:
+          LIVE_URL: ${{ vars.LIVE_URL || 'https://monitor.hartmann-research.org/api/snapshot' }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+        run: node scripts/refresh_seed.mjs
+      - name: Seite bauen und testen
+        run: |
+          node scripts/build.mjs
+          node --test test/*.test.mjs
+      - name: Änderungen committen
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/data/bigcycle.json public/data/live.json
+          if git diff --cached --quiet; then
+            echo "Keine Änderungen."
+          else
+            git commit -m "Daten aktualisiert: $(date -u +%Y-%m-%d)"
+            git push
+          fi
