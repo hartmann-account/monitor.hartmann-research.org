@@ -60,10 +60,10 @@ meta.updatedAt = new Date().toISOString();
 try {
   const histFile = join(root, "public", "data", "bigcycle.json");
   const hist = existsSync(histFile) ? JSON.parse(readFileSync(histFile, "utf8")) : null;
-  const h = historyWithoutDb({ schema: 2, data, status: {} }, hist);
-  data.signal_history = { series: {}, items: [h] };
-  meta.jobs.signal_history = { n: 1, latest: h.dates[h.dates.length - 1], ok: true, okAt: meta.updatedAt, error: null };
-  console.log(`ok    signal_history     ${h.dates.length} Stichtage (rückgerechnet, ohne D1)`);
+  const items = ["m1", "y1", "lt"].map(hz => historyWithoutDb({ schema: 2, data, status: {} }, hist, hz));
+  data.signal_history = { series: {}, items };
+  meta.jobs.signal_history = { n: items.length, latest: items[0].dates[items[0].dates.length - 1], ok: true, okAt: meta.updatedAt, error: null };
+  console.log(`ok    signal_history     ${items.map(h => `${h.hz}: ${h.dates.length} Stichtage`).join(", ")} (rückgerechnet, ohne D1)`);
 } catch (e) { console.log("FEHLER signal_history", e.message); }
 const snap = { schema: 2, generated: meta.updatedAt, origin: "seed", status: statusOf(meta), data };
 writeFileSync(out, JSON.stringify(snap));

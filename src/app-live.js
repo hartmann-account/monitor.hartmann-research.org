@@ -2,7 +2,7 @@
 /* Big-Cycle-Monitor: Live-Teil (täglich über den Worker) – Anlagebarometer, Konjunktur und Märkte */
 
 let LIVE = null;   // dekodierter Snapshot (SIG.decodeSnapshot)
-let BARO = null;   // Ergebnis von SIG.barometer
+let BARO = null;   // Ergebnis von SIG.barometer für den gewählten Horizont
 // Farben folgen dem Land, nicht dem Rang (gleiche Slots wie CC im Machtindex; die Schweiz nimmt den Slot der Niederlande)
 const LC = { US: "--s1", CN: "--s2", GB: "--s3", CH: "--s4", EA: "--s5", DE: "--s5", JP: "--s6", RU: "--s7", IN: "--s8" };
 const RN = { US: "USA", CN: "China", GB: "Großbritannien", CH: "Schweiz", EA: "Eurozone", DE: "Deutschland", JP: "Japan", RU: "Russland", IN: "Indien", WORLD: "Welt", EM: "Schwellenländer" };
@@ -53,9 +53,32 @@ function indexed(data, fromX) {
 function nowX() { const p = lastLive("eq_us") || lastLive("y10_us"); return p ? p.x : new Date().getUTCFullYear() + new Date().getUTCMonth() / 12; }
 function catOf(r) { return r && r.now ? r.now.cat : null; }
 
+/* ------------------------------------------------------------------ Prognosehorizont */
+// Barometer je Horizont (m1 = 1 Monat, y1 = 12 Monate, lt = 5–10 Jahre), bei Bedarf berechnet
+const BAROS = {};
+let HZ = "m1";
+function baroFor(hz) {
+  if (!LIVE) return null;
+  if (!BAROS[hz]) { try { BAROS[hz] = SIG.barometer(LIVE, hz); } catch (e) { console.error("Barometer", hz, e); BAROS[hz] = null; } }
+  return BAROS[hz];
+}
+function savedHorizon() {
+  let v = null;
+  try { v = localStorage.getItem("bcm-horizon"); } catch (e) { /* Speicher nicht verfügbar */ }
+  return SIG.cfg.horizons.some(x => x.id === v) ? v : "m1";
+}
+function setHorizon(hz) {
+  HZ = hz;
+  BARO = baroFor(hz);
+  try { localStorage.setItem("bcm-horizon", hz); } catch (e) { /* Speicher nicht verfügbar */ }
+}
+const hzWord = () => (BARO ? BARO.horizon.title : "");
+
 /* ------------------------------------------------------------------ Was steigt, was fällt (Kopfbereich) */
 const MOVER_IDS = ["eq_us", "eq_ch", "eq_ea", "eq_cn", "gold_usd", "fx_chf", "bd_us", "brent"];
-function trendWord(r) { const t = r.now.pillars.trend; if (!t) return "→ seitwärts"; return t.s > 0.3 ? "↑ Aufwärtstrend" : t.s < -0.3 ? "↓ Abwärtstrend" : "→ seitwärts"; }
+// Trendsäule des Horizonts: 1 Monat Trend, 12 Monate Momentum, 5–10 Jahre Langfristtrend
+function trendPillar(r) { const P = r.now.pillars; return P.trend || P.mom12 || P.trendLT || null; }
+function trendWord(r) { const t = trendPillar(r); if (!t) return "→ seitwärts"; return t.s > 0.3 ? "↑ Aufwärtstrend" : t.s < -0.3 ? "↓ Abwärtstrend" : "→ seitwärts"; }
 function moverName(r) {
   const { id, group, label } = r.row;
   if (id === "eq_world") return "Aktien weltweit";
@@ -80,14 +103,15 @@ function renderMovers() {
   if (!BARO) { host.replaceChildren(); return; }
   const byId = Object.fromEntries(BARO.rows.map(r => [r.row.id, r]));
   const items = MOVER_IDS.map(id => byId[id]).filter(r => r && r.now);
-  if (!items.length) return;
+  if (!items.length) { host.replaceChildren(); return; }
+  const tp = BARO.pillars.find(p => ["trend", "mom12", "trendLT"].includes(p.id));
   host.replaceChildren(h("div", { class: "movers" },
-    h("div", { class: "movers-head" }, h("div", { class: "eyebrow" }, "Was steigt, was fällt? Signale des Anlagebarometers", info({ t: "Was steigt, was fällt?",
-      d: "Acht Anlagen aus dem Anlagebarometer im Kurzformat.",
-      f: ["Signal: Stufe aus dem gewichteten Mittel der fünf Säulen (Rechenweg im Barometer).", "Trendpfeil: Trendsäule über +0,3 = Aufwärtstrend, unter −0,3 = Abwärtstrend, sonst seitwärts.", "1 Monat: letzter Kurs ÷ Kurs vor 30 Tagen − 1."] }, "Was steigt, was fällt")), h("a", { href: "#barometer", class: "small", text: "Alle Signale" })),
+    h("div", { class: "movers-head" }, h("div", { class: "eyebrow" }, `Was steigt, was fällt? ${hzWord()}`, info(() => ({ t: "Was steigt, was fällt?",
+      d: `Acht Anlagen aus dem Anlagebarometer im Kurzformat, Horizont: ${BARO.horizon.title} (umschaltbar im Barometer).`,
+      f: [`Signal: Stufe aus dem gewichteten Mittel der Säulen ${BARO.pillars.map(p => p.label).join(", ")} (Rechenweg im Barometer).`, `Trendpfeil: Säule ${tp ? tp.label : "Trend"} über +0,3 = Aufwärtstrend, unter −0,3 = Abwärtstrend, sonst seitwärts.`, "1 Monat: letzter Kurs ÷ Kurs vor 30 Tagen − 1."] }), "Was steigt, was fällt")), h("a", { href: "#barometer", class: "small", text: "Alle Signale" })),
     h("div", { class: "movers-grid" }, ...items.map(r => {
       const c = r.now.cat;
-      return h("a", { class: "mover", href: "#baro-" + r.row.id, title: `${moverName(r)}: Signal ${c.label} (${fmt(r.now.score, 2)})` },
+      return h("a", { class: "mover", href: "#baro-" + r.row.id, title: `${moverName(r)}: Signal ${c.label} (${fmt(r.now.score, 2)}), ${BARO.horizon.title}` },
         h("span", { class: "m-name", text: moverName(r) }),
         h("span", { class: "m-sub", text: trendWord(r) }),
         h("span", { class: "m-perf", text: `1 Monat ${signed(100 * (r.perf.m1 ?? NaN), 1)} %` }),
@@ -97,7 +121,7 @@ function renderMovers() {
 
 /* ------------------------------------------------------------------ Anlagebarometer */
 // Raster wie in einer Monatsübersicht: sechs Teilspalten, Balken über zwei davon; Startspalte = Stufe + 2
-const GROUP_LABELS = { klassen: "Anlageklassen", aktien: "Aktien", anleihen: "Staatsanleihen", kredit: "Unternehmensanleihen", waehrungen: "Währungen gegenüber dem US-Dollar", rohstoffe: "Rohstoffe", relativ: "Relative Stärke" };
+const GROUP_LABELS = { klassen: "Anlageklassen", aktien: "Aktien", anleihen: "Staatsanleihen", kredit: "Unternehmensanleihen", waehrungen: "Währungen gegenüber dem US-Dollar", rohstoffe: "Rohstoffe", relativ: "Relative Stärke", gold: "Gold und Silber" };
 function barEl(label, short, n, prevN, title) {
   const chg = prevN != null && prevN !== n;
   const sym = (SIG.cfg.cats.find(c => c.n === n) || {}).sym || "";
@@ -134,9 +158,14 @@ function fmtPart(q) {
   if (q.v == null) return "";
   const d = Math.abs(q.v) >= 100 ? 0 : Math.abs(q.v) >= 10 ? 1 : 2;
   const unit = q.u === "%" ? " %" : q.u === "Pp." ? " Pp." : q.u === "σ" ? " σ" : q.u ? " " + q.u : "";
-  return (q.u === "%" || q.u === "Pp." || q.u === "σ" ? signed(q.v, d) : fmt(q.v, d)) + unit;
+  return (q.u === "%" || q.u === "Pp." || q.u === "σ" || q.u === "% p. a." ? signed(q.v, d) : fmt(q.v, d)) + unit;
 }
 const SOFT = "Jeder Teilwert wird weich auf −2 bis +2 begrenzt: 2 × tanh(z ÷ 2).";
+const VINTAGE = "IWF-Prognosen und Bevölkerungsprojektionen gibt es nur im jüngsten Stand; Vormonat und Rückrechnung verwenden ihn ebenfalls.";
+const G_PARTS = ["Je Land: IWF-Prognose des realen Wachstums, Mittel der nächsten fünf Jahre: (Wachstum − 2 %) ÷ 1,5 Pp.", "Bevölkerung von 15 bis 64 Jahren (Projektion der Weltbank), Veränderung pro Jahr über die nächsten zehn Jahre ÷ 0,5 %.", "BIP je Erwerbstätigem, Wachstum pro Jahr über die letzten zehn Jahre: (Wachstum − 1 %) ÷ 1 Pp.", "Länderwert = Mittel der Teile; Körbe und Welt: gewichtetes Mittel der Länder."];
+const D_PARTS = ["Schuldenlast je Land: Staatsschulden (Quote − 60 %) ÷ 40 Pp.; Veränderung der Quote bis in fünf Jahren laut IWF ÷ 10 Pp.; Haushaltssaldo −(Saldo + 3 %) ÷ 3 Pp.; Zins minus nominales Wachstum (Rendite 10 Jahre minus IWF-Prognose für Wachstum und Inflation) ÷ 1,5 Pp.", "Schuldenlast = Mittel der Teile (positiv = hohe Last)."];
+const P_PARTS = ["Je Land: Veränderung des Anteils an der Weltwirtschaft (Kaufkraftparitäten, IWF) pro Jahr über zehn Jahre (fünf zurück, fünf Projektion) ÷ 1 %.", "Leistungsbilanz, Mittel der nächsten fünf Jahre (IWF) ÷ 3 % des BIP.", "Länderwert = Mittel; Körbe: gewichtetes Mittel."];
+const C12 = ["Teilsäule Frühindikator: wie beim Ausblick 1 Monat.", "Teilsäule IWF-Prognose: Wachstum der nächsten zwölf Monate = (1 − a) × Prognose laufendes Jahr + a × Prognose nächstes Jahr (a = abgelaufener Teil des Jahres), ebenso für die letzten zwölf Monate; Wert = (künftig − bisher) ÷ 0,7 Pp.", "Säule = Mittel beider Teilsäulen."];
 const PILLAR_RULES = {
   trend: { all: ["Rendite über 3, 6 und 12 Monate ÷ (annualisierte Volatilität × √(Monate ÷ 12)) ergibt je Zeitraum einen z-Wert.", "Abstand zum 200-Tage-Schnitt (bei Monatsreihen: 10-Monats-Schnitt) ÷ (Volatilität × 0,45).", "Säule = 0,6 × Mittel der Renditewerte + 0,4 × Abstandswert."] },
   cycle: {
@@ -145,7 +174,7 @@ const PILLAR_RULES = {
     bond: ["Wachstum: −0,7 × Frühindikator-Wert der Region (gute Konjunktur belastet Anleihen).", "Inflation: −(Veränderung der Inflationsrate über 6 Monate ÷ 0,8 Pp.).", "Säule = Mittel beider Werte."],
     fx: ["Wachstumsvorsprung = Frühindikator-Wert der Region − Wert der USA (beim Dollar: USA − Welt; bei EUR/CHF: Eurozone − Schweiz)."],
     gold: ["Weltkonjunktur: −0,5 × Frühindikator-Wert der Welt.", "US-Inflation: Veränderung der Inflationsrate über 6 Monate ÷ 0,8 Pp.", "Säule = Mittel beider Werte."],
-    relative: ["Wachstumsvorsprung der ersten gegenüber der zweiten Region; Aktien vs. Anleihen: US-Frühindikator; Gold vs. Aktien: −0,6 × US-Frühindikator."],
+    relative: ["Wachstumsvorsprung der ersten gegenüber der zweiten Region; Aktien vs. Anleihen: US-Frühindikator; Gold vs. Aktien: −0,6 × US-Frühindikator; Gold vs. Anleihen: Veränderung der US-Inflation über 6 Monate ÷ 0,8 Pp."],
   },
   value: {
     equity: ["Gerade durch die logarithmierten Monatskurse der letzten 10 Jahre; z = Abstand des heutigen Kurses zur Geraden ÷ Standardabweichung der Abstände.", "Wert = −z ÷ 1,2 (deutlich über dem Trend = teuer = negativ).", "USA zusätzlich Shiller-KGV: 4 × (0,5 − Perzentil seit 1881); Säule = Mittel beider."],
@@ -154,6 +183,7 @@ const PILLAR_RULES = {
     credit: ["z = (Risikoprämie − Mittel der letzten 10 Jahre) ÷ Standardabweichung; hohe Prämie = günstig = positiv."],
     fx: ["Abweichung des realen effektiven Wechselkurses (BIZ) von seinem 10-Jahres-Mittel in %.", "Wert = −Abweichung ÷ 7 %. Gegenüber dem Dollar zählt der Unterschied: −(Abweichung der Währung − Abweichung des Dollars) ÷ 10 %."],
     gold: ["Realer Goldpreis = Goldpreis ÷ US-Verbraucherpreisindex; z = Abstand zum 10-Jahres-Trend (wie bei Aktien).", "Wert = −z ÷ 1,2."],
+    relative: ["z = Abstand des Verhältnisses zu seinem log-linearen 10-Jahres-Trend ÷ Standardabweichung der Abstände.", "Wert = −z ÷ 1,2 (weit vorn = Rückschlagrisiko)."],
   },
   liquidity: {
     equity: ["Leitzinsänderung über 12 Monate: −Änderung ÷ 0,6 Pp. (Senkungen stützen).", "Zinskurve = Rendite 10 Jahre − Leitzins, geteilt durch 1 Pp.", "USA: Fed-Bilanz über 6 Monate ÷ 3 %.", "Schwellenländer und Rohstoffe: −Veränderung des Dollarindex über 6 Monate ÷ 4 %.", "Säule = Mittel der vorhandenen Teile."],
@@ -162,33 +192,73 @@ const PILLAR_RULES = {
     gold: ["Reale US-Rendite (TIPS), Veränderung über 6 Monate: −Änderung ÷ 0,4 Pp.", "Dollarindex über 6 Monate: −Veränderung ÷ 4 %.", "Säule = Mittel."],
   },
   risk: { all: ["Risikoappetit = Mittel aus: VIX gegenüber seinem Jahresmedian (−Abweichung ÷ 5), Hochzins-Risikoprämie über 3 Monate (−Änderung ÷ 0,6 Pp.), Finanzstressindex (−Wert ÷ 1,2) und geopolitischem Risiko (−Abweichung ÷ 1,5 σ).", "Säule = Risikoappetit × Risikobeta der Anlage (Aktien +1, Schwellenländer +1,2, Rohstoffe +0,7, Gold −0,7, Franken und Yen −0,9 …) + Gewicht × Spannungsabweichung der betroffenen Konfliktlinien, begrenzt auf ±2."] },
+  cycle12: {
+    equity: [...C12, "Körbe und Welt: gewichtetes Mittel der Länder.", VINTAGE],
+    bond: [...C12, "Anleihen: Wachstumsprognose invers (× −0,7) und IWF-Inflationsprognose: −(künftig − bisher) ÷ 0,6 Pp.", VINTAGE],
+    fx: [...C12, "Währungen: Vorsprung der Region vor den USA (Dollar: USA vor Welt; EUR/CHF: Eurozone vor Schweiz).", VINTAGE],
+    gold: [...C12, "Gold: Weltwachstum invers (× −0,5).", VINTAGE],
+    relative: [...C12, "Vorsprung der ersten Region; Aktien vs. Anleihen: US-Wachstum; Gold vs. Aktien: −0,6 × US-Wachstum; Gold vs. Anleihen: US-Inflation (künftig − bisher) ÷ 0,6 Pp.", VINTAGE],
+  },
+  mom12: { all: ["Rendite der letzten zwölf Monate ohne den jüngsten Monat ÷ annualisierte Volatilität (Zeitreihen-Momentum; der letzte Monat bleibt außen vor, weil kurzfristige Ausschläge oft umkehren).", "Abstand zum Zwölfmonatsmittel ÷ (Volatilität × 0,5).", "Säule = 0,7 × Momentum + 0,3 × Abstand."] },
+  valueLT: {
+    equity: ["Gerade durch die logarithmierten Monatskurse der letzten bis zu 20 Jahre; z = Abstand des heutigen Kurses ÷ Standardabweichung der Abstände; Wert = −z ÷ 1,2.", "USA: Shiller-KGV, 4 × (0,5 − Perzentil seit 1881); Säule = 0,4 × Trendwert + 0,6 × KGV-Wert (das KGV sagt die Rendite der nächsten zehn Jahre am besten voraus)."],
+    commodity: ["Realer Preis (Preis ÷ US-Verbraucherpreisindex) gegenüber seinem log-linearen Trend der letzten bis zu 20 Jahre; Wert = −z ÷ 1,2."],
+    bond: ["Erwartete Realrendite = Rendite 10 Jahre − mittlere IWF-Inflationsprognose der nächsten fünf Jahre.", "Wert = (Realrendite − 1 %) ÷ 1 Pp.; über 1 % gilt als attraktiv. Körbe: gewichtetes Mittel der Länder.", VINTAGE],
+    credit: ["Risikoprämie − langjähriger Median (ICE BofA seit 1997: Hochzins USA 4,5, Investment Grade 1,3, Hochzins Euro 4,3 Pp.), geteilt durch 1,5 Pp.; hohe Prämie = günstig = positiv."],
+    fx: ["Abweichung des realen effektiven Wechselkurses (BIZ) vom Mittel seit Beginn der Reihe (meist 2000) in %; gegenüber dem Dollar zählt der Unterschied zur Abweichung des Dollars.", "Wert = −Unterschied ÷ 12 %."],
+    gold: ["Realer Goldpreis = Goldpreis ÷ US-Verbraucherpreisindex, Monatswerte seit August 1971 (Ende der Goldbindung des Dollars).", "Perzentil des heutigen Werts: 3 × (0,5 − Perzentil); dazu z-Abstand zum log-linearen Trend seit 1971: −z ÷ 1,2; Säule = Mittel.", "Gold in Franken und Euro nutzt den Dollarpreis (Gold hat weltweit einen Preis); Silber: realer Preis seit 2005."],
+    relative: ["z = Abstand des Verhältnisses zu seinem log-linearen Trend der letzten bis zu 20 Jahre; Wert = −z ÷ 1,2."],
+  },
+  growth: {
+    equity: [...G_PARTS, VINTAGE],
+    bond: [...G_PARTS, "Anleihen: −0,5 × Länderwert (kräftiges Wachstum hebt die Realzinsen).", VINTAGE],
+    fx: [...G_PARTS, "Währungen: Länderwert minus Wert der USA (Dollar: USA minus Welt; EUR/CHF: Eurozone minus Schweiz).", VINTAGE],
+    commodity: [...G_PARTS, "Rohstoffe: Weltwirtschaft; Kupfer mit Schwerpunkt China.", VINTAGE],
+    relative: [...G_PARTS, "Vorsprung der ersten Region; Aktien vs. Anleihen: USA; Gold vs. Aktien: −0,5 × USA.", VINTAGE],
+  },
+  debt: {
+    equity: [...D_PARTS, "Aktien und Unternehmensanleihen: −0,6 × Schuldenlast.", VINTAGE],
+    bond: [...D_PARTS, "Staatsanleihen: −1 × Schuldenlast.", VINTAGE],
+    fx: [...D_PARTS, "Währungen: −(Last des Landes − Last der Vergleichswährung), weich begrenzt; Dollar: −0,8 × Last der USA.", VINTAGE],
+    gold: [...D_PARTS, "Gold: Schuldenlast der Reservewährungsländer (USA 50 %, Eurozone 15 %, Japan 15 %, Großbritannien 10 %, China 10 %), positiv gewertet: hohe Schulden sprechen für Gold als Wertspeicher.", VINTAGE],
+    relative: [...D_PARTS, "Vorsprung: −0,6 × Mehrbelastung der ersten Region; Gold vs. Aktien +0,8 × Last der USA, Gold vs. Anleihen +1 × Last der USA, Aktien vs. Anleihen +0,4 × Last der USA.", VINTAGE],
+  },
+  power: {
+    equity: [...P_PARTS, VINTAGE],
+    fx: [...P_PARTS, "Währungen zusätzlich: Anteil an den Weltdevisenreserven (IWF COFER), Veränderung über fünf Jahre ÷ 2 Pp.", "Wert = Länderwert minus Wert der USA; Dollar: Wert der USA.", VINTAGE],
+    gold: [...P_PARTS, "Zusätzlich der Dollaranteil an den Weltdevisenreserven, Veränderung über fünf Jahre ÷ 2 Pp.", "Gold: −0,8 × Machtposition der USA (nachlassende Dominanz des Dollars stützt Gold).", VINTAGE],
+    relative: [...P_PARTS, "Vorsprung der ersten Region; Gold-Verhältnisse wie Gold.", VINTAGE],
+  },
+  trendLT: { all: ["Steigung des log-linearen Zehnjahrestrends (pro Jahr) ÷ (Volatilität × 0,5).", "Rendite über drei Jahre ÷ (Volatilität × √3).", "Säule = Mittel beider Werte."] },
 };
 function pillarRules(pid, kind) {
   const R = PILLAR_RULES[pid];
+  if (!R) return [];
   if (R.all) return R.all;
-  return R[kind] || R.equity;
+  return R[kind] || R.equity || [];
 }
+// Unternehmensanleihen folgen bei Konjunktur, Liquidität und den Strukturfaktoren der Aktienlogik
+const ruleKind = (row, pid) => (row.kind === "credit" && pid !== "value" && pid !== "valueLT" ? "equity" : row.kind);
 function pillarInfo(r, p) {
   return () => {
     const pp = r.now.pillars[p.id];
-    const w = SIG.cfg.weights[r.row.kind][p.id];
-    const kind = r.row.kind === "credit" && (p.id === "cycle" || p.id === "liquidity") ? "equity" : r.row.kind;
+    const w = BARO.weights[r.row.kind][p.id];
     return {
-      t: `${r.row.label}: ${p.label}`,
+      t: `${r.row.label}: ${p.label} (${BARO.horizon.label})`,
       d: p.desc,
-      f: [...pillarRules(p.id, kind), SOFT],
-      r: pp ? [...pp.parts.map(q => `${q.k}${q.d ? ` (${q.d})` : ""}: ${q.v == null ? "" : fmtPart(q) + " → "}Teilwert ${q.s == null ? "–" : signed(q.s, 2)}`), `Säule = ${signed(pp.s, 2)}, Gewicht ${fmt(100 * w, 0)} %`] : "Keine Daten für diese Säule.",
+      f: [...pillarRules(p.id, ruleKind(r.row, p.id)), SOFT],
+      r: pp ? [...pp.parts.map(q => `${q.sub ? "· " : ""}${q.k}${q.d ? ` (${q.d})` : ""}: ${q.v == null ? "" : fmtPart(q) + (q.s == null ? "" : " → ")}${q.s == null ? "" : "Teilwert " + signed(q.s, 2)}`), `Säule = ${signed(pp.s, 2)}, Gewicht ${fmt(100 * w, 0)} %`] : "Keine Daten für diese Säule.",
     };
   };
 }
 function scoreInfo(r) {
   return () => {
-    const W = SIG.cfg.weights[r.row.kind];
-    const used = SIG.cfg.pillars.filter(p => W[p.id] && r.now.pillars[p.id]);
+    const W = BARO.weights[r.row.kind];
+    const used = BARO.pillars.filter(p => W[p.id] && r.now.pillars[p.id]);
     const den = used.reduce((a, p) => a + W[p.id], 0);
     return {
-      t: `${r.row.label}: Gesamtwert und Stufe`,
-      d: "Der Gesamtwert fasst die fünf Säulen zusammen und bestimmt die Stufe auf der Skala.",
+      t: `${r.row.label}: Gesamtwert und Stufe (${BARO.horizon.label})`,
+      d: `Der Gesamtwert fasst die Säulen des Horizonts „${BARO.horizon.title}“ zusammen und bestimmt die Stufe auf der Skala.`,
       f: ["Gesamtwert = Σ (Gewicht × Säulenwert) ÷ Σ Gewichte der vorhandenen Säulen.", `Stufen: ${SIG.cfg.cats.map((c, i) => `${c.sym} ${c.max === Infinity ? `über ${fmt(SIG.cfg.cats[i - 1].max, 1)}` : `bis ${fmt(c.max, 1)}`}`).join(", ")}.`, `Toleranzband: Gegenüber der Vormonatsstufe wechselt die Stufe erst, wenn die Schwelle um mehr als ${fmt(SIG.cfg.hyst, 1)} überschritten ist.`],
       r: [`(${used.map(p => `${fmt(W[p.id], 2)} × ${signed(r.now.pillars[p.id].s, 2)}`).join(" + ")}) ÷ ${fmt(den, 2)} = ${signed(r.now.score, 2)}`,
         `Stufe: ${r.now.cat.sym} ${r.now.cat.label}` + (r.now.raw && r.now.raw.n !== r.now.cat.n ? ` (rechnerisch ${r.now.raw.label}, Toleranzband)` : "") + (r.prev && r.prev.cat ? `; Vormonat ${signed(r.prev.score, 2)} (${r.prev.cat.label})` : "")],
@@ -196,16 +266,16 @@ function scoreInfo(r) {
   };
 }
 function detailPanel(r) {
-  const w = SIG.cfg.weights[r.row.kind];
-  const cards = SIG.cfg.pillars.map(p => {
+  const w = BARO.weights[r.row.kind];
+  const cards = BARO.pillars.map(p => {
     if (!w[p.id]) return null;
     const pp = r.now.pillars[p.id];
     return h("div", { class: "pillar" },
       h("h5", null, h("span", null, p.label, info(pillarInfo(r, p), `${p.label} für ${r.row.label}`), h("span", { class: "nowrap", text: ` · Gewicht ${fmt(100 * w[p.id], 0)} %` })), h("span", null, pp ? signed(pp.s, 2) : "keine Daten", " ", pillarBar(pp ? pp.s : null))),
-      pp ? h("ul", null, ...pp.parts.map(q => h("li", null, h("span", { text: q.k + (q.d ? ` (${q.d})` : "") }), h("span", { class: "v", text: q.v == null ? (q.s != null ? signed(q.s, 2) : "") : fmtPart(q) }))))
+      pp ? h("ul", null, ...pp.parts.filter(q => q.v != null || q.s != null).map(q => h("li", { class: q.sub ? "sub" : null }, h("span", { text: q.k + (q.d ? ` (${q.d})` : "") }), h("span", { class: "v", text: q.v == null ? (q.s != null ? signed(q.s, 2) : "") : fmtPart(q) }))))
         : h("p", { class: "small", text: "Für diese Säule liegen keine Daten vor; sie entfällt, die übrigen Gewichte werden hochgerechnet." }));
   }).filter(Boolean);
-  const H = signalHistory();
+  const H = signalHistory(BARO.hz);
   const strip = H && H.rows[r.row.id] ? (() => {
     const cols = historyCols(H, 13);
     const out = h("div", { class: "small hist-mini-read", text: "" });
@@ -216,7 +286,7 @@ function detailPanel(r) {
     h("div", { class: "pillars" }, ...cards),
     strip,
     h("p", { class: "small", style: "margin-top:8px" },
-      `${r.row.label}${r.row.sub ? " (" + r.row.sub + ")" : ""}: Gesamtwert ${signed(r.now.score, 2)} auf der Skala −2 bis +2, Datenstand ${deShort(SIG.isoOf(r.now.date))}; abgedeckt sind ${fmt(100 * r.now.coverage, 0)} % der Säulengewichte.`,
+      `${r.row.label}${r.row.sub ? " (" + r.row.sub + ")" : ""}, ${BARO.horizon.title}: Gesamtwert ${signed(r.now.score, 2)} auf der Skala −2 bis +2, Datenstand ${deShort(SIG.isoOf(r.now.date))}; abgedeckt sind ${fmt(100 * r.now.coverage, 0)} % der Säulengewichte.`,
       r.prev && r.prev.cat ? ` Vor einem Monat: ${signed(r.prev.score, 2)} (${r.prev.cat.label}).` : "",
       r.now.raw && r.now.raw.n !== r.now.cat.n ? ` Die Stufe bleibt wegen des Toleranzbands bei „${r.now.cat.label}“; rechnerisch läge der Wert bei „${r.now.raw.label}“.` : "",
       r.perf ? ` Seit Jahresbeginn ${signed(100 * (r.perf.ytd ?? NaN), 1)} %, drei Monate ${signed(100 * (r.perf.m3 ?? NaN), 1)} %.` : "",
@@ -229,11 +299,11 @@ function gridHead(extra = true) {
       extra ? h("div", { class: "h spark-h", text: "6 Monate" }) : h("div"), extra ? h("div", { class: "h num-h m1-h", text: "1 Monat" }) : h("div"),
       extra ? h("div", { class: "h num-h", text: "12 Monate" }) : h("div"), h("div")));
 }
-function gridRow(r) {
+function gridRow(r, prefix = "baro-") {
   const c = r.now.cat, pc = r.prev && r.prev.cat ? r.prev.cat.n : null;
   const title = `${r.row.label}${r.row.sub ? " (" + r.row.sub + ")" : ""}: ${c.label} (${signed(r.now.score, 2)})${pc != null ? `; vor einem Monat ${r.prev.cat.label}` : ""}. ${trendWord(r)}.`;
   const st = staleNote(r);
-  const row = h("div", { class: "pg-row", id: "baro-" + r.row.id, role: "button", tabindex: "0", "aria-expanded": "false", "aria-label": title + (st ? ` Datenstand: ${st.long}.` : "") },
+  const row = h("div", { class: "pg-row", id: prefix + r.row.id, role: "button", tabindex: "0", "aria-expanded": "false", "aria-label": title + (st ? ` Datenstand: ${st.long}.` : "") },
     h("div", { class: "pg-name", "aria-hidden": "true", text: r.row.label }),
     h("div", { class: "pg-track" }, barEl(r.row.label, r.row.short, c.n, pc, title),
       st ? h("span", { class: `pg-stale ${c.n >= 1 ? "l" : "r"}`, title: st.long, text: st.short }) : null),
@@ -246,6 +316,11 @@ function gridRow(r) {
   row.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
   return [row, det];
 }
+function renderHorizonDesc() {
+  const el = document.getElementById("baro-hz-desc");
+  if (!el || !BARO) return;
+  el.replaceChildren(h("b", { text: BARO.horizon.title + ": " }), BARO.horizon.desc, ` Säulen: ${BARO.pillars.map(p => p.label).join(", ")}.`);
+}
 function renderBarometer() {
   const host = document.getElementById("baro-groups");
   const legend = document.getElementById("baro-legend");
@@ -256,19 +331,20 @@ function renderBarometer() {
   legend.replaceChildren(
     ...SIG.cfg.cats.map(c => h("span", { class: "lg" }, h("span", { class: "lg-bar", style: `background:var(--o${c.n})` }), `${c.sym} ${c.label}`)),
     h("span", { class: "lg" }, h("span", { class: "lg-chev" }), "geändert gegenüber dem Vormonat (Pfeilrichtung)"));
-  document.getElementById("baro-tag").textContent = `Stand ${deShort(SIG.isoOf(BARO.tNow))}`;
   let view = "scale";
   const draw = () => {
+    document.getElementById("baro-tag").textContent = `${BARO.horizon.label} · Stand ${deShort(SIG.isoOf(BARO.tNow))}`;
     host.replaceChildren();
     if (view === "scale") {
-      const sh = sheet(host, { title: "Monatsübersicht der Signale", sub: `Einstufung zum ${deShort(SIG.isoOf(BARO.tNow))}; Zeile antippen für die Säulen im Einzelnen`, info: BARO_INFO });
+      const sh = sheet(host, { title: `Monatsübersicht der Signale · ${BARO.horizon.title}`, sub: `Einstufung zum ${deShort(SIG.isoOf(BARO.tNow))}; Zeile antippen für die Säulen im Einzelnen. Gold, Silber und Gold im Vergleich: eigene Übersicht unten`, info: baroInfo });
       const grid = h("div", { class: "pgrid" }, gridHead(true));
       for (const g of BARO.groups) {
+        if (g.id === "gold") continue;
         const rows = BARO.rows.filter(r => r.row.group === g.id && r.now);
         if (!rows.length) continue;
         grid.append(h("div", { class: "pg-group" },
           h("div", { class: "pg-glabel" }, GROUP_LABELS[g.id] || g.label, g.note ? h("small", { text: g.note }) : null),
-          h("div", { class: "pg-rows" }, ...rows.flatMap(gridRow))));
+          h("div", { class: "pg-rows" }, ...rows.flatMap(r => gridRow(r)))));
       }
       sh.body.append(h("div", { style: "overflow-x:auto" }, grid));
       fitBars(grid);
@@ -281,12 +357,14 @@ function renderBarometer() {
       for (const g of BARO.groups) {
         const rows = BARO.rows.filter(r => r.row.group === g.id && r.now);
         if (!rows.length) continue;
-        const sh = sheet(host, { title: GROUP_LABELS[g.id] || g.label, sub: g.note, info: { d: "Säulenwerte der Anlagen dieser Gruppe auf der Skala −2 bis +2; Farbe = Stufe des Werts.", f: ["Spalten Trend bis Risiko: Säulenwerte (Rechenweg im Barometer: Zeile antippen, dann ⓘ an der Säule).", "Gesamt = gewichtetes Mittel der Säulen; Vormonat = dieselbe Rechnung mit dem Datenstand von vor 30 Tagen.", "· = Säule zählt für diese Anlageart nicht."] } });
+        const sh = sheet(host, { title: GROUP_LABELS[g.id] || g.label, sub: g.note === "eigene Monatsübersicht" ? BARO.horizon.title : [g.note, BARO.horizon.title].filter(Boolean).join(" · "), info: () => ({ d: `Säulenwerte der Anlagen dieser Gruppe auf der Skala −2 bis +2 (${BARO.horizon.title}); Farbe = Stufe des Werts.`, f: [`Spalten ${BARO.pillars.map(p => p.label).join(", ")}: Säulenwerte (Rechenweg im Barometer: Zeile antippen, dann ⓘ an der Säule).`, "Gesamt = gewichtetes Mittel der Säulen; Vormonat = dieselbe Rechnung mit dem Datenstand von vor 30 Tagen.", "· = Säule zählt für diese Anlageart in diesem Horizont nicht."] }) });
         sh.body.append(h("div", { style: "overflow-x:auto" }, heatTable(rows)));
       }
     }
-    const missing = BARO.rows.filter(r => !r.now).map(r => r.row.label + (r.row.sub ? ` (${r.row.sub})` : ""));
+    const missing = BARO.rows.filter(r => !r.now && !(r.row.horizons && !r.row.horizons.includes(BARO.hz))).map(r => r.row.label + (r.row.sub ? ` (${r.row.sub})` : ""));
+    const skipped = BARO.rows.filter(r => r.row.horizons && !r.row.horizons.includes(BARO.hz)).map(r => r.row.label);
     if (missing.length) host.append(h("p", { class: "small", text: `Derzeit ohne ausreichende Daten und daher nicht eingestuft: ${missing.join(", ")}.` }));
+    if (skipped.length) host.append(h("p", { class: "small", text: `Ohne langfristige Einstufung, weil ein fundamentaler Bewertungsanker fehlt: ${skipped.join(", ")}.` }));
   };
   const seg = document.getElementById("baro-view");
   seg.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
@@ -294,13 +372,27 @@ function renderBarometer() {
     seg.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
     draw();
   }));
+  const hzSeg = document.getElementById("baro-hz");
+  const markHz = () => hzSeg.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.h === HZ)));
+  hzSeg.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+    if (b.dataset.h === HZ) return;
+    setHorizon(b.dataset.h);
+    if (!BARO) { setHorizon("m1"); }
+    markHz();
+    renderHorizonDesc();
+    draw();
+    for (const f of [renderGold, renderBaroSummary, renderBaroMethod, renderMovers]) { try { f(); } catch (e) { console.error(f.name, e); } }
+  }));
+  markHz();
+  renderHorizonDesc();
   draw();
+  renderGold();
   renderBaroSummary();
   renderBaroMethod();
 }
 function collectIds(spec) {
   if (spec == null) return [];
-  if (typeof spec === "string") return [spec];
+  if (typeof spec === "string") return [spec === "gold_usd_long" ? "gold_usd" : spec];
   if (Array.isArray(spec)) return collectIds(spec[0]);
   if (spec.bond) return [spec.bond];
   if (spec.spread) return [spec.spread];
@@ -308,26 +400,118 @@ function collectIds(spec) {
   return (spec.ratio || spec.product || spec.basket || []).flatMap(collectIds);
 }
 function heatTable(rows) {
-  const P = SIG.cfg.pillars;
+  const P = BARO.pillars;
   const cell = s => h("td", null, h("div", { class: "heat-cell", style: `background:${heatColor(s)};color:${heatInk(s)}`, text: s == null ? "–" : signed(s, 1) }));
   return h("table", { class: "baro-table" },
     h("thead", null, h("tr", null, h("th", { text: "Anlage" }), ...P.map(p => h("th", { style: "text-align:center", title: p.desc, text: p.label })), h("th", { style: "text-align:center", text: "Gesamt" }), h("th", { style: "text-align:center", text: "Vormonat" }))),
     h("tbody", null, ...rows.map(r => h("tr", null,
       h("td", { class: "name" }, h("b", { text: r.row.label }), r.row.sub ? h("span", { class: "small", text: r.row.sub }) : null),
-      ...P.map(p => (SIG.cfg.weights[r.row.kind][p.id] ? cell(r.now.pillars[p.id] ? r.now.pillars[p.id].s : null) : h("td", null, h("div", { class: "heat-cell", style: "color:var(--muted)", text: "·" })))),
+      ...P.map(p => (BARO.weights[r.row.kind][p.id] ? cell(r.now.pillars[p.id] ? r.now.pillars[p.id].s : null) : h("td", null, h("div", { class: "heat-cell", style: "color:var(--muted)", text: "·" })))),
       cell(r.now.score), cell(r.prev ? r.prev.score : null)))));
 }
-const BARO_INFO = {
-  d: "Für jede Anlage ein Signal von klar negativ bis klar positiv, abgeleitet aus fünf Säulen: Trend, Konjunktur, Bewertung, Liquidität sowie Risiko und Geopolitik.",
-  f: ["Jede Säule rechnet Rohwerte (Renditen, Zinsänderungen, Bewertungsabstände …) in z-Werte um und begrenzt sie weich auf −2 bis +2.",
-    "Gesamtwert = gewichtetes Mittel der Säulen; die Gewichte hängen von der Anlageart ab (Methodik unten).",
-    "Stufen: bis −0,9 klar negativ, bis −0,3 negativ, bis +0,3 neutral, bis +0,9 positiv, darüber klar positiv; Toleranzband 0,1 gegenüber dem Vormonat.",
-    "Pfeilbalken: Stufe hat sich gegenüber dem Vormonat geändert (Datenstand vor 30 Tagen, Monatsreihen nach ihrer Veröffentlichungsfrist).",
-    "1 Monat und 12 Monate: letzter Kurs ÷ Kurs vor 30 bzw. 365 Tagen − 1. „Stand …“: jüngster Wert älter als eine Woche oder nur als Monatswert verfügbar."],
-  s: "Rechenweg je Anlage: Zeile antippen, dann ⓘ an der Säule oder am Gesamtwert.",
-};
+function baroInfo() {
+  const H = BARO.horizon;
+  return {
+    d: [`Für jede Anlage ein Signal von klar negativ bis klar positiv. ${H.desc}`, `Säulen in diesem Horizont: ${BARO.pillars.map(p => p.label).join(", ")}. Der Umschalter über der Übersicht wechselt zwischen 1 Monat, 12 Monaten und 5–10 Jahren; mit dem Horizont wechseln Säulen und Gewichte.`],
+    f: ["Jede Säule rechnet Rohwerte (Renditen, Zinsänderungen, Bewertungsabstände, Prognosen …) in z-Werte um und begrenzt sie weich auf −2 bis +2.",
+      "Gesamtwert = gewichtetes Mittel der Säulen; die Gewichte hängen von Anlageart und Horizont ab (Methodik unten).",
+      "Stufen: bis −0,9 klar negativ, bis −0,3 negativ, bis +0,3 neutral, bis +0,9 positiv, darüber klar positiv; Toleranzband 0,1 gegenüber dem Vormonat.",
+      "Pfeilbalken: Stufe hat sich gegenüber dem Vormonat geändert (Datenstand vor 30 Tagen, Monatsreihen nach ihrer Veröffentlichungsfrist).",
+      "1 Monat und 12 Monate: letzter Kurs ÷ Kurs vor 30 bzw. 365 Tagen − 1. „Stand …“: jüngster Wert älter als eine Woche oder nur als Monatswert verfügbar."],
+    s: "Rechenweg je Anlage: Zeile antippen, dann ⓘ an der Säule oder am Gesamtwert. Keine Anlageberatung.",
+  };
+}
+
+/* ------------------------------------------------------------------ Monatsübersicht Gold */
+const GOLD_IDS = ["gold_usd", "gold_chf", "gold_eur", "silver", "rel_gold_eq", "rel_gold_bd"];
+function goldFacts() {
+  const g = LP("gold_usd"), long = LP("gold_usd_long");
+  if (!g.length) return [];
+  const a = g[g.length - 1], DAYMS = 864e5;
+  const inCur = id => { const b = SIG.valueAt(LP(id), a.t); return b && a.t - b.t <= 7 && b.v ? { v: a.v / b.v, d: b.t } : null; };
+  const y = new Date(a.t * DAYMS).getUTCFullYear();
+  const y0 = SIG.valueAt(g, Date.UTC(y, 0, 1) / DAYMS - 1);
+  const ytd = y0 && y0.t > Date.UTC(y - 1, 11, 1) / DAYMS ? a.v / y0.v - 1 : null;
+  const ath = (long.length ? long : g).reduce((m, q) => (q.v > m.v ? q : m), a);
+  const real = SIG.realMonthly(LIVE, long.length ? long : g, null).filter(q => q.x >= 1971.6);
+  const rl = real[real.length - 1];
+  const pct = rl ? real.filter(q => q.v <= rl.v).length / real.length : null;
+  const sil = LP("silver_usd"), sl = sil[sil.length - 1];
+  const gm = sl ? SIG.monthlyMeans(long.length ? long : g) : [];
+  const gAt = sl ? gm.find(q => q.t === sl.t) : null;
+  const ratios = sil.map(q => { const m = gm.find(x => x.t === q.t); return m ? m.v / q.v : null; }).filter(v => v != null);
+  const chf = inCur("fx_chf"), eur = inCur("fx_eur");
+  const out = [
+    { label: "Gold in US-Dollar", value: fmt(a.v, 0), unit: "US-$/Unze", meta: [deShort(SIG.isoOf(a.t)), ytd == null ? "" : `seit Jahresbeginn ${signed(100 * ytd, 1)} %`],
+      info: { t: "Gold in US-Dollar", f: ["Tagespreis: Goldpreis der polnischen Notenbank (PLN je Gramm) × 31,1035 g je Feinunze ÷ Dollarkurs der Notenbank (PLN je US-$).", "Seit Jahresbeginn: Preis ÷ letzter Preis des Vorjahres − 1."], r: ytd == null ? null : calc(fmt(a.v, 0), "÷", fmt(y0.v, 0), "− 1 =", signed(100 * ytd, 1) + " %") } },
+    chf && { label: "Gold in Franken", value: fmt(chf.v, 0), unit: "CHF/Unze", meta: ["Dollarpreis ÷ Franken in US-$"],
+      info: { t: "Gold in Franken", f: "Goldpreis in US-Dollar ÷ Preis eines Frankens in US-Dollar (EZB-Referenzkurse: USD je EUR ÷ CHF je EUR), gleicher Tag oder bis zu sieben Tage zuvor.", r: calc(fmt(a.v, 0), "÷", fmt(a.v / chf.v, 4), "=", fmt(chf.v, 0) + " CHF") } },
+    eur && { label: "Gold in Euro", value: fmt(eur.v, 0), unit: "EUR/Unze", meta: ["Dollarpreis ÷ Euro in US-$"],
+      info: { t: "Gold in Euro", f: "Goldpreis in US-Dollar ÷ Euro-Referenzkurs der EZB (US-$ je Euro).", r: calc(fmt(a.v, 0), "÷", fmt(a.v / eur.v, 4), "=", fmt(eur.v, 0) + " EUR") } },
+    { label: "Abstand zum Höchststand", value: signed(100 * (a.v / ath.v - 1), 1), unit: "%", meta: [`Hoch ${fmt(ath.v, 0)} US-$`, ath.t >= a.t - 400 ? deShort(SIG.isoOf(ath.t)) : deMonth(SIG.isoOf(ath.t))],
+      info: { t: "Abstand zum Höchststand", f: ["Höchster Wert der Goldreihe (Monatsmittel seit 1960, ab 2023 Tageswerte) in US-Dollar, nicht inflationsbereinigt.", "Abstand = heutiger Preis ÷ Höchststand − 1."], r: calc(fmt(a.v, 0), "÷", fmt(ath.v, 0), "− 1 =", signed(100 * (a.v / ath.v - 1), 1) + " %") } },
+    pct != null && { label: "Realer Goldpreis", value: fmt(100 * pct, 0), unit: ". Perzentil", meta: ["seit August 1971", "in heutiger Kaufkraft"],
+      info: { t: "Realer Goldpreis im historischen Vergleich", d: "Wie teuer Gold heute in Kaufkraft gemessen ist, verglichen mit allen Monaten seit dem Ende der Goldbindung des Dollars.", f: ["Realer Preis = Monatsmittel des Goldpreises ÷ US-Verbraucherpreisindex.", "Perzentil = Anteil der Monate seit August 1971 mit gleich hohem oder niedrigerem realen Preis × 100."], r: `${real.filter(q => q.v <= rl.v).length} von ${real.length} Monaten ≤ heute → ${fmt(100 * pct, 0)}. Perzentil` } },
+    gAt && ratios.length > 24 && { label: "Gold-Silber-Verhältnis", value: fmt(gAt.v / sl.v, 1), unit: "", meta: [deMonth(SIG.isoOf(sl.t)), `Mittel seit ${SIG.isoOf(sil[0].t).slice(0, 4)}: ${fmt(SIG.mean(ratios), 0)}`],
+      info: { t: "Gold-Silber-Verhältnis", d: "Wie viele Unzen Silber eine Unze Gold kostet. Hohe Werte zeigen Gold teuer gegenüber Silber, typisch in Krisen.", f: "Monatsmittel Gold ÷ Monatsmittel Silber (IWF-Rohstoffpreise), gleicher Monat; Mittel über alle Monate seit Beginn der Silberreihe.", r: calc(fmt(gAt.v, 0), "÷", fmt(sl.v, 2), "=", fmt(gAt.v / sl.v, 1)) } },
+  ];
+  return out.filter(Boolean);
+}
+const GOLD_INFO = () => ({
+  d: ["Eigene Monatsübersicht für Gold: Gold in US-Dollar, Franken und Euro, Silber sowie Gold im Verhältnis zu Aktien und Anleihen, jeweils mit Stufe und Änderung zum Vormonat.", `Horizont: ${BARO.horizon.title}. Die Treiber darunter zeigen die Säulen des Signals für Gold in US-Dollar.`],
+  f: ["Gold in Franken und Euro: Dollarpreis ÷ Wechselkurs; gleiche Säulenlogik wie Gold in Dollar, die Währungsentwicklung fließt über Trend und Momentum ein.",
+    "Gold vs. Aktien und Gold vs. Anleihen: Verhältnis des Goldpreises zum S&P 500 bzw. zum Kursindex 10-jähriger Treasuries; positiv = Gold vorn.",
+    "Stufen, Toleranzband und Pfeilbalken wie im Barometer."],
+  s: "Rechenweg je Zeile: antippen, dann ⓘ an der Säule. Keine Anlageberatung.",
+});
+function renderGold() {
+  const host = document.getElementById("gold");
+  if (!host) return;
+  host.replaceChildren();
+  if (!BARO) return;
+  const rows = GOLD_IDS.map(id => BARO.rows.find(r => r.row.id === id)).filter(r => r && r.now);
+  if (!rows.length) return;
+  const g = rows.find(r => r.row.id === "gold_usd");
+  const sh = sheet(host, { title: `Monatsübersicht Gold · ${BARO.horizon.title}`, sub: `Gold in Dollar, Franken und Euro, Silber sowie Gold im Vergleich zu Aktien und Anleihen; Einstufung zum ${deShort(SIG.isoOf(BARO.tNow))}`, info: GOLD_INFO, cls: "gold-sheet" });
+  const facts = goldFacts();
+  if (facts.length) sh.body.append(h("div", { class: "gold-facts" }, ...facts.map(x => h("div", { class: "tile" },
+    h("div", { class: "label" }, x.label, info(x.info, x.label)),
+    h("div", { class: "value" }, x.value, x.unit ? h("small", { text: x.unit }) : null),
+    h("div", { class: "meta" }, ...x.meta.filter(Boolean).map(m => h("span", { text: m })))))));
+  const grid = h("div", { class: "pgrid" }, gridHead(true), h("div", { class: "pg-group" },
+    h("div", { class: "pg-glabel" }, "Gold und Silber", h("small", { text: "positiv = steigend erwartet" })),
+    h("div", { class: "pg-rows" }, ...rows.flatMap(r => gridRow(r, "gold-")))));
+  sh.body.append(h("div", { style: "overflow-x:auto" }, grid));
+  fitBars(grid);
+  if (g) {
+    sh.body.append(h("h4", { class: "gold-sub" }, `Treiber des Goldsignals (${BARO.horizon.label})`, info(() => ({ t: "Treiber des Goldsignals", d: "Die Säulen des Signals für Gold in US-Dollar einzeln: positiv = stützt den Goldpreis, negativ = belastet ihn.", f: [`Säulen und Gewichte im Horizont ${BARO.horizon.title}: ${BARO.pillars.filter(p => BARO.weights.gold[p.id]).map(p => `${p.label} ${fmt(100 * BARO.weights.gold[p.id], 0)} %`).join(", ")}.`, "Rechenweg je Säule: ⓘ am Säulennamen."], r: `Gesamtwert ${signed(g.now.score, 2)} → ${g.now.cat.label}` }), "Treiber des Goldsignals")));
+    const drv = BARO.pillars.filter(p => BARO.weights.gold[p.id]).map(p => ({ p, now: g.now.pillars[p.id] ? g.now.pillars[p.id].s : null, prev: g.prev && g.prev.pillars[p.id] ? g.prev.pillars[p.id].s : null }));
+    const dg = h("div", { class: "pgrid" },
+      h("div", { class: "pg-group pg-hgroup no-label" }, h("div", { class: "pg-head score drv" }, h("div"),
+        h("div", { class: "pg-scale-h" }, h("span", { text: "belastet −" }), h("span", { text: "neutral o" }), h("span", { text: "stützt +" })), h("div", { class: "h num-h", text: "Wert (Vormonat)" }))),
+      h("div", { class: "pg-group no-label" }, h("div", { class: "pg-rows" }, ...drv.map(x => {
+        if (x.now == null) return h("div", { class: "pg-row score drv" }, h("div", { class: "pg-name", text: x.p.label }), h("div", { class: "pg-track" }, h("span", { class: "small", style: "padding-left:6px", text: "keine Daten" })), h("div", { class: "pg-num y1", text: "–" }));
+        const pc = x.prev == null ? null : SIG.category(x.prev).n, c = SIG.category(x.now, pc);
+        return h("div", { class: "pg-row score drv" },
+          h("div", { class: "pg-name" }, x.p.label, info(pillarInfo(g, x.p), `${x.p.label} für Gold`)),
+          h("div", { class: "pg-track" }, barEl(x.p.label, x.p.short, c.n, pc, `${x.p.label}: ${c.label} (${signed(x.now, 2)})`)),
+          h("div", { class: "pg-num y1", text: `${signed(x.now, 2)} (${x.prev == null ? "–" : signed(x.prev, 2)})` }));
+      }))));
+    sh.body.append(h("div", { style: "overflow-x:auto" }, dg));
+    fitBars(dg);
+  }
+  const f = h("footer", { class: "src" });
+  srcLinks(f, liveSrcIds("gold_usd", "gold_usd_imf", "silver_usd", "fx_chf", "eq_us", "y10_us", "real10_us", "cpi_us_index"));
+  sh.el.append(f);
+}
+
 /* ------------------------------------------------------------------ Signalverlauf (D1) */
-function signalHistory() { return LIVE && LIVE.items && LIVE.items.signal_history && LIVE.items.signal_history[0]; }
+// Verlauf je Horizont aus dem Snapshot (Job signal_history); ältere Snapshots haben nur einen Eintrag (1 Monat)
+function signalHistory(hz = HZ) {
+  const items = LIVE && LIVE.items && LIVE.items.signal_history;
+  if (!items || !items.length) return null;
+  return items.find(x => (x.hz || "m1") === hz) || null;
+}
 /* je Monat der letzte gespeicherte Tag, dazu der jüngste Tag; höchstens `max` Spalten */
 function historyCols(H, max = 25) {
   const cols = H.dates.map((d, i) => ({ d, i, kind: H.kinds[i] })).filter((c, k, a) => k === a.length - 1 || a[k + 1].d.slice(0, 7) !== c.d.slice(0, 7));
@@ -346,21 +530,21 @@ function histCell(H, id, c, onShow) {
   return el;
 }
 function renderHistory(host) {
-  const H = signalHistory();
+  const H = signalHistory(BARO.hz);
   if (!H || !H.dates || !H.dates.length) {
-    host.append(h("p", { class: "note-box", text: "Der Signalverlauf erscheint, sobald der Worker die Einstufungen in der D1-Datenbank gespeichert hat (Job „signal_history“, alle sechs Stunden)." }));
+    host.append(h("p", { class: "note-box", text: `Der Signalverlauf für den Horizont „${BARO.horizon.title}“ erscheint, sobald der Worker die Einstufungen in der D1-Datenbank gespeichert hat (Job „signal_history“, alle sechs Stunden).` }));
     return;
   }
   const cols = historyCols(H, window.innerWidth <= 560 ? 13 : 25);
   const firstLive = H.dates[H.kinds.indexOf("live")];
   const sh = sheet(host, {
-    title: "Signalverlauf der letzten Monate", sub: `Stufe jeder Anlage zum Monatsende, rechts der jüngste Tag; Feld antippen für den Wert`,
-    info: { d: "Wie sich die Einstufung jeder Anlage über die Zeit entwickelt hat.",
-      f: ["Monatsenden vor dem Start der Datenbank: rückgerechnet mit demselben Modell und nur mit Daten, die zum jeweiligen Monatsende veröffentlicht gewesen wären (Monatsreihen nach ihrer üblichen Frist); das Shiller-KGV fehlt in der Rückrechnung.",
-        "Ab dem Start: der Worker rechnet das Barometer alle sechs Stunden und speichert den Stand des Tages in einer D1-Datenbank. Spätere Datenrevisionen ändern diese Werte nicht mehr.",
+    title: `Signalverlauf der letzten Monate · ${BARO.horizon.title}`, sub: `Stufe jeder Anlage zum Monatsende, rechts der jüngste Tag; Feld antippen für den Wert`,
+    info: { d: "Wie sich die Einstufung jeder Anlage über die Zeit entwickelt hat, getrennt für jeden Horizont.",
+      f: ["Monatsenden vor dem Start der Datenbank: rückgerechnet mit demselben Modell und nur mit Daten, die zum jeweiligen Monatsende veröffentlicht gewesen wären (Monatsreihen nach ihrer üblichen Frist); das Shiller-KGV mit dem damals bekannten Monatswert, IWF-Prognosen und Bevölkerungsprojektionen mit dem jüngsten Stand.",
+        "Ab dem Start: der Worker rechnet das Barometer alle sechs Stunden für alle drei Horizonte und speichert den Stand des Tages in einer D1-Datenbank. Spätere Datenrevisionen ändern diese Werte nicht mehr.",
         "Farbe = Stufe (gleiche Skala wie im Barometer, Toleranzband zur Vorperiode). Umrandete Felder: gespeicherte Tageswerte."],
       r: [`${H.dates.length} Stichtage, ${Object.keys(H.rows).length} Anlagen`, firstLive ? `gespeichert seit ${deShort(firstLive)}` : "noch keine gespeicherten Tageswerte"],
-      s: "Abrufbar auch als JSON unter /api/signals." },
+      s: `Abrufbar als JSON oder CSV: /api/signals?h=${BARO.hz} (mit &format=csv&pillars=1 samt Säulenwerten).` },
   });
   const readout = h("div", { class: "hist-readout", "aria-live": "polite", text: "Feld antippen oder mit der Maus darüberfahren, um Datum und Wert zu sehen." });
   const show = name => text => { readout.textContent = `${name} · ${text}`; };
@@ -382,17 +566,19 @@ function renderHistory(host) {
 }
 
 /* Indikatoren für die Risikoausrichtung: die Säulen des Weltaktien-Signals als eigene Zeilen */
+const RISK_LABELS = { cycle: "Konjunkturzyklus", liquidity: "Liquidität", value: "Bewertung", trend: "Technik und Trend", risk: "Risiko und Geopolitik", cycle12: "Konjunktur und Wachstumsprognose", mom12: "Momentum 12 Monate", valueLT: "Bewertung (langfristig)", growth: "Wachstum und Demografie", debt: "Schulden", power: "Machtposition", trendLT: "Langfristtrend" };
 function riskScorecard(host) {
   const w = BARO.rows.find(r => r.row.id === "eq_world" && r.now);
   if (!w) return;
-  const rows = [["cycle", "Konjunkturzyklus"], ["liquidity", "Liquidität"], ["value", "Bewertung"], ["trend", "Technik und Trend"], ["risk", "Risiko und Geopolitik"]]
-    .map(([k, label]) => ({ label, now: w.now.pillars[k] ? w.now.pillars[k].s : null, prev: w.prev && w.prev.pillars[k] ? w.prev.pillars[k].s : null }))
+  const W = BARO.weights.equity;
+  const rows = BARO.pillars.filter(p => W[p.id])
+    .map(p => ({ id: p.id, label: RISK_LABELS[p.id] || p.label, short: p.label, now: w.now.pillars[p.id] ? w.now.pillars[p.id].s : null, prev: w.prev && w.prev.pillars[p.id] ? w.prev.pillars[p.id].s : null }))
     .filter(x => x.now != null);
   rows.push({ label: "Modell gesamt", now: w.now.score, prev: w.prev ? w.prev.score : null, total: true });
-  const sh = sheet(host, { title: "Indikatoren für die Risikoausrichtung", sub: "Säulen des Signals für Aktien weltweit: positiv = Umfeld spricht für riskante Anlagen, negativ = für sichere Häfen",
-    info: () => { const W = SIG.cfg.weights.equity; return { d: "Die fünf Säulen des Signals für Aktien weltweit, einzeln gezeigt wie in Pictets Übersicht der Risikoausrichtung.",
-      f: ["Aktien weltweit = Korb nach ungefährer Börsengewichtung: USA 62 %, Eurozone 10 %, Japan 6 %, China 5 %, Großbritannien 4 %, Schweiz 3 %, Indien 3 % (jede Reihe auf den Start indexiert).", "Säulen wie im Barometer; Modell gesamt = gewichtetes Mittel."],
-      r: rows.map(x => `${x.label}: ${signed(x.now, 2)}${x.total ? "" : ` (Gewicht ${fmt(100 * W[{ "Konjunkturzyklus": "cycle", "Liquidität": "liquidity", "Bewertung": "value", "Technik und Trend": "trend", "Risiko und Geopolitik": "risk" }[x.label]], 0)} %)`}; Vormonat ${x.prev == null ? "–" : signed(x.prev, 2)}`) }; } });
+  const sh = sheet(host, { title: "Indikatoren für die Risikoausrichtung", sub: `Säulen des Signals für Aktien weltweit (${BARO.horizon.title}): positiv = Umfeld spricht für riskante Anlagen, negativ = für sichere Häfen`,
+    info: () => ({ d: "Die Säulen des Signals für Aktien weltweit, einzeln gezeigt wie in Pictets Übersicht der Risikoausrichtung.",
+      f: ["Aktien weltweit = Korb nach ungefährer Börsengewichtung: USA 62 %, Eurozone 10 %, Japan 6 %, China 5 %, Großbritannien 4 %, Schweiz 3 %, Indien 3 % (jede Reihe auf den Start indexiert; Strukturdaten mit denselben Gewichten).", "Säulen wie im Barometer; Modell gesamt = gewichtetes Mittel."],
+      r: rows.map(x => `${x.label}: ${signed(x.now, 2)}${x.total ? "" : ` (Gewicht ${fmt(100 * W[x.id], 0)} %)`}; Vormonat ${x.prev == null ? "–" : signed(x.prev, 2)}`) }) });
   const grid = h("div", { class: "pgrid" },
     h("div", { class: "pg-group pg-hgroup no-label" }, h("div", { class: "pg-head score" },
       h("div", { class: "pg-scale-h" }, h("span", { text: "risikoscheu −" }), h("span", { text: "neutral o" }), h("span", { text: "risikofreudig +" })), h("div", { class: "h num-h", text: "Wert (Vormonat)" }))));
@@ -400,7 +586,7 @@ function riskScorecard(host) {
     const pc = x.prev == null ? null : SIG.category(x.prev).n, c = SIG.category(x.now, pc);
     return h("div", { class: "pg-row score" + (x.total ? " total" : "") },
       h("div", { class: "pg-name", "aria-hidden": "true", text: x.label }),
-      h("div", { class: "pg-track" }, barEl(x.label, x.label.split(" ")[0], c.n, pc, `${x.label}: ${c.label} (${signed(x.now, 2)})`)),
+      h("div", { class: "pg-track" }, barEl(x.label, x.short || x.label.split(" ")[0], c.n, pc, `${x.label}: ${c.label} (${signed(x.now, 2)})`)),
       h("div", { class: "pg-num y1", text: `${signed(x.now, 2)} (${x.prev == null ? "–" : signed(x.prev, 2)})` }));
   })));
   grid.append(body);
@@ -422,32 +608,49 @@ function renderBaroSummary() {
     fx.length ? `Gegenüber dem Dollar: ${fx.map(r => `${r.row.label} ${r.now.cat.sym}`).join(", ")}.` : "");
   const ra = BARO.risk;
   const tension = LIVE && LIVE.tension && LIVE.tension.pairs ? Object.values(LIVE.tension.pairs).filter(t => t.z != null).sort((a, b) => b.z - a.z)[0] : null;
-  const s3 = h("p", null, h("b", { text: "Risiko und Geopolitik. " }),
-    ra ? `Der Risikoappetit liegt bei ${signed(ra.s, 2)} (${ra.s > 0.3 ? "Risikofreude" : ra.s < -0.3 ? "Risikoscheu" : "ausgeglichen"}). ` : "",
-    tension ? `Die stärkste Zunahme der Berichterstattung verzeichnet die Konfliktlinie ${tension.label} (${signed(tension.z, 1)} Standardabweichungen über dem Viermonatsmittel).` : "");
+  const gold = GOLD_IDS.map(by).filter(Boolean);
+  const s3 = BARO.hz === "lt"
+    ? h("p", null, h("b", { text: "Langfristige Kräfte. " }), (() => {
+      const top = ok.filter(r => r.now.pillars.power && r.row.group === "waehrungen").sort((a, b) => b.now.pillars.power.s - a.now.pillars.power.s)[0];
+      const debt = ok.filter(r => r.now.pillars.debt && r.row.group === "anleihen").sort((a, b) => a.now.pillars.debt.s - b.now.pillars.debt.s)[0];
+      return [top ? `Die stärkste Machtposition unter den Währungen hat ${top.row.label} (${signed(top.now.pillars.power.s, 2)}). ` : "", debt ? `Am stärksten von der Schuldenlast belastet sind Staatsanleihen ${debt.row.label} (${signed(debt.now.pillars.debt.s, 2)}).` : ""].join("");
+    })())
+    : h("p", null, h("b", { text: "Risiko und Geopolitik. " }),
+      ra ? `Der Risikoappetit liegt bei ${signed(ra.s, 2)} (${ra.s > 0.3 ? "Risikofreude" : ra.s < -0.3 ? "Risikoscheu" : "ausgeglichen"}). ` : "",
+      tension ? `Die stärkste Zunahme der Berichterstattung verzeichnet die Konfliktlinie ${tension.label} (${signed(tension.z, 1)} Standardabweichungen über dem Viermonatsmittel).` : "");
+  const s4 = gold.length ? h("p", null, h("b", { text: "Gold. " }), `${gold.map(r => `${r.row.label} ${r.now.cat.sym}`).join(", ")} (eigene Übersicht unten).`) : null;
   const chg = ok.filter(r => r.prev && r.prev.cat && r.prev.cat.n !== r.now.cat.n);
-  const sh = sheet(host, { title: "Kurzüberblick", sub: `Automatisch aus den Signalen formuliert, Stand ${deShort(SIG.isoOf(BARO.tNow))}`,
-    info: { d: "Drei Sätze, die bei jedem Aufruf aus den Signalen erzeugt werden.",
+  const sh = sheet(host, { title: `Kurzüberblick · ${BARO.horizon.title}`, sub: `Automatisch aus den Signalen formuliert, Stand ${deShort(SIG.isoOf(BARO.tNow))}`,
+    info: { d: "Kurze Sätze, die bei jedem Aufruf aus den Signalen des gewählten Horizonts erzeugt werden.",
       f: ["Anlageklassen: Stufen der Zeilen Aktien weltweit, Staatsanleihen, Hochzinsanleihen, Gold und Rohstoffe.", "Regionen: die zwei Aktienmärkte mit dem höchsten und dem niedrigsten Gesamtwert; Währungen mit ihrer Stufe gegenüber dem Dollar.",
-        "Risiko: Risikoappetit (Mittel aus VIX, Hochzinsprämie, Finanzstress, Geopolitik) und die Konfliktlinie mit der größten Abweichung der Berichterstattung vom Viermonatsmittel.", "Geändert: Anlagen, deren Stufe sich gegenüber dem Vormonat verschoben hat."] } });
-  sh.body.append(h("div", { class: "inbrief" }, s1, s2, s3,
+        "1 Monat und 12 Monate – Risiko: Risikoappetit (Mittel aus VIX, Hochzinsprämie, Finanzstress, Geopolitik) und die Konfliktlinie mit der größten Abweichung der Berichterstattung vom Viermonatsmittel. 5–10 Jahre – langfristige Kräfte: Währung mit der höchsten Säule Machtposition, Staatsanleihen mit der niedrigsten Säule Schulden.",
+        "Gold: Stufen der Zeilen der Gold-Übersicht.", "Geändert: Anlagen, deren Stufe sich gegenüber dem Vormonat verschoben hat."] } });
+  sh.body.append(h("div", { class: "inbrief" }, s1, s2, s3, s4,
     chg.length ? h("div", { class: "summary-line", style: "margin-top:4px" }, h("span", { class: "lbl", text: "Geändert gegenüber dem Vormonat:" }),
-      ...chg.map(r => h("a", { class: "chipline", href: "#baro-" + r.row.id, style: "text-decoration:none;color:inherit" }, h("span", { class: `sig-badge o${r.prev.cat.n}`, text: r.prev.cat.sym }), "→", h("span", { class: `sig-badge o${r.now.cat.n}`, text: r.now.cat.sym }), moverName(r)))) : null));
+      ...chg.map(r => h("a", { class: "chipline", href: (r.row.group === "gold" ? "#gold-" : "#baro-") + r.row.id, style: "text-decoration:none;color:inherit" }, h("span", { class: `sig-badge o${r.prev.cat.n}`, text: r.prev.cat.sym }), "→", h("span", { class: `sig-badge o${r.now.cat.n}`, text: r.now.cat.sym }), moverName(r)))) : null));
   riskScorecard(host);
 }
 function renderBaroMethod() {
   const host = document.getElementById("baro-method-body");
-  const P = SIG.cfg.pillars, W = SIG.cfg.weights;
-  const kinds = { equity: "Aktien", bond: "Staatsanleihen", credit: "Hochzinsanleihen", fx: "Währungen", gold: "Gold, Silber", commodity: "Rohstoffe", relative: "Relative Stärke" };
+  const kinds = { equity: "Aktien", bond: "Staatsanleihen", credit: "Unternehmensanleihen", fx: "Währungen", gold: "Gold, Silber", commodity: "Rohstoffe", relative: "Relative Stärke" };
+  const weightTable = H => {
+    const P = H.pillars.map(SIG.pillarDef);
+    return h("div", { style: "overflow-x:auto" }, stackTable(h("table", null,
+      h("thead", null, h("tr", null, h("th", { text: `Gewichte · ${H.title}` }), ...P.map(p => h("th", { text: p.label })))),
+      h("tbody", null, ...Object.entries(H.weights).map(([k, w]) => h("tr", null, h("td", { text: kinds[k] }), ...P.map(p => h("td", { text: w[p.id] ? fmt(100 * w[p.id], 0) + " %" : "–" }))))))));
+  };
+  const cur = BARO.horizon;
+  const others = SIG.cfg.horizons.filter(x => x.id !== cur.id);
   host.replaceChildren(
     h("p", { text: "Jede Säule wird auf eine Skala von −2 (klar negativ) bis +2 (klar positiv) abgebildet. Rohwerte werden dazu durch eine typische Schwankungsbreite geteilt und weich begrenzt (2·tanh(z/2)). Die Gesamtnote ist das gewichtete Mittel der verfügbaren Säulen; fehlt eine Säule, werden die übrigen Gewichte hochgerechnet. Die Einstufung des Vormonats entsteht aus derselben Rechnung mit dem Datenstand von vor 30 Tagen; Monatsreihen zählen dabei erst nach ihrer üblichen Veröffentlichungsfrist." }),
-    h("ul", { style: "margin:0;padding-left:18px;display:grid;gap:4px" }, ...P.map(p => h("li", null, h("b", { text: p.label + ": " }), p.desc))),
-    h("div", { style: "overflow-x:auto" }, stackTable(h("table", null,
-      h("thead", null, h("tr", null, h("th", { text: "Gewichte" }), ...P.map(p => h("th", { text: p.label })))),
-      h("tbody", null, ...Object.entries(W).map(([k, w]) => h("tr", null, h("td", { text: kinds[k] }), ...P.map(p => h("td", { text: w[p.id] ? fmt(100 * w[p.id], 0) + " %" : "–" })))))))),
+    h("p", null, h("b", { text: "Drei Horizonte. " }), SIG.cfg.horizons.map(x => `${x.title}: ${x.desc}`).join(" ")),
+    h("ul", { style: "margin:0;padding-left:18px;display:grid;gap:4px" }, ...BARO.pillars.map(p => h("li", null, h("b", { text: p.label + ": " }), p.desc))),
+    weightTable(cur),
+    h("details", { class: "more" }, h("summary", { text: `Säulen und Gewichte der anderen Horizonte (${others.map(x => x.label).join(", ")})` }),
+      ...others.flatMap(x => [h("ul", { style: "margin:8px 0 0;padding-left:18px;display:grid;gap:4px" }, ...x.pillars.map(SIG.pillarDef).map(p => h("li", null, h("b", { text: `${x.label}, ${p.label}: ` }), p.desc))), weightTable(x)])),
     h("p", { text: `Einstufung nach Gesamtwert: ${SIG.cfg.cats.map((c, i) => `${c.sym} ${c.label} ${c.max === Infinity ? `über ${fmt(SIG.cfg.cats[i - 1].max, 1)}` : `bis ${fmt(c.max, 1)}`}`).join(" · ")}. Gegenüber der Vormonatsstufe gilt ein Toleranzband von ${fmt(SIG.cfg.hyst, 1)}: Die Stufe wechselt erst, wenn der Gesamtwert die Schwelle um mehr als diesen Betrag überschreitet. Das verhindert, dass Werte nahe einer Schwelle jeden Monat hin- und herspringen.` }),
-    h("p", { text: "Anleihekurse werden aus der Rendite zehnjähriger Staatsanleihen geschätzt (Duration 8,5, Konvexität 85, laufender Kupon). Währungen sind als Preis der Währung in US-Dollar notiert; ein positives Signal bedeutet erwartete Aufwertung gegenüber dem Dollar. Die geopolitische Komponente nutzt den Spannungsmonitor: Steigt die Berichterstattung über eine Konfliktlinie deutlich über ihr Viermonatsmittel, belastet das die betroffenen Märkte (etwa China bei Spannungen mit den USA oder um Taiwan) und stützt Öl bei Spannungen im Nahen Osten." }),
-    h("p", { class: "small", text: "Darstellung und Säulen lehnen sich an die monatliche Asset-Allocation-Übersicht von Pictet Asset Management an (Konjunkturzyklus, Liquidität, Bewertung, Technik und Stimmung). Der Monitor verwendet keine Daten oder Einschätzungen von Pictet; Regeln, Schwellen und Gewichte sind Setzungen dieses Monitors. Keine Anlageberatung." }));
+    h("p", { text: "Anleihekurse werden aus der Rendite zehnjähriger Staatsanleihen geschätzt (Duration 8,5, Konvexität 85, laufender Kupon). Währungen sind als Preis der Währung in US-Dollar notiert; ein positives Signal bedeutet erwartete Aufwertung gegenüber dem Dollar. Die geopolitische Komponente nutzt den Spannungsmonitor: Steigt die Berichterstattung über eine Konfliktlinie deutlich über ihr Viermonatsmittel, belastet das die betroffenen Märkte (etwa China bei Spannungen mit den USA oder um Taiwan) und stützt Öl bei Spannungen im Nahen Osten. Die langfristigen Säulen nutzen IWF-Projektionen (World Economic Outlook), Bevölkerungsprojektionen der Weltbank und die Reservewährungsstatistik COFER." }),
+    h("p", { class: "small", text: "Darstellung und Säulen lehnen sich an die monatliche Asset-Allocation-Übersicht von Pictet Asset Management an (Konjunkturzyklus, Liquidität, Bewertung, Technik und Stimmung); die langfristigen Säulen folgen Dalios großem Zyklus. Der Monitor verwendet keine Daten oder Einschätzungen von Pictet; Regeln, Schwellen und Gewichte sind Setzungen dieses Monitors. Keine Anlageberatung." }));
 }
 
 /* ------------------------------------------------------------------ Konjunkturuhr */

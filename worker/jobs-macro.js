@@ -1,6 +1,6 @@
 /* Abrufjobs für Konjunktur, Schulden, Demografie und Technologie (OECD, IWF, Weltbank, FRED) */
 import { monthlySeries, quarterlySeries, annualSeries } from "./lib/series.js";
-import { meta, Q, toMonth, toQuarter } from "./lib/jobutil.js";
+import { meta, start, Q, toMonth, toQuarter } from "./lib/jobutil.js";
 import { oecd, worldbank, imfDatamapper, gistemp, fredMulti } from "./providers/official.js";
 import { imfSdmx } from "./providers/markets.js";
 import { parseCsv, num } from "./lib/csv.js";
@@ -57,15 +57,21 @@ async function weoSdmx(F, codes) {
 function weoJob(n, inds) {
   return {
     id: "imf_weo_" + n, label: "IWF World Economic Outlook: " + inds.map(i => i[2]).join(", "), source: "imf", every: 24 * 3, cost: 1 + inds.length,
-    async run(F) {
-      let all = null;
-      try { all = await weoSdmx(F, inds.map(i => i[0])); } catch (e) { all = null; }
+    async run(F, ctx) {
+      let all = null, sdmxErr = null;
+      try { all = await weoSdmx(F, inds.map(i => i[0])); } catch (e) { all = null; sdmxErr = e; }
       const s = {};
       for (const [code, pre, label, unit] of inds) {
-        const r = all && all[code] ? all[code] : await imfDatamapper(F, code, WEO_C);
+        let r = all && all[code];
+        if (!r) {
+          try { r = await imfDatamapper(F, code, WEO_C); } catch (e) { throw new Error(`IWF WEO ${code}: SDMX ${sdmxErr ? sdmxErr.message : "ohne Werte"}; DataMapper ${e.message}`); }
+        }
         for (const c of WEO_C) {
-          const pts = (r[c] || []).filter(p => p[0] >= 1990).sort((a, b) => a[0] - b[0]);
-          if (pts.length) s[pre + c.toLowerCase()] = annualSeries(pts, meta(`${label} ${CNAME[c] || c}`, unit, "imf", { weo: true }));
+          const pts = (r[c] || []).filter(p => p[1] != null).sort((a, b) => a[0] - b[0]);
+          if (!pts.length) continue;
+          const sid = pre + c.toLowerCase();
+          if (ctx && ctx.raw) ctx.raw[sid] = pts; // ab 1980 ins Archiv, der Snapshot ab 1990
+          s[sid] = annualSeries(pts.filter(p => p[0] >= 1990), meta(`${label} ${CNAME[c] || c}`, unit, "imf", { weo: true }));
         }
       }
       return { series: s };
@@ -90,12 +96,12 @@ function wbJob(id, label, inds, every = 24 * 7) {
 
 export const MACRO_JOBS = [
   {
-    id: "oecd_cli", label: "OECD-Frühindikatoren und Geschäftsklima (Schweiz, Euroraum)", source: "oecd", every: 24, cost: 2, onePerRun: true,
-    async run(F) {
+    id: "oecd_cli", label: "OECD-Frühindikatoren und Geschäftsklima (Schweiz, Euroraum)", source: "oecd", every: 24, cost: 2, onePerRun: true, deep: "1990-01-01",
+    async run(F, ctx) {
       const [cli, conf] = await oecdSeq(F, [
-        ["OECD.SDD.STES,DSD_STES@DF_CLI,4.1", "USA+CHN+DEU+JPN+GBR+IND+G7+G20+G4E+A5M.M.LI.IX._Z.AA.IX._Z.H", { start: "2010-01" }],
+        ["OECD.SDD.STES,DSD_STES@DF_CLI,4.1", "USA+CHN+DEU+JPN+GBR+IND+G7+G20+G4E+A5M.M.LI.IX._Z.AA.IX._Z.H", { start: start(ctx, "2010-01") }],
         // Für die Schweiz und den Euroraum gibt es keinen Frühindikator; das standardisierte Geschäftsklima hat dieselbe Skala
-        ["OECD.SDD.STES,DSD_STES@DF_CLI,4.1", "CHE+EA20.M.BCICP.IX._Z.AA.IX._Z.H", { start: "2010-01" }],
+        ["OECD.SDD.STES,DSD_STES@DF_CLI,4.1", "CHE+EA20.M.BCICP.IX._Z.AA.IX._Z.H", { start: start(ctx, "2010-01") }],
       ]);
       const s = {};
       for (const [c, pts] of Object.entries(cli)) s["cli_" + ISO2[c]] = monthlySeries(sortPts(pts), meta(`Frühindikator ${CNAME[c] || c} (OECD, amplitudenbereinigt)`, "Index, Mittel = 100", "oecd"));
@@ -104,11 +110,11 @@ export const MACRO_JOBS = [
     },
   },
   {
-    id: "oecd_prices", label: "Inflation (OECD, Verbraucherpreise)", source: "oecd", every: 24, cost: 2, onePerRun: true,
-    async run(F) {
+    id: "oecd_prices", label: "Inflation (OECD, Verbraucherpreise)", source: "oecd", every: 24, cost: 2, onePerRun: true, deep: "1990-01-01",
+    async run(F, ctx) {
       const [g20, ch] = await oecdSeq(F, [
-        ["OECD.SDD.TPS,DSD_G20_PRICES@DF_G20_PRICES,1.0", "USA+CHN+DEU+JPN+GBR+IND+EA+G20.M..CPI.PA._T.N.GY", { start: "2010-01" }],
-        ["OECD.SDD.TPS,DSD_PRICES_COICOP2018@DF_PRICES_C2018_ALL,1.0", "CHE.M.N.CPI.PA._T.N.GY", { start: "2010-01" }],
+        ["OECD.SDD.TPS,DSD_G20_PRICES@DF_G20_PRICES,1.0", "USA+CHN+DEU+JPN+GBR+IND+EA+G20.M..CPI.PA._T.N.GY", { start: start(ctx, "2010-01") }],
+        ["OECD.SDD.TPS,DSD_PRICES_COICOP2018@DF_PRICES_C2018_ALL,1.0", "CHE.M.N.CPI.PA._T.N.GY", { start: start(ctx, "2010-01") }],
       ]);
       const s = {};
       for (const [c, pts] of Object.entries({ ...g20, ...ch })) s["cpi_" + ISO2[c]] = monthlySeries(sortPts(pts), meta(`Inflation ${CNAME[c] || c} (Verbraucherpreise, ggü. Vorjahr)`, "%", "oecd"));
@@ -116,11 +122,11 @@ export const MACRO_JOBS = [
     },
   },
   {
-    id: "oecd_labour", label: "Arbeitslosenquoten (OECD)", source: "oecd", every: 24 * 2, cost: 2, onePerRun: true,
-    async run(F) {
+    id: "oecd_labour", label: "Arbeitslosenquoten (OECD)", source: "oecd", every: 24 * 2, cost: 2, onePerRun: true, deep: "1990-01-01",
+    async run(F, ctx) {
       const [m, ch] = await oecdSeq(F, [
-        ["OECD.SDD.TPS,DSD_LFS@DF_IALFS_UNE_M,1.0", "USA+DEU+JPN+GBR+EA+G7.UNE_LF_M.PT_LF_SUB._Z.Y._T.Y_GE15._Z.M", { start: "2010-01" }],
-        ["OECD.SDD.TPS,DSD_LFS@DF_IALFS_INDIC,1.0", "CHE.UNE_LF.PT_LF_SUB._Z.Y._T.Y_GE15._Z.Q", { start: "2010-Q1" }],
+        ["OECD.SDD.TPS,DSD_LFS@DF_IALFS_UNE_M,1.0", "USA+DEU+JPN+GBR+EA+G7.UNE_LF_M.PT_LF_SUB._Z.Y._T.Y_GE15._Z.M", { start: start(ctx, "2010-01") }],
+        ["OECD.SDD.TPS,DSD_LFS@DF_IALFS_INDIC,1.0", "CHE.UNE_LF.PT_LF_SUB._Z.Y._T.Y_GE15._Z.Q", { start: start(ctx, "2010-Q1") }],
       ]);
       const s = {};
       for (const [c, pts] of Object.entries(m)) s["unemp_" + ISO2[c]] = monthlySeries(sortPts(pts), meta(`Arbeitslosenquote ${CNAME[c] || c}`, "%", "oecd"));
@@ -129,11 +135,11 @@ export const MACRO_JOBS = [
     },
   },
   {
-    id: "oecd_gdp", label: "Reales BIP-Wachstum (OECD, Quartale)", source: "oecd", every: 24 * 2, cost: 2, onePerRun: true,
-    async run(F) {
+    id: "oecd_gdp", label: "Reales BIP-Wachstum (OECD, Quartale)", source: "oecd", every: 24 * 2, cost: 2, onePerRun: true, deep: "1990-01-01",
+    async run(F, ctx) {
       const [g, ch] = await oecdSeq(F, [
-        ["OECD.SDD.NAD,DSD_NAMAIN1@DF_QNA_EXPENDITURE_GROWTH_G20,1.1", "Q.Y.USA+CHN+DEU+JPN+GBR+IND+EA+G20+G7.S1.S1.B1GQ._Z._Z._Z.PC.L.GY.T0102", { start: "2010-Q1" }],
-        ["OECD.SDD.NAD,DSD_NAMAIN1@DF_QNA_EXPENDITURE_GROWTH_OECD,1.1", "Q.Y.CHE.S1.S1.B1GQ._Z._Z._Z.PC.L.GY.T0102", { start: "2010-Q1" }],
+        ["OECD.SDD.NAD,DSD_NAMAIN1@DF_QNA_EXPENDITURE_GROWTH_G20,1.1", "Q.Y.USA+CHN+DEU+JPN+GBR+IND+EA+G20+G7.S1.S1.B1GQ._Z._Z._Z.PC.L.GY.T0102", { start: start(ctx, "2010-Q1") }],
+        ["OECD.SDD.NAD,DSD_NAMAIN1@DF_QNA_EXPENDITURE_GROWTH_OECD,1.1", "Q.Y.CHE.S1.S1.B1GQ._Z._Z._Z.PC.L.GY.T0102", { start: start(ctx, "2010-Q1") }],
       ]);
       const s = {};
       for (const [c, pts] of Object.entries({ ...g, ...ch })) s["gdp_" + ISO2[c]] = quarterlySeries(sortPts(toQuarter(pts)), meta(`Reales BIP ${CNAME[c] || c}, Veränderung ggü. Vorjahresquartal`, "%", "oecd"));
@@ -141,9 +147,9 @@ export const MACRO_JOBS = [
     },
   },
   {
-    id: "oecd_finmark", label: "Aktienindizes und Langfristzinsen (OECD, Monatswerte)", source: "oecd", every: 24, cost: 1, onePerRun: true,
-    async run(F) {
-      const txt = await F.text("https://sdmx.oecd.org/public/rest/data/OECD.SDD.STES,DSD_STES@DF_FINMARK,4.0/USA+JPN+DEU+CHE+GBR+CHN+IND+EA20.M.SHARE+IRLT.......?startPeriod=2004-01&dimensionAtObservation=AllDimensions",
+    id: "oecd_finmark", label: "Aktienindizes und Langfristzinsen (OECD, Monatswerte)", source: "oecd", every: 24, cost: 1, onePerRun: true, deep: "1980-01-01",
+    async run(F, ctx) {
+      const txt = await F.text(`https://sdmx.oecd.org/public/rest/data/OECD.SDD.STES,DSD_STES@DF_FINMARK,4.0/USA+JPN+DEU+CHE+GBR+CHN+IND+EA20.M.SHARE+IRLT.......?startPeriod=${start(ctx, "2004-01")}&dimensionAtObservation=AllDimensions`,
         { headers: { accept: "application/vnd.sdmx.data+csv; charset=utf-8" }, timeout: 40000 });
       const { header, rows } = parseCsv(txt);
       const iA = header.indexOf("REF_AREA"), iM = header.indexOf("MEASURE"), iT = header.indexOf("TIME_PERIOD"), iV = header.indexOf("OBS_VALUE");
@@ -192,11 +198,11 @@ export const MACRO_JOBS = [
     },
   },
   {
-    id: "fred_uncertainty", label: "Unsicherheitsindizes (EPU, World Uncertainty Index)", source: "fred", every: 24, cost: 2,
-    async run(F) {
+    id: "fred_uncertainty", label: "Unsicherheitsindizes (EPU, World Uncertainty Index)", source: "fred", every: 24, cost: 2, deep: "1950-01-01",
+    async run(F, ctx) {
       const [epu, wui] = await Promise.all([
-        fredMulti(F, ["GEPUCURRENT", "EUEPUINDXM", "UKEPUINDXM", "RUSEPUINDXM", "INDEPUINDXM", "USEPUINDXM"], "2005-01-01"),
-        fredMulti(F, ["WUIGLOBALWEIGHTAVG", "WUIUSA", "WUICHN", "WUIDEU", "WUIJPN", "WUIGBR", "WUIIND", "WUIRUS", "WUICHE"], "2000-01-01"),
+        fredMulti(F, ["GEPUCURRENT", "EUEPUINDXM", "UKEPUINDXM", "RUSEPUINDXM", "INDEPUINDXM", "USEPUINDXM"], start(ctx, "2005-01-01")),
+        fredMulti(F, ["WUIGLOBALWEIGHTAVG", "WUIUSA", "WUICHN", "WUIDEU", "WUIJPN", "WUIGBR", "WUIIND", "WUIRUS", "WUICHE"], start(ctx, "2000-01-01")),
       ]);
       const s = {};
       const em = { GEPUCURRENT: ["epu_global", "Welt"], EUEPUINDXM: ["epu_eu", "Europa"], UKEPUINDXM: ["epu_gb", "Großbritannien"], RUSEPUINDXM: ["epu_ru", "Russland"], INDEPUINDXM: ["epu_in", "Indien"], USEPUINDXM: ["epu_us_m", "USA"] };
@@ -230,8 +236,9 @@ export const MACRO_JOBS = [
   ]),
   {
     id: "nasa_gistemp", label: "Globale Temperaturabweichung (NASA GISTEMP)", source: "nasa", every: 24 * 2, cost: 1,
-    async run(F) {
+    async run(F, ctx) {
       const pts = await gistemp(F);
+      if (ctx.raw) ctx.raw.temp_gistemp = pts; // ganze Reihe seit 1880 ins Archiv, der Snapshot ab 1950
       return { series: { temp_gistemp: monthlySeries(pts.filter(p => p[0] >= "1950-01"), meta("Globale Temperaturabweichung gegenüber 1951–1980", "°C", "nasa")) } };
     },
   },

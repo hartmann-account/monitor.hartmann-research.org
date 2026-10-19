@@ -1,12 +1,17 @@
 /* Big-Cycle-Monitor: Worker.
    GET  /api/snapshot   alle Live-Reihen und der Abrufstatus (KV, Fallback: statischer Seed data/live.json)
    GET  /api/status     nur der Abrufstatus
-   GET  /api/signals    Signalverlauf des Anlagebarometers aus D1 (?daily=Tage mit Tageswerten, Standard 120)
+   GET  /api/signals    Signalverlauf des Anlagebarometers aus D1: ?h=m1|y1|lt (Horizont), ?daily=Tage mit allen
+                        Tageswerten (sonst Monatsenden), ?pillars=1 mit Säulenwerten, ?format=csv
+   GET  /api/archive    Datenarchiv (D1): alle Reihen mit Zeitraum und Anzahl der Beobachtungen
+   GET  /api/series     Beobachtungen aus dem Archiv: ?id=a,b (höchstens 20), ?from=, ?to=, ?format=csv
+   GET  /api/events     archivierte Meldungen (GDACS): ?from=
    POST /api/run        Abruf sofort anstoßen (nur mit Secret ADMIN_TOKEN; ?jobs=a,b für bestimmte Jobs)
    Alles andere liefert die statische Seite aus public/. Der Cron-Trigger ruft scheduled() auf. */
 import { runDueJobs, META_KEY, SNAP_KEY } from "./runner.js";
 import { JOBS } from "./jobs.js";
 import { readHistory, ensureSchema } from "./jobs-signals.js";
+import { archiveSummary, readSeries, ensureArchive } from "./archive.js";
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -53,24 +58,77 @@ async function status(env) {
   return json({ updatedAt: meta.updatedAt || null, jobs });
 }
 
+/* Antworten aus D1 mit Zwischenspeicher (10 Minuten); Fehler werden nicht gespeichert */
+async function cached(request, ctx, make) {
+  const cache = caches.default;
+  const key = new Request(new URL(request.url).toString());
+  const hit = await cache.match(key);
+  if (hit) return hit;
+  let res;
+  try { res = await make(); } catch (e) { return json({ error: "Datenbank nicht lesbar", detail: String((e && e.message) || e).slice(0, 200) }, 500); }
+  if (res.status === 200 && !/no-store/.test(res.headers.get("cache-control") || "")) ctx.waitUntil(cache.put(key, res.clone()));
+  return res;
+}
+const csvCell = v => (v == null ? "" : /[",;\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+function csv(rows, name) {
+  return new Response(rows.map(r => r.map(csvCell).join(",")).join("\n") + "\n", {
+    headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="${name}"`, "cache-control": "public, max-age=600", ...CORS },
+  });
+}
+
 async function signals(request, env, ctx) {
   if (!env.DB) return json({ error: "Keine D1-Datenbank gebunden" }, 404);
   const url = new URL(request.url);
-  const cache = caches.default;
-  const key = new Request(url.toString());
-  const hit = await cache.match(key);
-  if (hit) return hit;
-  const daily = Math.min(2000, Math.max(0, +(url.searchParams.get("daily") ?? 120) || 0));
-  let body;
-  try {
+  const h = ["m1", "y1", "lt"].includes(url.searchParams.get("h")) ? url.searchParams.get("h") : "m1";
+  const daily = Math.min(4000, Math.max(0, +(url.searchParams.get("daily") ?? 0) || 0));
+  const days = Math.min(20000, Math.max(30, +(url.searchParams.get("days") ?? 4000) || 4000));
+  const pillars = url.searchParams.get("pillars") === "1";
+  return cached(request, ctx, async () => {
     await ensureSchema(env.DB);
-    body = await readHistory(env.DB, { days: 2000, daily });
-  } catch (e) {
-    return json({ error: "Signalverlauf nicht lesbar", detail: String((e && e.message) || e).slice(0, 200) }, 500);
-  }
-  const res = json(body, 200, { "cache-control": "public, max-age=600" });
-  ctx.waitUntil(cache.put(key, res.clone()));
-  return res;
+    const body = await readHistory(env.DB, { h, days, daily, pillars });
+    if (url.searchParams.get("format") !== "csv") return json(body, 200, { "cache-control": "public, max-age=600" });
+    const ids = Object.keys(body.rows);
+    const pk = pillars ? [...new Set(ids.flatMap(id => (body.rows[id].p || []).flatMap(p => (p ? Object.keys(p) : []))))] : [];
+    const out = [["horizont", "datum", "art", "anlage", "gesamtwert", "stufe", ...pk]];
+    body.dates.forEach((d, i) => { for (const id of ids) { const r = body.rows[id]; if (r.c[i] == null) continue; out.push([h, d, body.kinds[i], id, r.s[i], r.c[i], ...pk.map(k => (r.p && r.p[i] ? r.p[i][k] : null))]); } });
+    return csv(out, `signalverlauf_${h}.csv`);
+  });
+}
+
+async function archive(request, env, ctx) {
+  if (!env.DB) return json({ error: "Keine D1-Datenbank gebunden" }, 404);
+  return cached(request, ctx, async () => {
+    const A = await archiveSummary(env.DB);
+    // ein noch leeres Archiv nicht zwischenspeichern, damit die ersten Abrufe sofort sichtbar werden
+    return json(A, 200, { "cache-control": A.totals && A.totals.series ? "public, max-age=600" : "no-store" });
+  });
+}
+
+async function series(request, env, ctx) {
+  if (!env.DB) return json({ error: "Keine D1-Datenbank gebunden" }, 404);
+  const url = new URL(request.url);
+  const ids = (url.searchParams.get("id") || "").split(",").map(x => x.trim()).filter(x => /^[\w.:-]{1,120}$/.test(x)).slice(0, 20);
+  if (!ids.length) return json({ error: "Parameter id fehlt (Kennungen der Reihen, durch Komma getrennt; Liste unter /api/archive)" }, 400);
+  const from = /^\d{4}(-\d{2}(-\d{2})?)?$/.test(url.searchParams.get("from") || "") ? url.searchParams.get("from") : null;
+  const to = /^\d{4}(-\d{2}(-\d{2})?)?$/.test(url.searchParams.get("to") || "") ? url.searchParams.get("to") + "~" : null;
+  return cached(request, ctx, async () => {
+    const data = await readSeries(env.DB, ids, { from, to });
+    if (url.searchParams.get("format") !== "csv") return json(data, 200, { "cache-control": "public, max-age=600" });
+    const out = [["reihe", "datum", "wert", "einheit", "bezeichnung"]];
+    for (const [id, s] of Object.entries(data)) for (const [d, v] of s.points) out.push([id, d, v, s.unit, s.label]);
+    return csv(out, ids.length === 1 ? `${ids[0]}.csv` : "reihen.csv");
+  });
+}
+
+async function events(request, env, ctx) {
+  if (!env.DB) return json({ error: "Keine D1-Datenbank gebunden" }, 404);
+  const url = new URL(request.url);
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("from") || "") ? url.searchParams.get("from") : "0000";
+  return cached(request, ctx, async () => {
+    await ensureArchive(env.DB);
+    const { results } = await env.DB.prepare("SELECT src, id, d, kind, name, level, country, url, first_seen, last_seen FROM events WHERE d >= ? ORDER BY d DESC LIMIT 2000").bind(from).all();
+    return json({ events: results }, 200, { "cache-control": "public, max-age=600" });
+  });
 }
 
 async function manualRun(request, env, ctx) {
@@ -90,6 +148,9 @@ export default {
     if (url.pathname === "/api/snapshot" && request.method === "GET") return snapshot(request, env, ctx);
     if (url.pathname === "/api/status" && request.method === "GET") return status(env);
     if (url.pathname === "/api/signals" && request.method === "GET") return signals(request, env, ctx);
+    if (url.pathname === "/api/archive" && request.method === "GET") return archive(request, env, ctx);
+    if (url.pathname === "/api/series" && request.method === "GET") return series(request, env, ctx);
+    if (url.pathname === "/api/events" && request.method === "GET") return events(request, env, ctx);
     if (url.pathname === "/api/run" && request.method === "POST") return manualRun(request, env, ctx);
     if (url.pathname.startsWith("/api/")) return json({ error: "unbekannter Endpunkt" }, 404);
     return env.ASSETS.fetch(request);

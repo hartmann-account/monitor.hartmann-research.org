@@ -11,7 +11,8 @@ Jede berechnete Größe trägt ein ⓘ. Ein Klick öffnet ein kleines Fenster mi
 | Kapitel | Inhalt | Aktualisierung |
 |---|---|---|
 | Lagebild | Kennzahlen, „Was steigt, was fällt?“, Kurzurteil | täglich |
-| Anlagebarometer | Signale für 41 Anlagen (Anlageklassen, Aktienregionen, Staatsanleihen, Unternehmensanleihen, Währungen inkl. Gold, Rohstoffe, relative Stärke) im Stil der Monatsübersicht von Pictet Asset Management, dazu Indikatoren für die Risikoausrichtung, ein Kurzüberblick und der Signalverlauf über 24 Monate | täglich |
+| Anlagebarometer | Signale für 43 Anlagen (Anlageklassen, Aktienregionen, Staatsanleihen, Unternehmensanleihen, Währungen, Rohstoffe, relative Stärke) im Stil der Monatsübersicht von Pictet Asset Management, für drei wählbare Horizonte (1 Monat, 12 Monate, 5–10 Jahre) mit jeweils eigenen Säulen; dazu Indikatoren für die Risikoausrichtung, ein Kurzüberblick und der Signalverlauf über 24 Monate | täglich |
+| Gold | Eigene Monatsübersicht: Gold in US-Dollar, Franken und Euro, Silber, Gold gegenüber Aktien und Anleihen, Kennzahlen (Abstand zum Höchststand, realer Preis seit 1971, Gold-Silber-Verhältnis) und die Treiber des Goldsignals je Horizont | täglich |
 | Konjunktur und Märkte | Konjunkturuhr (OECD-Frühindikatoren), Inflation, Arbeitslosigkeit, Wachstum, Märkte, Risikokacheln | täglich bis monatlich |
 | Schuldenzyklus | Staatsschulden mit IWF-Projektionen, reale Leitzinsen, Währungen in Gold, Reservewährungsanteile, Zentralbankbilanzen; lange Historien der USA | täglich bzw. wöchentlich |
 | Machtindex | Acht Machtfaktoren nach Dalio seit 1500 | wöchentlich |
@@ -19,7 +20,7 @@ Jede berechnete Größe trägt ein ⓘ. Ein Klick öffnet ein kleines Fenster mi
 | Innere Ordnung | Ungleichheit, Polarisierung, Vertrauen | wöchentlich |
 | Demografie und Technologie | Kernaussagen des Berichts „Demographics and Technology“ des Pictet Research Institute (Oktober 2025) mit aktuellen Daten: Erwerbsbevölkerung, Altersquotient, Wachstumsbilanz, F&E, Produktivität, Produktivitäts-J-Kurve | wöchentlich |
 | Natur | Globale Temperatur, aktuelle Naturgefahren | täglich |
-| Datenstatus | Stand und Fehler jedes Abrufjobs | live |
+| Datenstatus | Stand und Fehler jedes Abrufjobs, Umfang des Datenarchivs (D1) mit CSV-Download jeder Reihe | live |
 
 ## Architektur
 
@@ -31,7 +32,9 @@ Cloudflare-Cron (alle 10 Min.)
           ├─► KV  state:<k>     Arbeitszustand (GDELT-Tageswerte)
           ├─► KV  meta:v2       Status, Fehler, Backoff je Job
           ├─► KV  snapshot:v2   alle Ausgaben, als Zeichenkette zusammengesetzt
-          └─► D1  signals       Einstufung jeder Anlage je Tag (Signalverlauf, Job signal_history)
+          ├─► D1  obs, series   Datenarchiv: jede abgerufene Beobachtung (Reihe, Datum, Wert), wächst mit jedem Abruf
+          ├─► D1  events        archivierte GDACS-Meldungen
+          └─► D1  signal_hist   Einstufung jeder Anlage je Tag und Horizont (Signalverlauf, Job signal_history)
 
 Browser ─► GET /api/snapshot ─► Edge-Cache (5 Min.) ─► KV snapshot:v2
                                    Rückfall: statischer Startbestand public/data/live.json
@@ -39,11 +42,12 @@ Browser ─► GET /data/bigcycle.json   lange Historien (wöchentlich über Git
 ```
 
 - **Ein Worker** liefert die statische Seite (`public/`), die API (`/api/*`) und führt die Abrufe aus. Der Browser ruft nie eine fremde Quelle direkt auf.
-- **Jobs** (`worker/jobs*.js`) haben einen Takt (`every`) und ein Subrequest-Budget (`cost`). Ein Lauf nimmt die fälligen Jobs in der Reihenfolge ihrer Überfälligkeit, höchstens acht. Nach einem vollen Umlauf (rund 50 Minuten) sind alle 38 Jobs geladen.
+- **Jobs** (`worker/jobs*.js`) haben einen Takt (`every`) und ein Subrequest-Budget (`cost`). Ein Lauf nimmt die fälligen Jobs in der Reihenfolge ihrer Überfälligkeit, höchstens acht. Nach einem vollen Umlauf (rund 50 Minuten) sind alle 40 Jobs geladen.
 - **Letzter guter Stand:** Schlägt ein Abruf fehl, bleibt die alte Ausgabe stehen. Der Job wartet dann 1, 2, 4, 8, 12 bzw. 24 Stunden bis zum nächsten Versuch (wie bei World Monitor).
 - **Historien wachsen mit:** Viele Jobs laden nur die letzten Wochen nach und hängen sie an die gespeicherte Reihe an (`keep: true`). Tageswerte, die älter als 800 Tage sind, werden auf Wochenwerte ausgedünnt.
 - **GDELT:** Alle 30 Minuten verarbeitet der Worker die neuesten 15-Minuten-Dateien der GDELT-Ereignisdatenbank und führt Tagessummen je Länderpaar für 150 Tage (Startbestand: `public/data/gdelt-state.json`).
-- **Signalverlauf (D1):** Alle sechs Stunden rechnet der Worker das Anlagebarometer mit demselben Modell wie die Seite (`src/signals.js`). Den Stand des Tages speichert er in der D1-Datenbank `monitor-signals`, Tabelle `signals`. Beim ersten Lauf rechnet er zusätzlich 24 Monatsenden zurück, und zwar nur mit Daten, die damals veröffentlicht gewesen wären. Gespeicherte Tageswerte ändern sich danach nicht mehr, so entsteht eine echte Historie der Signale.
+- **Datenarchiv (D1):** Jede Ausgabe eines Abrufjobs schreibt der Runner zusätzlich in die D1-Datenbank `monitor-signals` (Tabelle `obs`: Reihe, Datum, Wert; Tabelle `series`: Bezeichnung, Einheit, Quelle, Zeitraum, Anzahl). Neue Tage werden ergänzt, bekannte nur bei geändertem Wert überschrieben (Revisionen). Beim ersten Archivlauf eines Jobs lädt der Worker die ganze Historie der Quelle (Feld `deep` am Job: FRED seit den 1950er-Jahren, EZB seit 1999, Bundesbank seit 1972, BIZ, OECD seit 1990 usw.) und archiviert sie vollständig; der Snapshot für die Seite behält den bisherigen Zeitraum. So gehört die Historie dem Monitor, auch wenn eine Quelle ältere Werte nicht mehr anbietet (etwa die ICE-BofA-Risikoprämien auf FRED nach drei Jahren). Der Job `archive_hist` übernimmt wöchentlich die Langfristreihen aus `bigcycle.json` (Präfix `h_`, teils seit dem 13. Jahrhundert), Prognosemärkte werden als Tagesreihen `pm_…` gespeichert, GDACS-Meldungen in `events`.
+- **Signalverlauf (D1):** Alle sechs Stunden rechnet der Worker das Anlagebarometer mit demselben Modell wie die Seite (`src/signals.js`) für alle drei Horizonte und speichert den Stand des Tages samt Säulenwerten in der Tabelle `signal_hist`. Für Anlagen ohne Vorgeschichte rechnet er 24 Monatsenden zurück, und zwar nur mit Daten, die damals veröffentlicht gewesen wären. Gespeicherte Tageswerte ändern sich danach nicht mehr, so entsteht eine echte Historie der Signale. Ändert sich das Modell (`SIG.cfg.version`), wird nur die Rückrechnung neu erstellt.
 - **Wöchentliche Pipeline** (`pipeline/build_data.py`, GitHub Actions montags 05:17 UTC): baut die langen Historien (Machtindex seit 1500, US-Schulden seit 1790, Shiller-Daten, geopolitischer Risikoindex usw.). Danach übernimmt sie den aktuellen Worker-Snapshot als neuen Startbestand.
 
 ```
@@ -76,7 +80,9 @@ Alternativ geht es lokal: `npx wrangler login` und danach `npm run deploy`.
 
 ### 3. Speicher und Cron
 
-Hier ist nichts zu tun. Den KV-Namespace für das Binding `DATA` und die D1-Datenbank `monitor-signals` für das Binding `DB` legt Wrangler beim Deploy automatisch an (ab Wrangler 4.45). Die Tabelle erzeugt der Worker selbst. Der Cron-Trigger `*/10 * * * *` steht in `wrangler.jsonc`.
+Hier ist nichts zu tun. Den KV-Namespace für das Binding `DATA` und die D1-Datenbank `monitor-signals` für das Binding `DB` legt Wrangler beim Deploy automatisch an (ab Wrangler 4.45). Die Tabellen erzeugt der Worker selbst; die Tabelle `signals` der ersten Version übernimmt er einmalig in `signal_hist`. Der Cron-Trigger `*/10 * * * *` steht in `wrangler.jsonc`, ebenso eine CPU-Grenze von 60 Sekunden je Lauf als Reserve für den ersten Archivlauf.
+
+Umfang: Der erste Archivlauf schreibt rund 600.000 Beobachtungen (einige Megabyte), danach kommen täglich einige Tausend hinzu. Das liegt weit innerhalb der Kontingente von Workers Paid (D1: 10 GB je Datenbank, 50 Mio. geschriebene Zeilen im Monat inklusive).
 
 ### 4. Optionale Secrets und Variablen
 
@@ -121,7 +127,7 @@ Jeder dieser Commits löst über Workers Builds einen neuen Deploy aus.
 
 ```bash
 npm install
-npm run dev                  # wrangler dev auf http://127.0.0.1:8787 (mit lokalem KV)
+npm run dev                  # wrangler dev auf http://127.0.0.1:8787 (mit lokalem KV und lokaler D1)
 curl "http://127.0.0.1:8787/__scheduled?cron=*/10+*+*+*+*"     # einen Cron-Lauf auslösen
 npm test                     # Tests des Signalmodells
 npm run build                # Seite neu bauen (public/index.html, app.css, app.js)
@@ -129,7 +135,7 @@ npm run fetch:live           # alle Jobs in Node ausführen und public/data/live
 python3 -I pipeline/build_data.py --cache .cache --refresh       # lange Historien
 ```
 
-Für `POST /api/run` lokal eine Datei `.dev.vars` mit `ADMIN_TOKEN=…` anlegen; sie wird nicht eingecheckt. Hinter einem Proxy braucht Node `NODE_USE_ENV_PROXY=1`.
+Für `POST /api/run` lokal eine Datei `.dev.vars` mit `ADMIN_TOKEN=…` anlegen; sie wird nicht eingecheckt. Hinter einem Proxy braucht Node `NODE_USE_ENV_PROXY=1`. Die lokale D1 lässt sich mit `npx wrangler d1 execute monitor-signals --local --command "SELECT COUNT(*) FROM obs"` abfragen.
 
 ## API
 
@@ -137,7 +143,10 @@ Für `POST /api/run` lokal eine Datei `.dev.vars` mit `ADMIN_TOKEN=…` anlegen;
 |---|---|
 | `GET /api/snapshot` | alle Live-Reihen, Listen (Prognosemärkte, Naturgefahren) und der Status aller Jobs; 5 Minuten im Edge-Cache |
 | `GET /api/status` | nur der Status der Jobs (Zeitpunkt, Fehler, jüngster Wert, Größe, Dauer) |
-| `GET /api/signals` | Signalverlauf aus D1: Stichtage, Art (rückgerechnet oder gespeichert), Gesamtwert und Stufe je Anlage; `?daily=365` liefert die Tageswerte der letzten 365 Tage statt nur der Monatsenden |
+| `GET /api/signals` | Signalverlauf aus D1: Stichtage, Art (rückgerechnet oder gespeichert), Gesamtwert und Stufe je Anlage. `?h=m1` (1 Monat, Standard), `?h=y1` (12 Monate), `?h=lt` (5–10 Jahre); `?daily=365` alle Tageswerte der letzten 365 Tage statt nur der Monatsenden; `?pillars=1` mit Säulenwerten; `?format=csv` als CSV |
+| `GET /api/archive` | Verzeichnis des Datenarchivs: alle Reihen mit Bezeichnung, Einheit, Frequenz, Quelle, erstem und letztem Datum und Anzahl der Werte, dazu Summen |
+| `GET /api/series?id=y10_us,gold_usd` | Beobachtungen aus dem Archiv (höchstens 20 Reihen), `?from=1990&to=2000-12-31`, `?format=csv` als CSV |
+| `GET /api/events` | archivierte GDACS-Meldungen, `?from=2026-01-01` |
 | `POST /api/run?jobs=a,b` | Jobs sofort ausführen (Header `Authorization: Bearer <ADMIN_TOKEN>`) |
 
 Reihenformat im Snapshot: `{f: "D", s: "2014-01-02", d: [Tagesabstände], v: [Werte], l, u, src}` für Tageswerte. Monats-, Quartals- und Jahresreihen (`f: "M" | "Q" | "A"`) bestehen nur aus Startperiode und Werten.
@@ -175,13 +184,16 @@ Alle Quellen sind ohne Schlüssel und dauerhaft abrufbar. Fast alle sind amtlich
 | `gdelt_tension` | Spannungsmonitor aus der GDELT-Ereignisdatenbank | GDELT Project | 30 Min. |
 | `polymarket` | Prognosemärkte zu Konflikten, Rezession und Zinsen | Polymarket | 6 Std. |
 | `gdacs` | Naturgefahren mit oranger oder roter Warnstufe | GDACS (EU/UN) | 6 Std. |
-| `signal_history` | Signalverlauf des Anlagebarometers (eigene Berechnung, D1) | – | 6 Std. |
+| `signal_history` | Signalverlauf des Anlagebarometers, drei Horizonte (eigene Berechnung, D1) | – | 6 Std. |
+| `archive_hist` | Langfristreihen des wöchentlichen Datensatzes ins Archiv (D1) | – | 1 Woche |
 
 Die wöchentliche Pipeline nutzt zusätzlich Our World in Data, die Weltbank, den IWF (DataMapper, COFER), FRED, U.S. Treasury Fiscal Data und die Shiller-Daten (shillerdata.com). Hinzu kommen der Geopolitical Risk Index und der Trade Policy Uncertainty Index (Caldara, Iacoviello), die Jordà-Schularick-Taylor Macrohistory Database, Correlates of War, die Millennium-Daten der Bank of England, Voteview und die Nobelpreis-API. Die Quellenangaben stehen an jeder Grafik und in `public/data/bigcycle.json` unter `sources`.
 
 ## Anlagebarometer
 
-Jede Anlage wird auf fünf Säulen von −2 bis +2 bewertet:
+Jede Anlage wird auf fünf Säulen von −2 bis +2 bewertet. Welche Säulen zählen, hängt vom gewählten Horizont ab:
+
+**1 Monat (taktisch)**
 
 - **Trend:** Momentum über 3, 6 und 12 Monate, risikobereinigt, plus Abstand zum 200-Tage-Schnitt.
 - **Konjunktur:** OECD-Frühindikator der Region, Niveau und Dynamik.
@@ -193,7 +205,23 @@ Jede Anlage wird auf fünf Säulen von −2 bis +2 bewertet:
 - **Liquidität:** Leitzinsrichtung, Zinskurve, Zentralbankbilanz, Dollartrend.
 - **Risiko und Geopolitik:** VIX, Risikoprämien, Finanzstress, Spannungsmonitor.
 
-Rohwerte werden durch ihre typische Schwankung geteilt und weich begrenzt (2·tanh(z/2)). Die Gewichte hängen von der Anlageart ab. Die Gesamtnote ergibt eine von fünf Stufen (−−, −, =, +, ++; Schwellen ±0,3 und ±0,9).
+**12 Monate (zyklisch)**
+
+- **Konjunktur:** Frühindikator wie oben und die IWF-Wachstumsprognose der nächsten zwölf Monate gegenüber den letzten zwölf Monaten (bei Anleihen auch die Inflationsprognose).
+- **Bewertung, Liquidität, Risiko** wie oben, aber mit höherem Gewicht für Bewertung und Liquidität.
+- **Momentum 12 Monate:** Rendite der letzten zwölf Monate ohne den jüngsten Monat, risikobereinigt (Zeitreihen-Momentum).
+
+**5–10 Jahre (strukturell, großer Zyklus)**
+
+- **Bewertung:** Abstand zum Trend über bis zu 20 Jahre, für die USA vor allem das Shiller-KGV; Anleihen: erwartete Realrendite (Rendite minus IWF-Inflationsprognose für fünf Jahre); Währungen: realer Wechselkurs gegenüber dem langjährigen Mittel; Gold: realer Preis im Vergleich seit 1971.
+- **Wachstum und Demografie:** IWF-Wachstumsprognose für fünf Jahre, Erwerbsbevölkerung der nächsten zehn Jahre (Weltbank), Produktivität.
+- **Schulden:** Schuldenquote, ihre Entwicklung laut IWF, Haushaltssaldo, Zins minus nominales Wachstum. Hohe Schulden belasten Anleihen und Währung und stützen Gold.
+- **Machtposition:** Anteil an der Weltwirtschaft (Kaufkraftparitäten), Leistungsbilanz, bei Währungen der Anteil an den Weltdevisenreserven (COFER).
+- **Langfristtrend:** Steigung des Zehnjahrestrends und Rendite über drei Jahre.
+
+Rohwerte werden durch ihre typische Schwankung geteilt und weich begrenzt (2·tanh(z/2)). Die Gewichte hängen von Anlageart und Horizont ab (Tabellen auf der Seite unter „So entsteht das Signal“). Die Gesamtnote ergibt eine von fünf Stufen (−−, −, =, +, ++; Schwellen ±0,3 und ±0,9). IWF-Prognosen und Bevölkerungsprojektionen gibt es nur im jüngsten Stand; Vormonat und Rückrechnung verwenden ihn ebenfalls. Bitcoin hat keinen fundamentalen Bewertungsanker und bleibt im Horizont 5–10 Jahre ohne Einstufung.
+
+**Gold** hat eine eigene Monatsübersicht: Gold in US-Dollar, Franken und Euro, Silber, Gold gegenüber Aktien (S&P 500) und Anleihen (10-jährige Treasuries), mit Kennzahlen und den Säulen des Goldsignals als Treiber. Gold in Franken und Euro nutzt für Trend und Momentum den Preis in der jeweiligen Währung, für die Bewertung den weltweit einheitlichen Dollarpreis.
 
 Der Vormonat wird mit dem Datenstand von vor 30 Tagen berechnet. Monatsreihen zählen dabei erst nach ihrer üblichen Veröffentlichungsfrist. Ein Toleranzband von 0,1 verhindert, dass Werte nahe einer Schwelle jeden Monat die Stufe wechseln. Zeilen, deren jüngster Wert nicht tagesaktuell ist, tragen einen Hinweis „Stand …“.
 
@@ -228,6 +256,8 @@ Für den Big-Cycle-Monitor wurden bewusst nur nachvollziehbare, formelbasierte K
 - **OECD:** drosselt Anfragen. Die OECD-Jobs laufen deshalb einzeln, nacheinander und höchstens einer je Lauf.
 - **Bank of England:** blockiert gelegentlich Cloud-Adressen. Dann bleibt der letzte Stand stehen.
 - **KV:** ist nur letztendlich konsistent. Neue Werte erscheinen nach bis zu 60 Sekunden, mit dem Edge-Cache nach bis zu 5 Minuten.
+- **Archiv:** Die Historie reicht so weit zurück, wie die Quellen sie frei anbieten (der S&P 500 auf FRED etwa nur zehn Jahre; die lange Reihe seit 1950 kommt aus den Shiller-Daten der Pipeline, Präfix `h_`). Revisionen überschreiben den gespeicherten Wert; frühere Fassungen einer Zahl werden nicht aufbewahrt. Der gespeicherte Signalverlauf hält dagegen fest, was die Seite an jedem Tag angezeigt hat.
+- **Prognosen:** Die Säulen der Horizonte 12 Monate und 5–10 Jahre nutzen IWF-Projektionen. Diese gibt es nur im jüngsten Stand, die Rückrechnung früherer Monatsenden enthält daher etwas Wissen von heute.
 
 ## Lizenzen
 

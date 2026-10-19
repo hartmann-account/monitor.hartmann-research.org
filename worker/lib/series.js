@@ -124,3 +124,24 @@ export function thinOld(pts, days = 800) {
   }
   return out;
 }
+
+/* Kompakte Reihe aus Punkten neu aufbauen (gleiche Frequenz und Metadaten) */
+export function fromPoints(s, pts) {
+  const meta = {};
+  for (const [k, v] of Object.entries(s)) if (!["f", "s", "d", "v"].includes(k)) meta[k] = v;
+  if (s.f === "D" || s.f === "W") return dailySeries(pts, meta, s.f);
+  if (s.f === "M") return monthlySeries(pts, meta);
+  if (s.f === "Q") return quarterlySeries(pts, meta);
+  return annualSeries(pts, meta);
+}
+
+/* Reihe ab einem Datum (ISO-Tag) kürzen; Monate, Quartale und Jahre zählen ab ihrem Beginn */
+export function trimFrom(s, from) {
+  if (!s || s.s == null || !from) return s;
+  const y = +from.slice(0, 4), m = +from.slice(5, 7) || 1;
+  const key = s.f === "M" ? from.slice(0, 7) : s.f === "Q" ? `${y}-Q${Math.floor((m - 1) / 3) + 1}` : s.f === "A" ? y : from.slice(0, 10);
+  const pts = toPoints(s);
+  if (!pts.length || !(pts[0][0] < key)) return s;
+  return fromPoints(s, pts.filter(p => p[0] >= key));
+}
+

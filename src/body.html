@@ -5,6 +5,7 @@
     <nav class="nav" aria-label="Kapitel">
       <a href="#lage">Lagebild</a>
       <a href="#barometer">Barometer</a>
+      <a href="#gold">Gold</a>
       <a href="#konjunktur">Konjunktur &amp; Märkte</a>
       <a href="#schulden">Schuldenzyklus</a>
       <a href="#macht">Machtindex</a>
@@ -51,9 +52,14 @@
       <div class="band-head">
         <div class="kicker"><span class="eyebrow">Was steigt, was fällt?</span><span class="force-tag" id="baro-tag">Modellsignal</span></div>
         <h2>Anlagebarometer</h2>
-        <p class="lead">Jede Anlage wird auf fünf Säulen beurteilt: Trend, Konjunktur, Bewertung, Liquidität sowie Risiko und Geopolitik. Der gefüllte Punkt zeigt die heutige Einschätzung, der Ring die von vor einem Monat. Die Signale folgen festen, offen dokumentierten Regeln und sind keine Anlageempfehlung.</p>
+        <p class="lead">Jede Anlage wird auf fünf Säulen beurteilt und auf einer Skala von klar negativ bis klar positiv eingestuft. Der Horizont ist wählbar: 1 Monat (Trend, Konjunktur, Bewertung, Liquidität, Risiko), 12 Monate (Konjunktur- und Wachstumsprognose, Bewertung, Liquidität, Momentum, Risiko) oder 5–10 Jahre (Bewertung, Wachstum und Demografie, Schulden, Machtposition, Langfristtrend); mit ihm wechseln die Säulen. Pfeilbalken zeigen eine geänderte Stufe gegenüber dem Vormonat. Die Signale folgen festen, offen dokumentierten Regeln und sind keine Anlageempfehlung.</p>
       </div>
       <div class="controls">
+        <div class="seg seg-hz" id="baro-hz" role="group" aria-label="Prognosehorizont">
+          <button type="button" data-h="m1" aria-pressed="true">1 Monat</button>
+          <button type="button" data-h="y1" aria-pressed="false">12 Monate</button>
+          <button type="button" data-h="lt" aria-pressed="false">5–10 Jahre</button>
+        </div>
         <div class="seg" id="baro-view" role="group" aria-label="Darstellung">
           <button type="button" data-v="scale" aria-pressed="true">Barometer</button>
           <button type="button" data-v="heat" aria-pressed="false">Säulen im Detail</button>
@@ -61,8 +67,10 @@
         </div>
         <div class="baro-legend" id="baro-legend" aria-hidden="true"></div>
       </div>
+      <p class="small hz-desc" id="baro-hz-desc" aria-live="polite"></p>
       <div id="baro-summary"></div>
       <div id="baro-groups"></div>
+      <div id="gold" class="gold-host"></div>
       <details class="more" id="baro-method">
         <summary>So entsteht das Signal</summary>
         <div id="baro-method-body" class="baro-method"></div>

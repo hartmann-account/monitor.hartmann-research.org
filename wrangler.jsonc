@@ -19,10 +19,13 @@
   "kv_namespaces": [
     { "binding": "DATA" }
   ],
-  // Signalverlauf des Anlagebarometers; ohne "database_id" legt Wrangler die Datenbank beim Deploy automatisch an.
+  // Datenarchiv (alle abgerufenen Beobachtungen) und Signalverlauf des Anlagebarometers; ohne "database_id" legt
+  // Wrangler die Datenbank beim Deploy automatisch an. Der Name bleibt, damit die gespeicherte Historie erhalten bleibt.
   "d1_databases": [
     { "binding": "DB", "database_name": "monitor-signals" }
   ],
+  // Reserve für den ersten Archivlauf (ganze Historie der Quellen) und die Rückrechnung der drei Horizonte
+  "limits": { "cpu_ms": 60000 },
   "triggers": {
     "crons": ["*/10 * * * *"]
   },

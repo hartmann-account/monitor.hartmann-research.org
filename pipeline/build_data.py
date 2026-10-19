@@ -852,6 +852,15 @@ def build_series(cache):
     ten = {y: v for y, v in sh_gs10.items() if y < 1953} | gs10
     real = {y: ten[y] - us_infl[y] for y in ten if y in us_infl}
     put("us_real_10y", "Realrendite 10 Jahre (ex post)", "%", ["shiller", "fred:GS10", "fred:CPIAUCNS"], real)
+    # S&P 500 und Shiller-KGV als lückenlose Monatsreihen: lange Historie für Bewertung, Langfristtrend und die
+    # Rückrechnung des Anlagebarometers (das KGV zum jeweiligen Stichtag statt nur der jüngste Wert)
+    sh_idx = pd.to_datetime([f"{int(d)}-{int(round((d - int(d)) * 100)):02d}-01" for d in sh["Date"].astype(float)])
+    sp_m = pd.Series(pd.to_numeric(sh["P"], errors="coerce").values, index=sh_idx).dropna()
+    sp_m = sp_m[~sp_m.index.duplicated(keep="last")].asfreq("MS")
+    put("sp500_m", "S&P 500 (Monatsmittel, Shiller)", "Punkte", ["shiller"], monthly=sp_m[sp_m.index >= "1950-01-01"])
+    cape_m = pd.Series(pd.to_numeric(sh["CAPE"], errors="coerce").values, index=sh_idx).dropna()
+    cape_m = cape_m[~cape_m.index.duplicated(keep="last")].asfreq("MS")
+    put("cape_m", "Shiller-KGV (CAPE) S&P 500", "", ["shiller"], monthly=cape_m)
     gold = pd.read_csv(os.path.join(cache, "gold", "monthly.csv"))
     gold["date"] = pd.to_datetime(gold["Date"])
     gser = gold.set_index("date")["Price"]

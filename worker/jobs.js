@@ -3,9 +3,11 @@
    cost   höchstens benötigte externe Subrequests
    keep   true: die Ausgabe des letzten Laufs wird als ctx.prev übergeben; neue Werte werden an die gespeicherte
           Historie angehängt (wichtig für Quellen mit kurzem Fenster, etwa SNB-RSS oder ICE-BofA-Reihen auf FRED)
+   deep   frühestes Datum für den ersten Lauf mit Datenarchiv (D1): dann wird die ganze Historie der Quelle geladen
+          und archiviert, der Snapshot behält nur den üblichen Zeitraum
    Jede Reihe trägt l (Bezeichnung), u (Einheit) und src (Quellenkennung für die Seite). */
 import { dailySeries, monthlySeries } from "./lib/series.js";
-import { meta, since, D, M, ratio } from "./lib/jobutil.js";
+import { meta, since, start, D, M, ratio } from "./lib/jobutil.js";
 import { fredMulti } from "./providers/official.js";
 import { ecbData, snbCube, snbRssRates, sixDaily, bundesbank, boe, mofJgb, bis, imfSdmx, nbpGoldUsd, bojApi } from "./providers/markets.js";
 import { MACRO_JOBS } from "./jobs-macro.js";
@@ -15,7 +17,7 @@ import { SIGNAL_JOBS } from "./jobs-signals.js";
 /* ------------------------------------------------------------------ Märkte */
 const MARKET_JOBS = [
   {
-    id: "fred_markets", label: "US-Aktien, Nikkei, Öl, Bitcoin, Dollarindex, Volatilität", source: "fred", every: 6, cost: 1, keep: true,
+    id: "fred_markets", label: "US-Aktien, Nikkei, Öl, Bitcoin, Dollarindex, Volatilität", source: "fred", every: 6, cost: 1, keep: true, deep: "1950-01-01",
     async run(F, ctx) {
       const ids = ["SP500", "NASDAQCOM", "NIKKEI225", "DCOILBRENTEU", "DCOILWTICO", "DHHNGSP", "CBBTCUSD", "DTWEXBGS", "VIXCLS", "VXEEMCLS"];
       const r = await fredMulti(F, ids, since(ctx, "eq_us", "2014-01-01"));
@@ -35,7 +37,7 @@ const MARKET_JOBS = [
     },
   },
   {
-    id: "fred_rates", label: "US-Renditen, Realzinsen, Inflationserwartung, Fed-Leitzins", source: "fred", every: 6, cost: 1, keep: true,
+    id: "fred_rates", label: "US-Renditen, Realzinsen, Inflationserwartung, Fed-Leitzins", source: "fred", every: 6, cost: 1, keep: true, deep: "1950-01-01",
     async run(F, ctx) {
       const ids = ["DGS10", "DGS2", "DGS3MO", "DFII10", "T10YIE", "T10Y2Y", "DFF", "DFEDTARU", "DFEDTARL"];
       const r = await fredMulti(F, ids, since(ctx, "y10_us", "2014-01-01"));
@@ -54,7 +56,7 @@ const MARKET_JOBS = [
     },
   },
   {
-    id: "fred_risk", label: "Kreditrisikoprämien, Finanzstress, Fed-Bilanz, Geldmenge, US-Preisindex", source: "fred", every: 12, cost: 1, keep: true,
+    id: "fred_risk", label: "Kreditrisikoprämien, Finanzstress, Fed-Bilanz, Geldmenge, US-Preisindex", source: "fred", every: 12, cost: 1, keep: true, deep: "1950-01-01",
     async run(F, ctx) {
       const ids = ["BAMLH0A0HYM2", "BAMLC0A0CM", "BAMLHE00EHYIOAS", "BAMLEMCBPIOAS", "STLFSI4", "NFCI", "WALCL", "M2SL", "CPIAUCSL", "JPNASSETS", "USEPUINDXD"];
       const r = await fredMulti(F, ids, since(ctx, "hy_oas", "2014-01-01", 40));
@@ -76,10 +78,10 @@ const MARKET_JOBS = [
     },
   },
   {
-    id: "fred_longrates", label: "Langfristzinsen Schweiz, Indien, Japan, Großbritannien (Monatswerte)", source: "fred", every: 24, cost: 1,
-    async run(F) {
+    id: "fred_longrates", label: "Langfristzinsen Schweiz, Indien, Japan, Großbritannien (Monatswerte)", source: "fred", every: 24, cost: 1, deep: "1950-01-01",
+    async run(F, ctx) {
       const ids = ["IRLTLT01CHM156N", "INDIRLTLT01STM", "IRLTLT01JPM156N", "IRLTLT01GBM156N", "IRLTLT01DEM156N", "IRLTLT01USM156N"];
-      const r = await fredMulti(F, ids, "2005-01-01");
+      const r = await fredMulti(F, ids, start(ctx, "2005-01-01"));
       const s = {};
       const put = (sid, fid, l) => { if (r[fid]) s[sid] = monthlySeries(r[fid].map(([d, v]) => [d.slice(0, 7), v]), meta(l, "%", "fred", { fred: fid })); };
       put("y10m_ch", "IRLTLT01CHM156N", "Langfristzins Schweiz (Monatsmittel)");
@@ -92,7 +94,7 @@ const MARKET_JOBS = [
     },
   },
   {
-    id: "ecb_fx", label: "Wechselkurse (EZB-Referenzkurse) und Zinskurve Euroraum", source: "ecb", every: 6, cost: 2, keep: true,
+    id: "ecb_fx", label: "Wechselkurse (EZB-Referenzkurse) und Zinskurve Euroraum", source: "ecb", every: 6, cost: 2, keep: true, deep: "1999-01-01",
     async run(F, ctx) {
       const start = since(ctx, "fx_eur", "2019-01-01");
       const [fx, yc] = await Promise.all([
@@ -118,14 +120,14 @@ const MARKET_JOBS = [
     },
   },
   {
-    id: "ecb_misc", label: "EZB-Einlagesatz, Eurosystem-Bilanz, Stressindex CISS, Euro Stoxx 50, Geldmenge M3", source: "ecb", every: 12, cost: 5, keep: true,
+    id: "ecb_misc", label: "EZB-Einlagesatz, Eurosystem-Bilanz, Stressindex CISS, Euro Stoxx 50, Geldmenge M3", source: "ecb", every: 12, cost: 5, keep: true, deep: "1980-01-01",
     async run(F, ctx) {
       const [dfr, ilm, ciss, stoxx, m3] = await Promise.all([
         ecbData(F, "FM", "D.U2.EUR.4F.KR.DFR.LEV", since(ctx, "pr_ea_dfr", "2014-01-01")),
         ecbData(F, "ILM", "W.U2.C.T000000.Z5.Z01", since(ctx, "ecb_assets", "2014-01-01", 60)),
         ecbData(F, "CISS", "D.U2+US+CN.Z0Z.4F.EC.SS_CIN.IDX", since(ctx, "ciss_ea", "2014-01-01")),
-        ecbData(F, "FM", "M.U2.EUR.DS.EI.DJES50I.HSTA", "2004-01"),
-        ecbData(F, "BSI", "M.U2.Y.V.M30.X.I.U2.2300.Z01.A", "2004-01"),
+        ecbData(F, "FM", "M.U2.EUR.DS.EI.DJES50I.HSTA", start(ctx, "2004-01")),
+        ecbData(F, "BSI", "M.U2.Y.V.M30.X.I.U2.2300.Z01.A", start(ctx, "2004-01")),
       ]);
       const s = {};
       const one = o => Object.values(o)[0] || [];
@@ -141,7 +143,7 @@ const MARKET_JOBS = [
     },
   },
   {
-    id: "bbk_bund", label: "Bundesanleihen 10 und 2 Jahre (tagesaktuell)", source: "bundesbank", every: 8, cost: 2, keep: true,
+    id: "bbk_bund", label: "Bundesanleihen 10 und 2 Jahre (tagesaktuell)", source: "bundesbank", every: 8, cost: 2, keep: true, deep: "1972-01-01",
     async run(F, ctx) {
       const st = since(ctx, "y10_de", "2014-01-01");
       const [y10, y2] = await Promise.all([
@@ -155,7 +157,7 @@ const MARKET_JOBS = [
     },
   },
   {
-    id: "snb_daily", label: "Eidgenossen 10 Jahre, SARON und SNB-Leitzins (RSS, tagesaktuell)", source: "snb", every: 6, cost: 2, keep: true,
+    id: "snb_daily", label: "Eidgenossen 10 Jahre, SARON und SNB-Leitzins (RSS, tagesaktuell)", source: "snb", every: 6, cost: 2, keep: true, deep: "2000-01-01",
     async run(F, ctx) {
       const [rss, cube] = await Promise.all([snbRssRates(F), snbCube(F, "snbgwdzid", "D0(LZ,SARON)", since(ctx, "saron", "2014-01-01"))]);
       // Basis der 10-jährigen Rendite: Monatswerte (FRED/OECD) werden im Frontend ergänzt; hier die Tageswerte sammeln
@@ -167,11 +169,11 @@ const MARKET_JOBS = [
     },
   },
   {
-    id: "snb_monthly", label: "Schweizer Aktien (SMI, SPI) und SNB-Bilanz", source: "snb", every: 24, cost: 2, keep: true,
+    id: "snb_monthly", label: "Schweizer Aktien (SMI, SPI) und SNB-Bilanz", source: "snb", every: 24, cost: 2, keep: true, deep: "1990-01-01",
     async run(F, ctx) {
       const [st, bal] = await Promise.all([
         snbCube(F, "capchstocki", "D0(SMISMIDR,GDR)", since(ctx, "eq_ch", "2014-01-01", 45)),
-        snbCube(F, "snbbipo", "D0(T0)", "2010-01"),
+        snbCube(F, "snbbipo", "D0(T0)", start(ctx, "2010-01")),
       ]);
       const s = {};
       if (st.SMISMIDR) s.eq_ch = D(ctx, "eq_ch", st.SMISMIDR, meta("Swiss Market Index (SMI)", "Punkte", "snb", { note: "monatlich veröffentlicht" }));
@@ -192,7 +194,7 @@ const MARKET_JOBS = [
     },
   },
   {
-    id: "boe", label: "Gilts 10 Jahre und Bank Rate", source: "boe", every: 12, cost: 2, keep: true,
+    id: "boe", label: "Gilts 10 Jahre und Bank Rate", source: "boe", every: 12, cost: 2, keep: true, deep: "1975-01-01",
     async run(F, ctx) {
       const r = await boe(F, ["IUDMNPY", "IUDBEDR"], since(ctx, "y10_gb", "2014-01-01"));
       const s = {};
@@ -211,13 +213,14 @@ const MARKET_JOBS = [
   },
   {
     id: "mof_jgb_hist", label: "Japanische Staatsanleihen 10 Jahre (Historie)", source: "mof", every: 24 * 7, cost: 1,
-    async run(F) {
+    async run(F, ctx) {
       const all = await mofJgb(F, "historical", "10Y");
+      if (ctx.raw) ctx.raw.y10_jp_hist = all; // ganze Historie seit 1974 ins Archiv, der Snapshot ab 2014
       return { series: { y10_jp_hist: dailySeries(all.filter(p => p[0] >= "2014-01-01"), meta("Rendite 10-jähriger japanischer Staatsanleihen (Historie)", "%", "mof")) } };
     },
   },
   {
-    id: "bis_policy", label: "Leitzinsen von acht Zentralbanken", source: "bis", every: 12, cost: 1, keep: true,
+    id: "bis_policy", label: "Leitzinsen von acht Zentralbanken", source: "bis", every: 12, cost: 1, keep: true, deep: "1950-01-01",
     async run(F, ctx) {
       const r = await bis(F, "WS_CBPOL", "D.US+XM+CH+JP+GB+CN+IN+RU", since(ctx, "pr_us", "2014-01-01", 120));
       const s = {};
@@ -232,9 +235,9 @@ const MARKET_JOBS = [
     },
   },
   {
-    id: "bis_reer", label: "Reale effektive Wechselkurse (Bewertung der Währungen)", source: "bis", every: 24, cost: 1,
-    async run(F) {
-      const r = await bis(F, "WS_EER", "M.R.B.US+XM+CH+JP+GB+CN+IN", "2000-01");
+    id: "bis_reer", label: "Reale effektive Wechselkurse (Bewertung der Währungen)", source: "bis", every: 24, cost: 1, deep: "1994-01-01",
+    async run(F, ctx) {
+      const r = await bis(F, "WS_EER", "M.R.B.US+XM+CH+JP+GB+CN+IN", start(ctx, "2000-01"));
       const s = {};
       const names = { US: "US-Dollar", XM: "Euro", CH: "Schweizer Franken", JP: "Yen", GB: "Pfund", CN: "Renminbi", IN: "Rupie" };
       for (const [c, l] of Object.entries(names)) {
@@ -245,9 +248,9 @@ const MARKET_JOBS = [
     },
   },
   {
-    id: "imf_commodities", label: "Gold, Silber, Kupfer, Brent, Rohstoffindex (Monatsmittel)", source: "imf", every: 24, cost: 1,
-    async run(F) {
-      const r = await imfSdmx(F, "IMF.RES,PCPS,9.0.0", "G001.PGOLD+PSILVER+PCOPP+POILBRE+PALLFNF.USD+INDEX.M", "2005-01");
+    id: "imf_commodities", label: "Gold, Silber, Kupfer, Brent, Rohstoffindex (Monatsmittel)", source: "imf", every: 24, cost: 1, deep: "1980-01-01",
+    async run(F, ctx) {
+      const r = await imfSdmx(F, "IMF.RES,PCPS,9.0.0", "G001.PGOLD+PSILVER+PCOPP+POILBRE+PALLFNF.USD+INDEX.M", start(ctx, "2005-01"));
       const g = k => r[k] || Object.entries(r).find(([kk]) => kk.includes(k.split(".")[1]) && kk.includes(k.split(".")[2]))?.[1] || [];
       const s = {};
       const put = (sid, key, l, u) => { const p = g(key); if (p.length) s[sid] = monthlySeries(p, meta(l, u, "imf")); };

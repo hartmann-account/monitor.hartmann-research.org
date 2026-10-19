@@ -165,23 +165,59 @@ const SIG = (() => {
   }
 
   /* ------------------------------------------------------------ Konfiguration */
+  // Gewichte des Ausblicks 1 Monat (auch als cfg.weights erreichbar)
+  const W_M1 = {
+    equity: { trend: 0.35, cycle: 0.25, value: 0.15, liquidity: 0.15, risk: 0.10 },
+    bond: { trend: 0.30, cycle: 0.25, value: 0.20, liquidity: 0.20, risk: 0.05 },
+    credit: { trend: 0.30, cycle: 0.25, value: 0.20, liquidity: 0.10, risk: 0.15 },
+    fx: { trend: 0.40, cycle: 0.15, value: 0.20, liquidity: 0.15, risk: 0.10 },
+    gold: { trend: 0.40, cycle: 0.10, value: 0.15, liquidity: 0.20, risk: 0.15 },
+    commodity: { trend: 0.40, cycle: 0.30, value: 0.10, liquidity: 0.10, risk: 0.10 },
+    relative: { trend: 0.70, cycle: 0.30, value: 0, liquidity: 0, risk: 0 },
+  };
+  // 12 Monate: Bewertung, Konjunkturprognose und Geldpolitik zählen mehr, das kurzfristige Kursmomentum weniger
+  const W_Y1 = {
+    equity: { cycle12: 0.25, value: 0.30, liquidity: 0.20, mom12: 0.15, risk: 0.10 },
+    bond: { cycle12: 0.25, value: 0.35, liquidity: 0.25, mom12: 0.10, risk: 0.05 },
+    credit: { cycle12: 0.25, value: 0.35, liquidity: 0.15, mom12: 0.10, risk: 0.15 },
+    fx: { cycle12: 0.15, value: 0.35, liquidity: 0.25, mom12: 0.15, risk: 0.10 },
+    gold: { cycle12: 0.10, value: 0.25, liquidity: 0.30, mom12: 0.20, risk: 0.15 },
+    commodity: { cycle12: 0.35, value: 0.20, liquidity: 0.15, mom12: 0.20, risk: 0.10 },
+    relative: { cycle12: 0.35, value: 0.25, liquidity: 0, mom12: 0.40, risk: 0 },
+  };
+  // 5–10 Jahre: Bewertung und die Kräfte des großen Zyklus (Wachstum, Schulden, Machtposition)
+  const W_LT = {
+    equity: { valueLT: 0.35, growth: 0.20, debt: 0.15, power: 0.15, trendLT: 0.15 },
+    bond: { valueLT: 0.50, growth: 0.10, debt: 0.30, power: 0, trendLT: 0.10 },
+    credit: { valueLT: 0.50, growth: 0.20, debt: 0.15, power: 0, trendLT: 0.15 },
+    fx: { valueLT: 0.35, growth: 0.10, debt: 0.20, power: 0.25, trendLT: 0.10 },
+    gold: { valueLT: 0.30, growth: 0, debt: 0.30, power: 0.20, trendLT: 0.20 },
+    commodity: { valueLT: 0.40, growth: 0.35, debt: 0, power: 0, trendLT: 0.25 },
+    relative: { valueLT: 0.30, growth: 0.25, debt: 0.15, power: 0.15, trendLT: 0.15 },
+  };
   const cfg = {
+    // Stand des Modells; ändert sich die Rechnung, rechnet der Worker die gespeicherte Rückrechnung neu
+    version: "2026-10-19",
     pillars: [
       { id: "trend", label: "Trend", short: "T", desc: "Kursmomentum über 3, 6 und 12 Monate, risikobereinigt, und Abstand zum gleitenden 200-Tage-Durchschnitt (Monatsreihen: 10 Monate)." },
       { id: "cycle", label: "Konjunktur", short: "K", desc: "OECD-Frühindikator der Region: Dynamik über drei Monate und Niveau gegenüber dem langfristigen Mittel (100). Anleihen profitieren von schwächerem Wachstum und sinkender Inflation." },
       { id: "value", label: "Bewertung", short: "B", desc: "Aktien und Rohstoffe: Abstand zum log-linearen 10-Jahres-Trend. Anleihen: reale Rendite gegenüber ihrer 10-Jahres-Spanne. Währungen: realer effektiver Wechselkurs (BIS) gegenüber dem 10-Jahres-Mittel. Gold: realer Goldpreis." },
       { id: "liquidity", label: "Liquidität", short: "L", desc: "Richtung der Geldpolitik (Leitzinsänderung über 12 Monate), Steilheit der Zinskurve, Zentralbankbilanz und Dollartrend." },
       { id: "risk", label: "Risiko & Geopolitik", short: "R", desc: "Risikoappetit aus Volatilität (VIX), Hochzins-Risikoprämien, Finanzstress und geopolitischem Risiko. Sichere Häfen (Franken, Yen, Gold, Staatsanleihen) gewinnen bei Risikoaversion." },
+      { id: "cycle12", label: "Konjunktur", short: "K", desc: "OECD-Frühindikator (wie beim Ausblick 1 Monat) und die IWF-Wachstumsprognose: erwartetes Wachstum der nächsten zwölf Monate gegenüber den letzten zwölf Monaten. Anleihen zusätzlich die erwartete Inflationsentwicklung." },
+      { id: "mom12", label: "Momentum 12 M.", short: "M", desc: "Kursentwicklung der letzten zwölf Monate ohne den jüngsten Monat, risikobereinigt (Zeitreihen-Momentum), und Abstand zum Zwölfmonatsmittel." },
+      { id: "valueLT", label: "Bewertung", short: "B", desc: "Aktien und Rohstoffe: Abstand zum langfristigen Trend (bis 20 Jahre), USA zusätzlich das Shiller-KGV. Anleihen: erwartete Realrendite (Rendite minus IWF-Inflationsprognose für fünf Jahre). Währungen: realer effektiver Wechselkurs gegenüber dem langjährigen Mittel. Gold: realer Goldpreis seit 1971." },
+      { id: "growth", label: "Wachstum & Demografie", short: "W", desc: "IWF-Prognose des realen Wachstums für die nächsten fünf Jahre, Entwicklung der Bevölkerung im erwerbsfähigen Alter in den nächsten zehn Jahren (Projektion der Weltbank) und Produktivitätswachstum der letzten zehn Jahre." },
+      { id: "debt", label: "Schulden", short: "S", desc: "Langer Schuldenzyklus: Staatsschulden in % des BIP, ihre Entwicklung bis in fünf Jahren laut IWF, Haushaltssaldo und Zins minus nominales Wachstum. Hohe und steigende Schulden belasten Anleihen und Währung und stützen Gold." },
+      { id: "power", label: "Machtposition", short: "P", desc: "Großer Zyklus nach Dalio: Veränderung des Anteils an der Weltwirtschaft (Kaufkraftparitäten, IWF) über zehn Jahre, Leistungsbilanz und bei Währungen der Anteil an den Weltdevisenreserven (IWF COFER)." },
+      { id: "trendLT", label: "Langfristtrend", short: "T", desc: "Steigung des log-linearen Zehnjahrestrends und Kursentwicklung über drei Jahre, jeweils im Verhältnis zur Schwankungsbreite." },
     ],
-    weights: {
-      equity: { trend: 0.35, cycle: 0.25, value: 0.15, liquidity: 0.15, risk: 0.10 },
-      bond: { trend: 0.30, cycle: 0.25, value: 0.20, liquidity: 0.20, risk: 0.05 },
-      credit: { trend: 0.30, cycle: 0.25, value: 0.20, liquidity: 0.10, risk: 0.15 },
-      fx: { trend: 0.40, cycle: 0.15, value: 0.20, liquidity: 0.15, risk: 0.10 },
-      gold: { trend: 0.40, cycle: 0.10, value: 0.15, liquidity: 0.20, risk: 0.15 },
-      commodity: { trend: 0.40, cycle: 0.30, value: 0.10, liquidity: 0.10, risk: 0.10 },
-      relative: { trend: 0.70, cycle: 0.30, value: 0, liquidity: 0, risk: 0 },
-    },
+    horizons: [
+      { id: "m1", label: "1 Monat", title: "Ausblick 1 Monat", short: "1 M.", desc: "Taktische Sicht für die nächsten Wochen: Trend, Konjunkturdynamik, Liquidität und Risikoappetit stehen im Vordergrund.", pillars: ["trend", "cycle", "value", "liquidity", "risk"], weights: W_M1 },
+      { id: "y1", label: "12 Monate", title: "Ausblick 12 Monate", short: "12 M.", desc: "Zyklische Sicht für das nächste Jahr: Bewertung, Wachstumsprognose und Geldpolitik zählen mehr, kurzfristige Kursbewegungen weniger.", pillars: ["cycle12", "value", "liquidity", "mom12", "risk"], weights: W_Y1 },
+      { id: "lt", label: "5–10 Jahre", title: "Langfristiger Trend (5–10 Jahre)", short: "5–10 J.", desc: "Strukturelle Sicht im Sinne von Dalios großem Zyklus: Bewertung, Wachstum und Demografie, Schuldenlast und Machtposition der Länder.", pillars: ["valueLT", "growth", "debt", "power", "trendLT"], weights: W_LT },
+    ],
+    weights: W_M1,
     cats: [
       { n: -2, sym: "−−", label: "klar negativ", max: -0.9 },
       { n: -1, sym: "−", label: "negativ", max: -0.3 },
@@ -192,25 +228,35 @@ const SIG = (() => {
     hyst: 0.1,
     // Risiko-Beta: wie stark eine Anlage von Risikoappetit (+) oder Risikoscheu (−) profitiert
     beta: { equity: 1, em: 1.2, credit: 1, commodity: 0.7, gold: -0.7, safeFx: -0.9, fx: 0.2, usd: -0.3, safeBond: -0.6, bond: -0.3, crypto: 1.2 },
+    // Reihen je Region; imf/wb/cofer: Kürzel der Jahresreihen von IWF (WEO) und Weltbank und der Reservewährung
     regions: {
-      US: { cli: "cli_us", cpi: "cpi_us", pr: "pr_us", y10: "y10_us", reer: "reer_us" },
-      EA: { cli: "cli_ea", cpi: "cpi_ea", pr: "pr_ea", y10: "y10_de", reer: "reer_ea" },
-      DE: { cli: "cli_de", cpi: "cpi_de", pr: "pr_ea", y10: "y10_de", reer: "reer_ea" },
-      CH: { cli: "cli_ch", cpi: "cpi_ch", pr: "pr_ch", y10: "y10_ch", reer: "reer_ch" },
-      JP: { cli: "cli_jp", cpi: "cpi_jp", pr: "pr_jp", y10: "y10_jp", reer: "reer_jp" },
-      GB: { cli: "cli_gb", cpi: "cpi_gb", pr: "pr_gb", y10: "y10_gb", reer: "reer_gb" },
-      CN: { cli: "cli_cn", cpi: "cpi_cn", pr: "pr_cn", y10: "y10_cn", reer: "reer_cn" },
-      IN: { cli: "cli_in", cpi: "cpi_in", pr: "pr_in", y10: "y10_in", reer: "reer_in" },
-      WORLD: { cli: ["cli_us", "cli_ea", "cli_cn", "cli_jp", "cli_gb", "cli_in"], cpi: "cpi_us", pr: "pr_us" },
-      EM: { cli: ["cli_cn", "cli_in"], cpi: "cpi_cn", pr: "pr_us" },
+      US: { cli: "cli_us", cpi: "cpi_us", pr: "pr_us", y10: "y10_us", reer: "reer_us", imf: "usa", wb: "usa", cofer: "usd" },
+      EA: { cli: "cli_ea", cpi: "cpi_ea", pr: "pr_ea", y10: "y10_de", reer: "reer_ea", imf: "euro", wb: "euu", cofer: "eur", pppAlt: "deu" },
+      DE: { cli: "cli_de", cpi: "cpi_de", pr: "pr_ea", y10: "y10_de", reer: "reer_ea", imf: "deu", wb: "deu" },
+      CH: { cli: "cli_ch", cpi: "cpi_ch", pr: "pr_ch", y10: "y10_ch", reer: "reer_ch", imf: "che", wb: "che", cofer: "chf" },
+      JP: { cli: "cli_jp", cpi: "cpi_jp", pr: "pr_jp", y10: "y10_jp", reer: "reer_jp", imf: "jpn", wb: "jpn", cofer: "jpy" },
+      GB: { cli: "cli_gb", cpi: "cpi_gb", pr: "pr_gb", y10: "y10_gb", reer: "reer_gb", imf: "gbr", wb: "gbr", cofer: "gbp" },
+      CN: { cli: "cli_cn", cpi: "cpi_cn", pr: "pr_cn", y10: "y10_cn", reer: "reer_cn", imf: "chn", wb: "chn", cofer: "cny" },
+      IN: { cli: "cli_in", cpi: "cpi_in", pr: "pr_in", y10: "y10_in", reer: "reer_in", imf: "ind", wb: "ind" },
+      // zusammengesetzte Regionen: Gewichte nach ungefährem Anteil an der Weltwirtschaft (Kaufkraftparitäten)
+      WORLD: { cli: ["cli_us", "cli_ea", "cli_cn", "cli_jp", "cli_gb", "cli_in"], cpi: "cpi_us", pr: "pr_us", mix: { US: 0.25, EA: 0.20, CN: 0.31, JP: 0.06, GB: 0.04, IN: 0.14 } },
+      EM: { cli: ["cli_cn", "cli_in"], cpi: "cpi_cn", pr: "pr_us", mix: { CN: 0.6, IN: 0.4 } },
     },
+    names: { US: "USA", EA: "Eurozone", DE: "Deutschland", CH: "Schweiz", JP: "Japan", GB: "Großbritannien", CN: "China", IN: "Indien", WORLD: "Welt", EM: "Schwellenländer" },
+    // langjährige Mediane der Risikoprämien (ICE BofA, seit 1997) als Maßstab der langfristigen Bewertung
+    spreadRef: { hy_oas: 4.5, ig_oas: 1.3, hy_oas_eu: 4.3 },
+    // Schuldenlast der Reservewährungsländer für Gold (USA doppelt)
+    goldDebtMix: { US: 0.5, EA: 0.15, JP: 0.15, GB: 0.1, CN: 0.1 },
   };
 
-  /* Zeilen des Barometers. price: Reihen-ID oder Rechenvorschrift; kind bestimmt Gewichte und Säulenlogik. */
+  /* Zeilen des Barometers. price: Reihen-ID oder Rechenvorschrift; kind bestimmt Gewichte und Säulenlogik.
+     mix: Gewichte der Regionen für die Strukturdaten (Wachstum, Schulden, Machtposition); horizons: nur diese Horizonte. */
   const ROWS = [
-    { id: "eq_world", group: "klassen", label: "Aktien", sub: "Korb nach ungefährer Börsengewichtung: USA, Eurozone, China, Japan, Großbritannien, Schweiz, Indien", kind: "equity", region: "WORLD", beta: "equity", price: { basket: [["eq_us", 0.62], ["eq_ea", 0.1], ["eq_jp", 0.06], ["eq_gb", 0.04], ["eq_ch", 0.03], ["eq_cn", 0.05], ["eq_in", 0.03]] } },
-    { id: "bd_core", group: "klassen", label: "Staatsanleihen", short: "Staatsanl.", sub: "USA, Deutschland, Schweiz, 10 Jahre", kind: "bond", region: "US", beta: "safeBond", price: { basket: [{ bond: "y10_us" }, { bond: "y10_de" }, { bond: "y10_ch" }] }, yieldId: "y10_us" },
+    { id: "eq_world", group: "klassen", label: "Aktien", sub: "Korb nach ungefährer Börsengewichtung: USA, Eurozone, China, Japan, Großbritannien, Schweiz, Indien", kind: "equity", region: "WORLD", beta: "equity", price: { basket: [["eq_us", 0.62], ["eq_ea", 0.1], ["eq_jp", 0.06], ["eq_gb", 0.04], ["eq_ch", 0.03], ["eq_cn", 0.05], ["eq_in", 0.03]] },
+      mix: { US: 0.62, EA: 0.1, JP: 0.06, GB: 0.04, CH: 0.03, CN: 0.05, IN: 0.03 } },
+    { id: "bd_core", group: "klassen", label: "Staatsanleihen", short: "Staatsanl.", sub: "USA, Deutschland, Schweiz, 10 Jahre", kind: "bond", region: "US", beta: "safeBond", price: { basket: [{ bond: "y10_us" }, { bond: "y10_de" }, { bond: "y10_ch" }] }, yieldId: "y10_us", mix: { US: 0.5, DE: 0.25, CH: 0.25 } },
     { id: "credit_all", group: "klassen", label: "Unternehmensanleihen", short: "Untern.-Anl.", sub: "USA, Hochzins (ICE BofA)", kind: "credit", region: "US", beta: "credit", price: { spread: "hy_oas" }, spreadId: "hy_oas" },
+    { id: "gold_usd", group: "klassen", label: "Gold", sub: "US-Dollar je Feinunze", kind: "gold", region: "US", beta: "gold", price: "gold_usd", gold: true },
     { id: "commod", group: "klassen", label: "Rohstoffe", sub: "Brent und Kupfer", kind: "commodity", region: "WORLD", beta: "commodity", price: { basket: ["brent", "copper"] } },
 
     { id: "eq_us", group: "aktien", label: "USA", sub: "S&P 500", kind: "equity", region: "US", beta: "equity", price: "eq_us" },
@@ -224,7 +270,7 @@ const SIG = (() => {
     { id: "eq_em", group: "aktien", label: "Schwellenländer", short: "EM", sub: "MSCI Emerging Markets; ohne MSCI-Daten Korb aus China und Indien", kind: "equity", region: "EM", beta: "em", price: "eq_em", fallback: { basket: [["eq_cn", 0.6], ["eq_in", 0.4]] }, geo: [["us_cn", -0.3]] },
 
     { id: "bd_us", group: "anleihen", label: "USA", sub: "Treasuries, 10 Jahre", kind: "bond", region: "US", beta: "safeBond", price: { bond: "y10_us" }, yieldId: "y10_us" },
-    { id: "bd_de", group: "anleihen", label: "Deutschland", short: "DE", sub: "Bundesanleihen, 10 Jahre", kind: "bond", region: "EA", beta: "safeBond", price: { bond: "y10_de" }, yieldId: "y10_de" },
+    { id: "bd_de", group: "anleihen", label: "Deutschland", short: "DE", sub: "Bundesanleihen, 10 Jahre", kind: "bond", region: "EA", beta: "safeBond", price: { bond: "y10_de" }, yieldId: "y10_de", mix: { DE: 1 } },
     { id: "bd_ch", group: "anleihen", label: "Schweiz", sub: "Eidgenossen, 10 Jahre", kind: "bond", region: "CH", beta: "safeBond", price: { bond: "y10_ch" }, yieldId: "y10_ch" },
     { id: "bd_jp", group: "anleihen", label: "Japan", sub: "JGB, 10 Jahre", kind: "bond", region: "JP", beta: "bond", price: { bond: "y10_jp" }, yieldId: "y10_jp" },
     { id: "bd_gb", group: "anleihen", label: "Großbritannien", short: "GB", sub: "Gilts, 10 Jahre", kind: "bond", region: "GB", beta: "bond", price: { bond: "y10_gb" }, yieldId: "y10_gb" },
@@ -238,24 +284,27 @@ const SIG = (() => {
     { id: "fx_gbp", group: "waehrungen", label: "Pfund", sub: "GBP in US-Dollar", kind: "fx", region: "GB", beta: "fx", price: "fx_gbp" },
     { id: "fx_chf", group: "waehrungen", label: "Franken", sub: "CHF in US-Dollar", kind: "fx", region: "CH", beta: "safeFx", price: "fx_chf" },
     { id: "fx_jpy", group: "waehrungen", label: "Yen", sub: "JPY in US-Dollar", kind: "fx", region: "JP", beta: "safeFx", price: "fx_jpy" },
-    { id: "gold_usd", group: "waehrungen", label: "Gold", sub: "US-Dollar je Feinunze", kind: "gold", region: "US", beta: "gold", price: "gold_usd" },
     { id: "fx_cny", group: "waehrungen", label: "Renminbi", sub: "CNY in US-Dollar", kind: "fx", region: "CN", beta: "fx", price: "fx_cny", geo: [["us_cn", -0.3]] },
     { id: "fx_inr", group: "waehrungen", label: "Rupie", sub: "INR in US-Dollar", kind: "fx", region: "IN", beta: "fx", price: "fx_inr" },
     { id: "fx_usd", group: "waehrungen", label: "Dollar", sub: "US-Dollar, handelsgewichtet (Fed, breiter Index)", kind: "fx", region: "US", beta: "usd", price: "usd_broad", usd: true },
     { id: "fx_eurchf", group: "waehrungen", label: "Euro in Franken", short: "EUR/CHF", sub: "EUR/CHF", kind: "fx", region: "EA", beta: "fx", price: { ratio: ["fx_eur", "fx_chf"] }, cross: "CH" },
 
     { id: "brent", group: "rohstoffe", label: "Öl (Brent)", short: "Öl", sub: "US-Dollar je Fass", kind: "commodity", region: "WORLD", beta: "commodity", price: "brent", geo: [["il_ir", 0.5], ["ru_ua", 0.2]] },
-    { id: "copper", group: "rohstoffe", label: "Kupfer", sub: "US-Dollar je Tonne", kind: "commodity", region: "CN", beta: "commodity", price: "copper" },
-    { id: "silver", group: "rohstoffe", label: "Silber", sub: "US-Dollar je Feinunze", kind: "gold", region: "US", beta: "commodity", price: "silver_usd" },
-    { id: "gold_chf", group: "rohstoffe", label: "Gold in Franken", short: "Gold CHF", sub: "CHF je Feinunze", kind: "gold", region: "CH", beta: "gold", price: { ratio: ["gold_usd", "fx_chf"] } },
-    { id: "btc", group: "rohstoffe", label: "Bitcoin", sub: "US-Dollar", kind: "commodity", region: "US", beta: "crypto", price: "btc", noValue: true },
+    { id: "copper", group: "rohstoffe", label: "Kupfer", sub: "US-Dollar je Tonne", kind: "commodity", region: "CN", beta: "commodity", price: "copper", mix: { CN: 0.5, US: 0.15, EA: 0.15, IN: 0.1, JP: 0.05, GB: 0.05 } },
+    { id: "btc", group: "rohstoffe", label: "Bitcoin", sub: "US-Dollar", kind: "commodity", region: "US", beta: "crypto", price: "btc", noValue: true, horizons: ["m1", "y1"] },
+
+    // Gold-Monatsübersicht: Gold in den wichtigsten Währungen, Silber und Gold im Vergleich zu Aktien und Anleihen
+    { id: "gold_chf", group: "gold", label: "Gold in Franken", short: "Gold CHF", sub: "CHF je Feinunze", kind: "gold", region: "CH", beta: "gold", price: { ratio: ["gold_usd_long", "fx_chf"] }, gold: true },
+    { id: "gold_eur", group: "gold", label: "Gold in Euro", short: "Gold EUR", sub: "EUR je Feinunze", kind: "gold", region: "EA", beta: "gold", price: { ratio: ["gold_usd_long", "fx_eur"] }, gold: true },
+    { id: "silver", group: "gold", label: "Silber", sub: "US-Dollar je Feinunze", kind: "gold", region: "US", beta: "commodity", price: "silver_usd", gold: true },
+    { id: "rel_gold_eq", group: "gold", label: "Gold vs. Aktien", short: "Gold/Akt.", sub: "Gold gegenüber S&P 500", kind: "relative", regions: [null, "US"], price: { ratio: ["gold_usd_long", "eq_us"] }, gold: true },
+    { id: "rel_gold_bd", group: "gold", label: "Gold vs. Anleihen", short: "Gold/Anl.", sub: "Gold gegenüber 10-jährigen Treasuries", kind: "relative", regions: [null, "US"], price: { ratio: ["gold_usd_long", { bond: "y10_us" }] }, gold: true },
 
     { id: "rel_ch_us", group: "relativ", label: "Schweiz vs. USA", short: "CH vs. US", sub: "SMI gegenüber S&P 500, beide in Franken", kind: "relative", regions: ["CH", "US"], price: { ratio: ["eq_ch", { product: ["eq_us", { inv: "fx_chf" }] }] } },
     { id: "rel_ea_us", group: "relativ", label: "Eurozone vs. USA", short: "EZ vs. US", sub: "Euro Stoxx 50 gegenüber S&P 500, beide in US-Dollar", kind: "relative", regions: ["EA", "US"], price: { ratio: [{ product: ["eq_ea", "fx_eur"] }, "eq_us"] } },
     { id: "rel_em_us", group: "relativ", label: "Schwellenl. vs. USA", short: "EM vs. US", sub: "MSCI EM gegenüber S&P 500; ohne MSCI-Daten Korb aus China und Indien in US-Dollar", kind: "relative", regions: ["EM", "US"], price: { ratio: ["eq_em", "eq_us"] },
       fallback: { ratio: [{ basket: [[{ product: ["eq_cn", "fx_cny"] }, 0.6], [{ product: ["eq_in", "fx_inr"] }, 0.4]] }, "eq_us"] } },
     { id: "rel_eq_bd", group: "relativ", label: "Aktien vs. Anleihen", short: "Akt./Anl.", sub: "S&P 500 gegenüber 10-jährigen Treasuries", kind: "relative", regions: ["US", null], price: { ratio: ["eq_us", { bond: "y10_us" }] } },
-    { id: "rel_gold_eq", group: "relativ", label: "Gold vs. Aktien", short: "Gold/Akt.", sub: "Gold gegenüber S&P 500", kind: "relative", regions: [null, "US"], price: { ratio: ["gold_usd", "eq_us"] } },
   ];
   const GROUPS = [
     { id: "klassen", label: "Anlageklassen" },
@@ -265,6 +314,7 @@ const SIG = (() => {
     { id: "waehrungen", label: "Währungen gegenüber dem US-Dollar" },
     { id: "rohstoffe", label: "Rohstoffe" },
     { id: "relativ", label: "Relative Stärke", note: "positiv = erste Anlage vorn" },
+    { id: "gold", label: "Gold und Silber", note: "eigene Monatsübersicht" },
   ];
 
   /* Korb aus mehreren Preisreihen: Renditen gewichtet verkettet. Sind Monatsreihen dabei, rechnet der Korb
@@ -396,6 +446,12 @@ const SIG = (() => {
       const ga = ra ? growthScore(L, regionIds(ra, "cli"), cut) : null, gb = rb ? growthScore(L, regionIds(rb, "cli"), cut) : null;
       if (row.id === "rel_eq_bd" && ga) return { s: ga.s, parts: [{ k: "Wachstumsdynamik USA", v: null, s: ga.s }] };
       if (row.id === "rel_gold_eq" && gb) return { s: -0.6 * gb.s, parts: [{ k: "Wachstumsdynamik USA (invers)", v: null, s: -0.6 * gb.s }] };
+      if (row.id === "rel_gold_bd") { // steigende Inflation spricht für Gold und gegen Anleihen
+        const inf = inflTrend(L, "US", cut);
+        if (!inf) return null;
+        const s = clip2(inf.d6 / 0.8);
+        return { s, parts: [{ k: "US-Inflation, Veränderung über 6 Monate", v: inf.d6, u: "Pp.", s, d: inf.date }] };
+      }
       if (!ga || !gb) return null;
       return { s: clip2(ga.s - gb.s), parts: [{ k: "Wachstumsvorsprung", v: null, s: clip2(ga.s - gb.s) }] };
     }
@@ -432,16 +488,35 @@ const SIG = (() => {
     return null;
   }
 
+  /* Shiller-KGV zum Stichtag: mit Monatsreihe (seit 1881) der damals bekannte Wert und sein Perzentil bis dahin,
+     sonst nur der jüngste Wert (in der Rückrechnung dann ohne KGV) */
+  function capeAt(L, cut) {
+    const p = L.capeM;
+    if (!p || !p.length) return L.cape || null;
+    if (cut == null && L.cape) return L.cape;
+    const pts = cut == null ? p : p.filter(q => q.e + 15 <= cut);
+    if (pts.length < 120) return null;
+    const a = last(pts);
+    return { value: a.v, pct: pts.filter(q => q.v <= a.v).length / pts.length, date: isoOf(a.t) };
+  }
+
   function pillarValue(L, row, cut, price) {
-    if (row.kind === "relative" || row.noValue) return null;
+    if (row.noValue) return null;
+    if (row.kind === "relative") { // Verhältnis zweier Anlagen: Abstand zum eigenen 10-Jahres-Trend (Rückkehr zur Mitte)
+      const td = trendDeviation(price, 10);
+      if (!td) return null;
+      const s = clip2(-td.z / 1.2);
+      return { s, parts: [{ k: "Verhältnis gegenüber seinem 10-Jahres-Trend", v: 100 * (Math.exp(td.dev) - 1), u: "%", s }] };
+    }
     if (row.kind === "equity" || row.kind === "commodity") {
       const td = trendDeviation(price, 10);
       if (!td) return null;
       const parts = [{ k: "Abstand zum 10-Jahres-Trend", v: 100 * (Math.exp(td.dev) - 1), u: "%", s: clip2(-td.z / 1.2) }];
       let s = parts[0].s;
-      if (row.id === "eq_us" && L.cape) {
-        const cs = clip2(4 * (0.5 - L.cape.pct));
-        parts.push({ k: "Shiller-KGV (Perzentil seit 1881)", v: L.cape.value, u: "", s: cs, d: L.cape.date });
+      const cape = row.id === "eq_us" ? capeAt(L, cut) : null;
+      if (cape) {
+        const cs = clip2(4 * (0.5 - cape.pct));
+        parts.push({ k: "Shiller-KGV (Perzentil seit 1881)", v: cape.value, u: "", s: cs, d: cape.date });
         s = mean([s, cs]);
       }
       return { s, parts };
@@ -545,6 +620,13 @@ const SIG = (() => {
 
   /* Risikoappetit: positiv = Risikofreude, negativ = Risikoscheu */
   function riskAppetite(L, cut) {
+    const key = cut ?? "now";
+    if (L._ra && L._ra.has(key)) return L._ra.get(key);
+    const r = riskAppetiteCalc(L, cut);
+    if (L._ra) L._ra.set(key, r);
+    return r;
+  }
+  function riskAppetiteCalc(L, cut) {
     const parts = [];
     const vix = asOf(L.s["vix"], cut);
     if (vix.length > 100) {
@@ -580,6 +662,338 @@ const SIG = (() => {
     return { s: Math.max(-2, Math.min(2, s)), parts };
   }
 
+  /* ------------------------------------------------------------ Säulen der längeren Horizonte */
+  // Wert eines Jahres aus Jahresreihen mit Projektionen (IWF WEO, Bevölkerungsprojektionen der Weltbank). Es gibt nur
+  // den jüngsten Datenstand; Vormonat und Rückrechnung nutzen ihn ebenfalls (in den Erklärungen vermerkt).
+  function yv(L, id, y) {
+    const s = L.s[id];
+    if (!s || !s.pts.length) return null;
+    const p = s.pts, i = y - Math.round(p[0].x);
+    if (i >= 0 && i < p.length && Math.round(p[i].x) === y) return p[i].v;
+    const q = p.find(q => Math.round(q.x) === y);
+    return q ? q.v : null;
+  }
+  // Mittel über Jahre y0 bis y1, sofern mindestens die Hälfte der Jahre vorliegt
+  function ym(L, id, y0, y1) {
+    const v = [];
+    for (let y = y0; y <= y1; y++) { const a = yv(L, id, y); if (a != null) v.push(a); }
+    return v.length * 2 >= y1 - y0 + 1 ? mean(v) : null;
+  }
+  const regCode = (r, k) => (cfg.regions[r] || {})[k];
+  const regName = r => cfg.names[r] || r;
+  // Teilwerte mit einem Faktor umrechnen (etwa Schuldenlast → Signal), damit die Erklärung zum Säulenwert passt
+  function scaled(res, f, extra) {
+    if (!res || res.s == null) return null;
+    return { s: Math.max(-2, Math.min(2, f * res.s)), parts: res.parts.map(q => ({ ...q, s: q.s == null ? null : f * q.s })).concat(extra || []) };
+  }
+  // Region oder Regionsmischung (Welt, Schwellenländer, Korb der Zeile) mit einer Funktion je Einzelregion bewerten
+  function regionMix(row, r) { if (row && row.mix) return row.mix; const m = regCode(r, "mix"); return m || null; }
+  function mixed(row, r, fn, label = "") {
+    const mix = regionMix(row, r);
+    if (!mix) return fn(r);
+    const ks = Object.keys(mix);
+    if (ks.length === 1) return fn(ks[0]);
+    let num = 0, den = 0;
+    const parts = [];
+    for (const [rr, w] of Object.entries(mix)) {
+      const x = fn(rr);
+      if (!x || x.s == null) continue;
+      num += w * x.s; den += w;
+      parts.push({ k: `${label ? label + " " : ""}${regName(rr)} (Gewicht ${Math.round(100 * w)} %)`, v: null, s: x.s });
+    }
+    const tot = Object.values(mix).reduce((a, b) => a + b, 0);
+    return den >= 0.5 * tot ? { s: num / den, parts } : null;
+  }
+  // Vorsprung der Region a vor b (Währungen, relative Stärke); sign = −1: Mehrbelastung wirkt negativ
+  function diffOf(fn, a, b, label, sign = 1) {
+    const x = fn(a), y = fn(b);
+    if (!x || !y || x.s == null || y.s == null) return null;
+    const s = sign * clip2(x.s - y.s);
+    return { s, parts: [
+      { k: `${label}: ${regName(a)}`, v: x.s, u: "", s: null },
+      { k: `${label}: ${regName(b)}`, v: y.s, u: "", s: null },
+      { k: sign > 0 ? `Vorsprung ${regName(a)} gegenüber ${regName(b)}` : `Mehrbelastung ${regName(a)} gegenüber ${regName(b)} (invers)`, v: null, s },
+    ] };
+  }
+  const yearOf = t => new Date(t * DAY).getUTCFullYear();
+  const yearPart = t => { const d = new Date(t * DAY); return (d.getUTCMonth() + d.getUTCDate() / 31) / 12; };
+
+  /* IWF-Prognose für die nächsten zwölf Monate gegenüber den letzten zwölf Monaten (zeitgewichtet aus den
+     Jahreswerten): Beschleunigung von Wachstum bzw. Inflation */
+  function weoAccel(L, prefix, r, Y, f) {
+    const id = prefix + regCode(r, "imf");
+    const a = yv(L, id, Y - 1), b = yv(L, id, Y), c = yv(L, id, Y + 1);
+    if (a == null || b == null || c == null) return null;
+    const fwd = (1 - f) * b + f * c, trail = (1 - f) * a + f * b;
+    return { fwd, trail, d: fwd - trail };
+  }
+  function growthAccel(L, r, Y, f) {
+    const g = weoAccel(L, "growth_", r, Y, f);
+    if (!g) return null;
+    const s = clip2(g.d / 0.7);
+    return { s, parts: [{ k: `IWF: Wachstum nächste 12 Monate ${fmtN(g.fwd)} % nach ${fmtN(g.trail)} %`, v: g.d, u: "Pp.", s }] };
+  }
+  const fmtN = v => (Math.round(v * 10) / 10).toFixed(1).replace(".", ",");
+
+  function pillarCycle12(c) {
+    const { L, row, cut, Y, f } = c;
+    const base = pillarCycle(L, row, cut);
+    const parts = base ? base.parts : [];
+    const ga = r => growthAccel(L, r, Y, f);
+    let fc = null;
+    const k = row.kind;
+    if (k === "equity" || k === "credit" || k === "commodity") fc = mixed(row, row.region, ga, "Wachstumsbeschleunigung");
+    else if (k === "bond") {
+      const g = mixed(row, row.region, ga, "Wachstumsbeschleunigung");
+      const reg = row.mix ? Object.keys(row.mix)[0] : row.region;
+      const inf = weoAccel(L, "infl_", reg, Y, f);
+      const xs = [];
+      if (g) xs.push({ k: "IWF-Wachstumsprognose (invers)", v: null, s: -0.7 * g.s });
+      if (inf) xs.push({ k: `IWF: Inflation nächste 12 Monate ${fmtN(inf.fwd)} % nach ${fmtN(inf.trail)} % (sinkend stützt)`, v: inf.d, u: "Pp.", s: clip2(-inf.d / 0.6) });
+      fc = xs.length ? { s: mean(xs.map(q => q.s)), parts: xs } : null;
+    } else if (k === "fx") fc = row.usd ? diffOf(r => mixed(null, r, ga), "US", "WORLD", "Wachstumsbeschleunigung") : diffOf(ga, row.region, row.cross || "US", "Wachstumsbeschleunigung");
+    else if (k === "gold") fc = scaled(mixed(null, "WORLD", ga, "Wachstumsbeschleunigung"), -0.5);
+    else if (k === "relative") {
+      const [a, b] = row.regions;
+      if (row.id === "rel_eq_bd") fc = ga("US");
+      else if (row.id === "rel_gold_eq") fc = scaled(ga("US"), -0.6);
+      else if (row.id === "rel_gold_bd") {
+        const inf = weoAccel(L, "infl_", "US", Y, f);
+        if (inf) { const s = clip2(inf.d / 0.6); fc = { s, parts: [{ k: `IWF: US-Inflation nächste 12 Monate ${fmtN(inf.fwd)} % nach ${fmtN(inf.trail)} %`, v: inf.d, u: "Pp.", s }] }; }
+      } else if (a && b) fc = diffOf(r => mixed(null, r, ga), a, b, "Wachstumsbeschleunigung");
+    }
+    if (!base && !fc) return null;
+    const s = mean([base ? base.s : null, fc ? fc.s : null]);
+    const out = [];
+    if (base) out.push({ k: "Frühindikator (OECD), Teilsäule", v: null, s: base.s }, ...parts.filter(q => q.s != null || q.v != null).map(q => ({ ...q, sub: true })));
+    if (fc) out.push({ k: "IWF-Prognose, Teilsäule", v: null, s: fc.s }, ...fc.parts.map(q => ({ ...q, sub: true })));
+    return { s, parts: out };
+  }
+
+  // Zeitreihen-Momentum: Rendite der letzten zwölf Monate ohne den jüngsten Monat, risikobereinigt
+  function pillarMom12(price) {
+    if (price.length < 30) return null;
+    const a = last(price);
+    const vol = Math.max(0.03, annVol(price) || 0.15);
+    const b = valueAt(price, a.t - 30), c = valueAt(price, a.t - 365);
+    const parts = [];
+    if (b && c && c.t >= a.t - 420 && b.v > 0 && c.v > 0) {
+      const r = Math.log(b.v / c.v);
+      parts.push({ k: "Rendite 12 Monate ohne den letzten Monat", v: 100 * (Math.exp(r) - 1), u: "%", s: clip2(r / vol), w: 0.7 });
+    }
+    const avg = smaDays(price, 365);
+    if (avg) { const d = Math.log(a.v / avg); parts.push({ k: "Abstand zum Zwölfmonatsmittel", v: 100 * d, u: "%", s: clip2(d / (vol * 0.5)), w: 0.3 }); }
+    if (!parts.length) return null;
+    const den = parts.reduce((x, q) => x + q.w, 0);
+    return { s: parts.reduce((x, q) => x + q.w * q.s, 0) / den, parts };
+  }
+
+  // Realer Preis (in Preisen des jüngsten US-Verbraucherpreisindex) als Monatsreihe
+  function realMonthly(L, p, cut) {
+    const cpi = asOf(L.s["cpi_us_index"], cut);
+    if (!cpi.length || p.length < 24) return [];
+    const m = monthlyMeans(p);
+    return combine(m, cpi, (a, b) => a / b, 75);
+  }
+  function bondRealLT(L, r, cut, Y) {
+    const yp = asOf(L.s[regionIds(r, "y10")[0]], cut);
+    if (!yp.length) return null;
+    const y = last(yp).v;
+    let inf = ym(L, "infl_" + regCode(r, "imf"), Y + 1, Y + 5), src = `IWF-Inflationsprognose ${Y + 1}–${Y + 5}`;
+    if (inf == null) { const t = inflTrend(L, r, cut); if (!t) return null; inf = t.now; src = "aktuelle Inflationsrate"; }
+    const real = y - inf, s = clip2((real - 1) / 1);
+    return { s, parts: [{ k: `${regName(r)}: Rendite ${fmtN(y)} % minus ${src} ${fmtN(inf)} %`, v: real, u: "%", s }] };
+  }
+  function reerDev(L, id, cut) {
+    const p = asOf(L.s[id], cut);
+    if (p.length < 120) return null;
+    const a = last(p), m = mean(p.map(q => q.v));
+    return { dev: a.v / m - 1, from: isoOf(p[0].t).slice(0, 4), date: isoOf(a.t).slice(0, 7) };
+  }
+
+  function pillarValueLT(c) {
+    const { L, row, cut, price, Y } = c;
+    const k = row.kind;
+    if (row.noValue) return null;
+    if (k === "equity" || k === "commodity" || k === "relative") {
+      const base = k === "commodity" ? realMonthly(L, c.long, cut) : c.long;
+      const td = trendDeviation(base.length ? base : c.long, 20);
+      const parts = [];
+      if (td) parts.push({ k: k === "commodity" ? "Realer Preis gegenüber dem langfristigen Trend (bis 20 Jahre)" : "Abstand zum langfristigen Trend (bis 20 Jahre)", v: 100 * (Math.exp(td.dev) - 1), u: "%", s: clip2(-td.z / 1.2) });
+      let s = td ? parts[0].s : null;
+      const cape = row.id === "eq_us" ? capeAt(L, cut) : null;
+      if (cape) {
+        const cs = clip2(4 * (0.5 - cape.pct));
+        parts.push({ k: "Shiller-KGV (Perzentil seit 1881)", v: cape.value, u: "", s: cs, d: cape.date });
+        s = s == null ? cs : 0.4 * s + 0.6 * cs;
+      }
+      return s == null ? null : { s, parts };
+    }
+    if (k === "bond") return mixed(row.mix ? row : null, row.region, r => bondRealLT(L, r, cut, Y));
+    if (k === "credit") {
+      const p = asOf(L.s[row.spreadId], cut);
+      const ref = cfg.spreadRef[row.spreadId];
+      if (!p.length || ref == null) return null;
+      const v = last(p).v, s = clip2((v - ref) / 1.5);
+      return { s, parts: [{ k: `Risikoprämie gegenüber dem langjährigen Median (${fmtN(ref)} Pp.)`, v: v - ref, u: "Pp.", s }] };
+    }
+    if (k === "fx") {
+      const one = r => reerDev(L, regionIds(r, "reer")[0], cut);
+      const a = row.usd ? one("US") : one(row.region), b = row.usd ? null : one(row.cross || "US");
+      if (!a || (!row.usd && !b)) return null;
+      const d = a.dev - (b ? b.dev : 0), s = clip2(-d / 0.12);
+      const parts = [{ k: `Realer effektiver Wechselkurs ${regName(row.usd ? "US" : row.region)} gegenüber Mittel seit ${a.from}`, v: 100 * a.dev, u: "%", s: b ? null : s, d: a.date }];
+      if (b) parts.push({ k: `dito ${regName(row.cross || "US")}`, v: 100 * b.dev, u: "%", s: null, d: b.date }, { k: "Unterschied (invers)", v: 100 * d, u: "%", s });
+      return { s, parts };
+    }
+    if (k === "gold") {
+      const isGold = row.price !== "silver_usd";
+      const base = isGold ? longSeries(L, { price: "gold_usd" }, cut, priceSeries(L, "gold_usd", cut)) : c.long;
+      const real = realMonthly(L, base, cut);
+      if (real.length < 120) return null;
+      const hist = real.filter(q => q.x >= 1971.6);
+      const a = last(real);
+      const pct = hist.filter(q => q.v <= a.v).length / hist.length;
+      const s1 = clip2(3 * (0.5 - pct));
+      const parts = [{ k: `Realer ${isGold ? "Goldpreis" : "Silberpreis"}: Perzentil seit ${isoOf(hist[0].t).slice(0, 4)}`, v: 100 * pct, u: "Perzentil", s: s1 }];
+      const td = trendDeviation(hist, 60);
+      if (td) parts.push({ k: "Realer Preis gegenüber dem Trend seit " + isoOf(hist[0].t).slice(0, 4), v: 100 * (Math.exp(td.dev) - 1), u: "%", s: clip2(-td.z / 1.2) });
+      if (isGold && row.id !== "gold_usd") parts.push({ k: "Bewertung über den Dollarpreis (weltweit einheitlicher Goldpreis)", v: null, s: null });
+      return { s: mean(parts.map(q => q.s)), parts };
+    }
+    return null;
+  }
+
+  // Wachstum und Demografie einer Region: IWF-Wachstumsprognose, Erwerbsbevölkerung, Produktivität
+  function regionGrowth(L, r, Y) {
+    const imf = regCode(r, "imf"), wb = regCode(r, "wb");
+    const parts = [];
+    const g5 = imf ? ym(L, "growth_" + imf, Y + 1, Y + 5) : null;
+    const n = regName(r) + ": ";
+    if (g5 != null) parts.push({ k: `${n}reales Wachstum ${Y + 1}–${Y + 5} (IWF-Prognose)`, v: g5, u: "% p. a.", s: clip2((g5 - 2) / 1.5) });
+    if (wb) {
+      const wa = y => { const p = yv(L, "pop_" + wb, y), sh = yv(L, "wa_" + wb, y); return p != null && sh != null ? p * sh / 100 : null; };
+      const a = wa(Y), b = wa(Y + 10);
+      if (a && b) { const g = 100 * (Math.pow(b / a, 0.1) - 1); parts.push({ k: `${n}erwerbsfähige Bevölkerung ${Y}–${Y + 10} (Projektion)`, v: g, u: "% p. a.", s: clip2(g / 0.5) }); }
+      const pr = L.s["prod_" + wb];
+      if (pr) {
+        const pts = pr.pts.filter(q => q.x <= Y - 1);
+        const z = last(pts), o = z ? pts.find(q => Math.round(q.x) === Math.round(z.x) - 10) : null;
+        if (z && o && o.v > 0) { const g = 100 * (Math.pow(z.v / o.v, 0.1) - 1); parts.push({ k: `${n}Produktivität je Erwerbstätigem ${Math.round(o.x)}–${Math.round(z.x)}`, v: g, u: "% p. a.", s: clip2((g - 1) / 1) }); }
+      }
+    }
+    return parts.length ? { s: mean(parts.map(q => q.s)), parts } : null;
+  }
+  // Schuldenlast einer Region (positiv = hohe Last)
+  function regionDebt(L, r, Y, cut) {
+    const imf = regCode(r, "imf");
+    if (!imf) return null;
+    const parts = [], n = regName(r) + ": ";
+    const d0 = yv(L, "debt_" + imf, Y), d5 = yv(L, "debt_" + imf, Y + 5);
+    if (d0 != null) parts.push({ k: `${n}Staatsschulden ${Y}`, v: d0, u: "% des BIP", s: clip2((d0 - 60) / 40) });
+    if (d0 != null && d5 != null) parts.push({ k: `${n}Veränderung der Schuldenquote bis ${Y + 5} (IWF-Projektion)`, v: d5 - d0, u: "Pp.", s: clip2((d5 - d0) / 10) });
+    const bal = ym(L, "bal_" + imf, Y, Y + 4);
+    if (bal != null) parts.push({ k: `${n}Haushaltssaldo ${Y}–${Y + 4}`, v: bal, u: "% des BIP", s: clip2(-(bal + 3) / 3) });
+    const yp = asOf(L.s[regionIds(r, "y10")[0]], cut);
+    const gN = ym(L, "growth_" + imf, Y + 1, Y + 5), iN = ym(L, "infl_" + imf, Y + 1, Y + 5);
+    if (yp.length && gN != null && iN != null) { const rg = last(yp).v - (gN + iN); parts.push({ k: `${n}Zins minus nominales Wachstum (r − g)`, v: rg, u: "Pp.", s: clip2(rg / 1.5) }); }
+    return parts.length ? { s: mean(parts.map(q => q.s)), parts } : null;
+  }
+  // Machtposition einer Region: Anteil an der Weltwirtschaft, Leistungsbilanz, Reservewährungsanteil
+  function regionPower(L, r, Y, cut, cofer) {
+    const imf = regCode(r, "imf");
+    if (!imf) return null;
+    const parts = [], n = regName(r) + ": ";
+    let pid = "ppp_" + imf, note = "";
+    if (!L.s[pid] && regCode(r, "pppAlt")) { pid = "ppp_" + regCode(r, "pppAlt"); note = ", Deutschland als Näherung"; }
+    const a = yv(L, pid, Y - 5), b = yv(L, pid, Y + 5);
+    if (a && b) { const g = 100 * (Math.pow(b / a, 0.1) - 1); parts.push({ k: `${n}Anteil an der Weltwirtschaft ${Y - 5}–${Y + 5} (KKP${note})`, v: g, u: "% p. a.", s: clip2(g / 1) }); }
+    const ca = ym(L, "ca_" + imf, Y, Y + 4);
+    if (ca != null) parts.push({ k: `${n}Leistungsbilanz ${Y}–${Y + 4}`, v: ca, u: "% des BIP", s: clip2(ca / 3) });
+    if (cofer && regCode(r, "cofer")) {
+      const p = asOf(L.s["cofer_" + regCode(r, "cofer")], cut);
+      const z = last(p), o = z ? valueAt(p, z.t - 1826) : null;
+      if (z && o && z.t - o.t > 1500) parts.push({ k: `${n}Anteil an den Weltdevisenreserven, Veränderung 5 Jahre`, v: z.v - o.v, u: "Pp.", s: clip2((z.v - o.v) / 2), d: isoOf(z.t).slice(0, 7) });
+    }
+    return parts.length ? { s: mean(parts.map(q => q.s)), parts } : null;
+  }
+
+  function pillarGrowth(c) {
+    const { L, row, Y } = c;
+    const g = r => regionGrowth(L, r, Y);
+    const k = row.kind;
+    if (k === "equity" || k === "credit" || k === "commodity") return mixed(row, row.region, g, "Strukturwachstum");
+    if (k === "bond") return scaled(mixed(row.mix ? row : null, row.region, g, "Strukturwachstum"), -0.5);
+    if (k === "fx") return row.usd ? diffOf(r => mixed(null, r, g), "US", "WORLD", "Strukturwachstum") : diffOf(r => mixed(null, r, g), row.region, row.cross || "US", "Strukturwachstum");
+    if (k === "relative") {
+      const [a, b] = row.regions;
+      if (row.id === "rel_eq_bd") return g("US");
+      if (row.id === "rel_gold_eq") return scaled(g("US"), -0.5);
+      if (a && b) return diffOf(r => mixed(null, r, g), a, b, "Strukturwachstum");
+    }
+    return null;
+  }
+  function pillarDebt(c) {
+    const { L, row, Y, cut } = c;
+    const d = r => regionDebt(L, r, Y, cut);
+    const k = row.kind;
+    if (k === "equity" || k === "credit") return scaled(mixed(row, row.region, d, "Schuldenlast"), -0.6);
+    if (k === "bond") return scaled(mixed(row.mix ? row : null, row.region, d, "Schuldenlast"), -1);
+    if (k === "fx") return row.usd ? scaled(d("US"), -0.8) : diffOf(d, row.region, row.cross || "US", "Schuldenlast", -1);
+    if (k === "gold") return mixed({ mix: cfg.goldDebtMix }, null, d, "Schuldenlast");
+    if (k === "relative") {
+      const [a, b] = row.regions;
+      if (row.id === "rel_eq_bd") return scaled(d("US"), 0.4);
+      if (row.id === "rel_gold_eq") return scaled(d("US"), 0.8);
+      if (row.id === "rel_gold_bd") return scaled(d("US"), 1);
+      if (a && b) return scaled(diffOf(r => mixed(null, r, d), a, b, "Schuldenlast", -1), 0.6);
+    }
+    return null;
+  }
+  function pillarPower(c) {
+    const { L, row, Y, cut } = c;
+    const k = row.kind;
+    const p = (r, cof) => regionPower(L, r, Y, cut, cof);
+    if (k === "equity") return mixed(row, row.region, r => p(r, false), "Machtposition");
+    if (k === "fx") return row.usd ? p("US", true) : diffOf(r => p(r, true), row.region, row.cross || "US", "Machtposition");
+    if (k === "gold") return scaled(p("US", true), -0.8);
+    if (k === "relative") {
+      const [a, b] = row.regions;
+      if (row.id === "rel_gold_eq" || row.id === "rel_gold_bd") return scaled(p("US", true), -0.8);
+      if (a && b) return diffOf(r => mixed(null, r, x => p(x, false)), a, b, "Machtposition");
+    }
+    return null;
+  }
+  function pillarTrendLT(c) {
+    const p = c.long;
+    if (p.length < 60) return null;
+    const vol = Math.max(0.03, annVol(c.price) || 0.15);
+    const parts = [];
+    const td = trendDeviation(p, 10);
+    if (td) parts.push({ k: "Steigung des Zehnjahrestrends", v: 100 * (Math.exp(td.slope) - 1), u: "% p. a.", s: clip2(td.slope / (vol * 0.5)) });
+    const r36 = change(p, 1096, "log");
+    if (r36 != null) parts.push({ k: "Rendite 3 Jahre", v: 100 * (Math.exp(r36) - 1), u: "%", s: clip2(r36 / (vol * Math.sqrt(3))) });
+    return parts.length ? { s: mean(parts.map(q => q.s)), parts } : null;
+  }
+
+  /* Säulen je Kennung: c = { L, row, cut, price, long, ra, Y, f } */
+  const PILLAR_FN = {
+    trend: c => pillarTrend(c.price),
+    cycle: c => pillarCycle(c.L, c.row, c.cut),
+    value: c => pillarValue(c.L, c.row, c.cut, c.long),
+    liquidity: c => pillarLiquidity(c.L, c.row, c.cut),
+    risk: c => pillarRisk(c.L, c.row, c.cut, c.ra),
+    cycle12: pillarCycle12,
+    mom12: c => pillarMom12(c.price),
+    valueLT: pillarValueLT,
+    growth: pillarGrowth,
+    debt: pillarDebt,
+    power: pillarPower,
+    trendLT: pillarTrendLT,
+  };
+  const horizon = id => cfg.horizons.find(h => h.id === id) || cfg.horizons[0];
+  const pillarDef = id => cfg.pillars.find(p => p.id === id);
+
   /* Einstufung; mit Vorstufe gilt ein Toleranzband: Die Stufe wechselt erst, wenn der Wert die Schwelle um mehr
      als cfg.hyst überschreitet. So springen Werte nahe einer Schwelle nicht jeden Monat hin und her. */
   function category(score, prev) {
@@ -606,39 +1020,47 @@ const SIG = (() => {
     if (p.length < 30 && row.fallback) p = priceSeries(L, row.fallback, cut);
     return p;
   }
-  function evaluate(L, row, cut, ra) {
+  function evaluate(L, row, cut, ra, hz = "m1") {
+    const H = horizon(hz);
+    if (row.horizons && !row.horizons.includes(H.id)) return null;
     const price = rowPrice(L, row, cut);
     if (price.length < 30) return null;
-    const P = {
-      trend: pillarTrend(price),
-      cycle: pillarCycle(L, row, cut),
-      value: pillarValue(L, row, cut, longSeries(L, row, cut, price)),
-      liquidity: pillarLiquidity(L, row, cut),
-      risk: pillarRisk(L, row, cut, ra),
-    };
-    const w = cfg.weights[row.kind];
+    const w = H.weights[row.kind];
+    const tEval = cut ?? last(price).t;
+    let longP = null;
+    const c = { L, row, cut, price, ra, Y: yearOf(tEval), f: yearPart(tEval), get long() { return longP || (longP = longSeries(L, row, cut, price)); } };
+    const P = {};
     let num = 0, den = 0;
-    for (const [k, p] of Object.entries(P)) if (p && p.s != null && w[k]) { num += w[k] * p.s; den += w[k]; }
+    for (const pid of H.pillars) {
+      const p = w[pid] ? PILLAR_FN[pid](c) : null;
+      P[pid] = p && p.s != null && isFinite(p.s) ? p : null;
+      if (P[pid]) { num += w[pid] * P[pid].s; den += w[pid]; }
+    }
     if (den < 0.3) return null;
     const score = num / den;
-    return { score, cat: category(score), pillars: P, price, coverage: den, date: last(price).t };
+    return { score, cat: category(score), pillars: P, price, coverage: den, date: last(price).t, hz: H.id };
   }
 
-  /* Hauptfunktion: Barometer für alle Zeilen, jetzt und einen Monat zuvor */
-  function barometer(L) {
-    const raNow = riskAppetite(L, null);
-    // Stichtag: jüngster Tageswert der Leitreihen
+  // Stichtag: jüngster Tageswert der Leitreihen
+  function leadDay(L) {
     const lead = ["eq_us", "y10_us", "fx_chf", "gold_usd"].map(id => last((L.s[id] || { pts: [] }).pts)).filter(Boolean).map(p => p.t);
-    const tNow = lead.length ? Math.max(...lead) : null;
+    return lead.length ? Math.max(...lead) : null;
+  }
+
+  /* Hauptfunktion: Barometer für alle Zeilen eines Horizonts (m1, y1, lt), jetzt und einen Monat zuvor */
+  function barometer(L, hz = "m1") {
+    const H = horizon(hz);
+    const raNow = riskAppetite(L, null);
+    const tNow = leadDay(L);
     const tPrev = tNow != null ? tNow - 30 : null;
     const raPrev = tPrev != null ? riskAppetite(L, tPrev) : null;
     const rows = [];
     for (const row of ROWS) {
-      const now = evaluate(L, row, null, raNow);
+      const now = evaluate(L, row, null, raNow, H.id);
       if (!now) { rows.push({ row, now: null, prev: null }); continue; }
       // Vormonat: 30 Tage vor dem jüngsten Kurs der Zeile (Monatsreihen und verzögert veröffentlichte Reihen)
       const cutRow = tPrev != null ? Math.min(tPrev, now.date - 30) : null;
-      const prev = cutRow != null ? evaluate(L, row, cutRow, cutRow === tPrev ? raPrev : riskAppetite(L, cutRow)) : null;
+      const prev = cutRow != null ? evaluate(L, row, cutRow, riskAppetite(L, cutRow), H.id) : null;
       if (prev && prev.cat) { now.raw = now.cat; now.cat = category(now.score, prev.cat); }
       const p = now.price;
       const perf = {
@@ -647,14 +1069,15 @@ const SIG = (() => {
       };
       rows.push({ row, now, prev, perf, spark: p.filter(q => q.t > last(p).t - 190).map(q => [q.x, q.v]) });
     }
-    return { rows, groups: GROUPS, risk: raNow, riskPrev: raPrev, tNow, tPrev };
+    return { hz: H.id, horizon: H, pillars: H.pillars.map(pillarDef), weights: H.weights, rows, groups: GROUPS, risk: raNow, riskPrev: raPrev, tNow, tPrev };
   }
 
   /* Signalverlauf: Einstufung aller Zeilen zu früheren Monatsenden, mit dem Datenstand, der damals
-     veröffentlicht gewesen wäre (Veröffentlichungsfristen wie beim Vormonat). Das Shiller-KGV liegt nur als
-     aktueller Wert vor und bleibt in der Rückrechnung außen vor. Stufen mit Toleranzband zur Vorperiode. */
-  function backfill(L, months = 24, tNow = null) {
-    const t0 = tNow ?? Math.max(...["eq_us", "y10_us", "fx_chf", "gold_usd"].map(id => last((L.s[id] || { pts: [] }).pts)).filter(Boolean).map(p => p.t));
+     veröffentlicht gewesen wäre (Veröffentlichungsfristen wie beim Vormonat). Das Shiller-KGV geht mit dem damals
+     bekannten Monatswert ein (ohne Monatsreihe bleibt es außen vor); IWF-Prognosen und Bevölkerungsprojektionen gibt
+     es nur im jüngsten Stand. Stufen mit Toleranzband zur Vorperiode. */
+  function backfill(L, months = 24, tNow = null, hz = "m1") {
+    const t0 = tNow ?? leadDay(L);
     const d0 = new Date(t0 * DAY);
     const cuts = [];
     for (let m = months; m >= 1; m--) cuts.push(Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth() - m + 1, 0) / DAY);
@@ -666,11 +1089,11 @@ const SIG = (() => {
       for (const cut of cuts) {
         const ra = riskAppetite(L, cut);
         for (const row of ROWS) {
-          const e = evaluate(L, row, cut, ra);
+          const e = evaluate(L, row, cut, ra, hz);
           if (!e) continue;
           const cat = category(e.score, prevCat[row.id]);
           prevCat[row.id] = cat;
-          out.push({ d: isoOf(cut), id: row.id, score: e.score, cat: cat.n, p: Object.fromEntries(Object.entries(e.pillars).map(([k, v]) => [k, v ? v.s : null])) });
+          out.push({ d: isoOf(cut), id: row.id, h: hz, score: e.score, cat: cat.n, p: Object.fromEntries(Object.entries(e.pillars).map(([k, v]) => [k, v ? v.s : null])) });
         }
       }
     } finally { L.cape = cape; }
@@ -779,9 +1202,19 @@ const SIG = (() => {
       S.gold_usd_m = { id: "gold_usd_m", f: "M", src: "imf", pts: m.concat(S.gold_usd_imf.pts.filter(q => q.t > t1)) };
     }
     if (!S.gold_usd && S.gold_usd_imf) S.gold_usd = S.gold_usd_imf;
+    // Gold mit langer Monatshistorie vor den Tageswerten (für Gold in Franken und Euro und die Verhältnisse)
+    if (S.gold_usd) {
+      const d = S.gold_usd.pts, t0 = d.length ? d[0].t : Infinity;
+      const m = S.gold_usd_m ? S.gold_usd_m.pts.filter(q => q.e < t0) : [];
+      S.gold_usd_long = { id: "gold_usd_long", f: "D", l: "Goldpreis (Monatsmittel, danach Tageswerte)", src: S.gold_usd.src, pts: m.concat(d) };
+    }
+    // S&P 500 seit 1950 (Monatsmittel nach Shiller) als lange Historie für Bewertung und Langfristtrend
+    if (hist.sp500_m && !S.eq_us_m) S.eq_us_m = { id: "eq_us_m", f: "M", src: "shiller", pts: decodeSeries(hist.sp500_m) };
     if (!S.copper && S.copper_fred) S.copper = S.copper_fred;
     if (hist.cape) L.cape = hist.cape;
+    if (hist.cape_m) L.capeM = decodeSeries(hist.cape_m);
     L.tension = tensionFromGdelt(L);
+    L._ra = new Map();
     return L;
   }
 
@@ -789,6 +1222,7 @@ const SIG = (() => {
     cfg, ROWS, GROUPS, decodeSeries, decodeSnapshot, asOf, last, valueAt, change, annVol, trendDeviation, zScore, yoy,
     combine, bondIndex, priceSeries, pillarTrend, growthScore, riskAppetite, evaluate, barometer, category, cyclePhase,
     tensionFromGdelt, prepareLive, basketSeries, isoOf, dayOf, yearFrac, mean, median, sd, clip2, backfill,
+    horizon, pillarDef, leadDay, yv, ym, realMonthly, monthlyMeans, regionGrowth, regionDebt, regionPower, capeAt,
   };
 })();
 

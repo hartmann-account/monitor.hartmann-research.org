@@ -27,8 +27,8 @@ async function loadLive() {
 /* Ergänzt die Live-Daten um zusammengeführte Reihen und lange Historien aus dem wöchentlichen Datensatz */
 function enrichLive() {
   if (!LIVE) return;
-  const g = D && D.series.gold_usd_m;
-  SIG.prepareLive(LIVE, { gold_usd_m: g ? { f: "M", s: g.start, v: g.values } : null, cape: D && D.latest && D.latest.cape });
+  const m = id => { const x = D && D.series[id]; return x ? { f: "M", s: x.start, v: x.values } : null; };
+  SIG.prepareLive(LIVE, { gold_usd_m: m("gold_usd_m"), sp500_m: m("sp500_m"), cape_m: m("cape_m"), cape: D && D.latest && D.latest.cape });
 }
 function liveStamp() {
   if (!LIVE) return "";
@@ -44,7 +44,7 @@ async function boot() {
   }
   D = hist;
   if (snap) {
-    try { LIVE = SIG.decodeSnapshot(snap); enrichLive(); BARO = SIG.barometer(LIVE); } catch (e) { console.error("Live-Daten", e); }
+    try { LIVE = SIG.decodeSnapshot(snap); enrichLive(); setHorizon(savedHorizon()); if (!BARO) setHorizon("m1"); } catch (e) { console.error("Live-Daten", e); }
   }
   const st = [liveStamp(), "Historie " + deShort(D.meta.generated.slice(0, 10))].filter(Boolean).join(" · ");
   document.getElementById("stamp").textContent = "Datenstand: " + st;
@@ -63,15 +63,16 @@ function renderLeads() {
   }
 }
 function verdictLive(el) {
-  if (!BARO) return;
-  const ok = BARO.rows.filter(r => r.now && r.row.group !== "relativ" && r.row.group !== "klassen");
+  const B = baroFor("m1");
+  if (!B) return;
+  const ok = B.rows.filter(r => r.now && r.row.group !== "relativ" && r.row.group !== "klassen" && r.row.group !== "gold");
   const top = ok.filter(r => r.now.cat.n >= 1).sort((a, b) => b.now.score - a.now.score).slice(0, 3).map(moverName);
   const bot = ok.filter(r => r.now.cat.n <= -1).sort((a, b) => a.now.score - b.now.score).slice(0, 3).map(moverName);
   const list = a => a.length > 1 ? a.slice(0, -1).join(", ") + " und " + a[a.length - 1] : a[0];
   const parts = [];
   if (top.length) parts.push(`positiv für ${list(top)}`);
   if (bot.length) parts.push(`negativ für ${list(bot)}`);
-  if (parts.length) el.append(" Das Anlagebarometer fällt derzeit ", h("b", { text: parts.join(", ") }), " aus.");
+  if (parts.length) el.append(" Das Anlagebarometer fällt auf Sicht eines Monats ", h("b", { text: parts.join(", ") }), " aus.");
 }
 
 /* ------------------------------------------------------------------ Natur: Live-Reihen und aktuelle Warnungen */
@@ -133,19 +134,73 @@ function renderDataStatus() {
     h("span", { class: "status-dot" }, h("i", { style: "background:var(--serious)" }), `${counts["st-serious"] || 0} veraltet`),
     h("span", { class: "status-dot" }, h("i", { style: "background:var(--axis)" }), `${counts["st-none"] || 0} noch nicht geladen`)));
   const rows = S.sort((a, b) => a[1].source.localeCompare(b[1].source) || a[1].label.localeCompare(b[1].label));
+  const archCell = s => {
+    if (!s.arch) return s.source === "d1" ? "schreibt selbst" : "–";
+    if (s.arch.err) return "Fehler beim Schreiben";
+    const deep = s.deep === undefined ? "" : s.deep ? (s.deep === "übersprungen" ? "" : " · volle Historie übernommen") : " · volle Historie folgt";
+    return `${fmt(s.arch.points || 0, 0)} Werte geschrieben${deep}`;
+  };
   const tbl = h("table", { class: "sources ds-table" },
-    h("thead", null, h("tr", null, h("th", { text: "Abruf" }), h("th", { text: "Quelle" }), h("th", { text: "Takt" }), h("th", { text: "Letzter Abruf" }), h("th", { text: "Jüngster Wert" }), h("th", { text: "Status" }))),
+    h("thead", null, h("tr", null, h("th", { text: "Abruf" }), h("th", { text: "Quelle" }), h("th", { text: "Takt" }), h("th", { text: "Letzter Abruf" }), h("th", { text: "Jüngster Wert" }), h("th", { text: "Archiv (D1)" }), h("th", { text: "Status" }))),
     h("tbody", null, ...rows.map(([id, s]) => {
       const [w, cls] = state(s);
       const src = LSRC[s.source];
       return h("tr", null,
         h("td", null, s.label, h("div", { class: "small mono", text: id })),
-        h("td", null, src ? h("a", { href: src.url, target: "_blank", rel: "noopener", text: src.name }) : s.source),
+        h("td", null, src ? h("a", { href: src.url, target: "_blank", rel: "noopener", text: src.name }) : s.source === "d1" ? "Cloudflare D1 (eigene Datenbank)" : s.source),
         h("td", { class: "when", text: s.every >= 24 ? `${fmt(s.every / 24, 0)} T.` : `${fmt(s.every, s.every < 1 ? 2 : 0)} h` }),
         h("td", { class: "when", text: s.okAt ? `${deShort(s.okAt.slice(0, 10))} ${s.okAt.slice(11, 16)}` : "–" }),
         h("td", { class: "when", text: s.latest || "–" }),
+        h("td", { class: "small", text: archCell(s), title: s.arch && s.arch.err ? s.arch.err : null }),
         h("td", null, h("span", { class: "pill " + cls }, h("span", { class: "dot" }), w), s.error ? h("div", { class: "err-text", text: s.error }) : null));
     })));
   sh.body.append(h("details", { class: "more", style: "margin-top:10px" }, h("summary", { text: `Alle ${rows.length} Abrufjobs anzeigen` }), h("div", { style: "overflow-x:auto" }, stackTable(tbl))));
+  renderArchive(host);
+}
+
+/* ------------------------------------------------------------------ Datenarchiv (D1) */
+const FREQ_DE = { D: "täglich", W: "wöchentlich", M: "monatlich", Q: "vierteljährlich", A: "jährlich" };
+function apiBase() { const m = document.querySelector('meta[name="live-api"]'); return (m ? m.content : "/api/snapshot").replace(/\/api\/snapshot$/, ""); }
+function renderArchive(host) {
+  const box = h("div");
+  host.append(box);
+  fetch(apiBase() + "/api/archive", { cache: "no-cache" }).then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))).then(A => {
+    const t = A.totals || {};
+    if (!t.series) throw new Error("leer");
+    const base = apiBase();
+    const sh = sheet(box, { title: "Datenarchiv (D1)", sub: "Jede abgerufene Beobachtung wird in einer eigenen Cloudflare-D1-Datenbank gespeichert und bei jedem Abruf ergänzt; Revisionen der Quellen überschreiben den gespeicherten Wert",
+      info: { d: "Die Historie gehört dem Monitor: Auch wenn eine Quelle ältere Werte nicht mehr anbietet (etwa die ICE-BofA-Risikoprämien auf FRED nach drei Jahren), bleiben sie im Archiv.",
+        f: ["Bei jedem erfolgreichen Abruf schreibt der Worker alle neuen Beobachtungen in die Tabelle obs (Reihe, Datum, Wert); bekannte Tage werden nur bei geänderten Werten überschrieben.",
+          "Beim ersten Archivlauf eines Abrufs lädt der Worker die ganze Historie der Quelle (FRED etwa seit den 1950er-Jahren, EZB seit 1999, OECD seit 1990) und speichert sie vollständig, auch wenn der Snapshot der Seite nur die letzten Jahre enthält.",
+          "Datum = Beginn der Periode (Monat 2026-09 → 2026-09-01, Quartal → erster Tag des Quartals, Jahr → 1. Januar). Langfristreihen des wöchentlichen Datensatzes tragen das Präfix h_, Prognosemärkte pm_.",
+          "Zusätzlich gespeichert: der Signalverlauf aller drei Horizonte (Tabelle signal_hist) und die GDACS-Meldungen (Tabelle events)."],
+        r: `${fmt(t.series, 0)} Reihen, ${fmt(t.obs, 0)} Beobachtungen, ältester Wert ${t.first || "–"}` } });
+    sh.body.append(h("div", { class: "arch-sum" },
+      ...[["Reihen", fmt(t.series, 0), ""], ["Beobachtungen", fmt(t.obs, 0), ""], ["Ältester Wert", t.first ? t.first.slice(0, 4) : "–", t.first ? deShort(t.first) : ""], ["Zuletzt ergänzt", t.updated ? deShort(t.updated.slice(0, 10)) : "–", t.updated ? t.updated.slice(11, 16) + " UTC" : ""]]
+        .map(([l, v, m]) => h("div", { class: "tile" }, h("div", { class: "label", text: l }), h("div", { class: "value", text: v }), h("div", { class: "meta" }, h("span", { text: m }))))));
+    sh.body.append(h("div", { class: "arch-links" }, h("span", { class: "small", text: "Herunterladen (CSV):" }),
+      ...SIG.cfg.horizons.map(x => h("a", { href: `${base}/api/signals?h=${x.id}&format=csv&pillars=1`, text: `Signalverlauf ${x.label}` })),
+      h("a", { href: `${base}/api/archive`, text: "Reihenverzeichnis (JSON)" }),
+      (A.events || []).length ? h("a", { href: `${base}/api/events`, text: `GDACS-Meldungen (${fmt(A.events.reduce((a, e) => a + e.n, 0), 0)})` }) : null));
+    const q = h("input", { type: "search", placeholder: "Reihe suchen, etwa gold, y10, debt_usa …", "aria-label": "Reihe im Archiv suchen", class: "arch-q" });
+    const tb = h("tbody");
+    const fill = () => {
+      const s = q.value.trim().toLowerCase();
+      const list = A.series.filter(x => !s || x.id.toLowerCase().includes(s) || (x.label || "").toLowerCase().includes(s)).slice(0, 300);
+      tb.replaceChildren(...list.map(x => h("tr", null,
+        h("td", null, x.label || x.id, h("div", { class: "small mono", text: x.id })),
+        h("td", { class: "small", text: [FREQ_DE[x.freq] || x.freq, x.unit].filter(Boolean).join(", ") }),
+        h("td", { class: "when", text: x.first ? (x.freq === "A" ? x.first.slice(0, 4) : x.first) : "–" }),
+        h("td", { class: "when", text: x.last ? (x.freq === "A" ? x.last.slice(0, 4) : x.last) : "–" }),
+        h("td", { class: "when", text: fmt(x.n || 0, 0) }),
+        h("td", null, h("a", { href: `${base}/api/series?id=${encodeURIComponent(x.id)}&format=csv`, text: "CSV" }), " · ", h("a", { href: `${base}/api/series?id=${encodeURIComponent(x.id)}`, text: "JSON" })))));
+    };
+    q.addEventListener("input", fill);
+    fill();
+    const tbl = h("table", { class: "sources ds-table" }, h("thead", null, h("tr", null, h("th", { text: "Reihe" }), h("th", { text: "Frequenz, Einheit" }), h("th", { text: "von" }), h("th", { text: "bis" }), h("th", { text: "Werte" }), h("th", { text: "Abruf" }))), tb);
+    sh.body.append(h("details", { class: "more" }, h("summary", { text: `Alle ${fmt(A.series.length, 0)} archivierten Reihen anzeigen` }), q, h("div", { style: "overflow-x:auto" }, tbl)));
+  }).catch(() => {
+    box.append(h("p", { class: "note-box", text: "Das Datenarchiv (Cloudflare D1) ist über den Worker erreichbar, sobald die Datenbank gebunden ist und die ersten Abrufe gespeichert sind; in der statischen Vorschau gibt es kein Archiv." }));
+  });
 }
 document.addEventListener("DOMContentLoaded", boot);

@@ -4,7 +4,8 @@
    Free-Plan (10 ms CPU) bleibt. Fehlgeschlagene Jobs behalten ihren letzten guten Stand (wie bei World Monitor). */
 import { JOBS } from "./jobs.js";
 import { makeFetcher } from "./lib/http.js";
-import { lastObs } from "./lib/series.js";
+import { lastObs, trimFrom } from "./lib/series.js";
+import { archiveOutput, isoDate } from "./archive.js";
 import { META_KEY, SNAP_KEY } from "./keys.js";
 
 export { META_KEY, SNAP_KEY };
@@ -25,6 +26,22 @@ export function dueJobs(meta, now, jobs = JOBS, env = null) {
   // nie geladene Jobs zuerst, dann nach relativer Überfälligkeit
   due.sort((a, b) => b.age - a.age);
   return due.map(d => d.job);
+}
+
+/* Nach dem ersten Archivlauf mit voller Historie: Snapshot-Ausgabe wieder auf den bisherigen Zeitraum kürzen
+   (Beginn der gespeicherten Reihe, sonst das übliche Startdatum des Abrufs) */
+export function trimOutput(out, ctx) {
+  const firsts = ctx.firsts || [];
+  if (!firsts.length || !out || !out.series) return out;
+  const iso = f => (/^\d{6}$/.test(f) ? `${f.slice(0, 4)}-${f.slice(4, 6)}-01` : isoDate(f));
+  const fallback = firsts.map(iso).sort()[0];
+  const series = {};
+  for (const [k, s] of Object.entries(out.series)) {
+    const p = ctx.prev && ctx.prev.series && ctx.prev.series[k];
+    const from = p && p.s != null ? isoDate(p.s) : fallback;
+    series[k] = trimFrom(s, from);
+  }
+  return { ...out, series };
 }
 
 /* Jobs mit Bindings (etwa D1) laufen nur, wenn diese vorhanden sind */
@@ -76,13 +93,32 @@ export async function runDueJobs(env, opts = {}) {
     if (job.onePerRun && ran.some(id => { const j = JOBS.find(x => x.id === id); return j.onePerRun && j.source === job.source; })) continue;
     const s = meta.jobs[job.id] || {};
     const t0 = Date.now();
+    // Datenarchiv (D1): jede Ausgabe wird archiviert, häufige Jobs (GDELT) höchstens alle drei Stunden; beim ersten
+    // Archivlauf eines Jobs mit "deep" wird die ganze Historie der Quelle geladen
+    const archive = !!env.DB && !job.noArchive && (!job.frequent || !s.arch || !s.arch.at || now - Date.parse(s.arch.at) > 3 * HOUR);
+    const deep = archive && !!job.deep && !s.deepAt;
     try {
       const prev = job.keep ? await env.DATA.get("job:" + job.id, "json") : null;
-      const out = await runJob(job, fetcher, workerCtx(env, now, prev, opts.base || "https://assets.invalid"));
+      const ctx = workerCtx(env, now, prev, opts.base || "https://assets.invalid");
+      if (archive) ctx.raw = {};
+      if (deep) ctx.full = job.deep;
+      let out = await runJob(job, fetcher, ctx);
+      if (archive) {
+        try {
+          const a = await archiveOutput(env.DB, job, out, ctx, new Date(now).toISOString());
+          s.arch = { at: new Date(now).toISOString(), ...a, err: null };
+          if (deep) s.deepAt = new Date(now).toISOString();
+        } catch (e) {
+          s.arch = { ...(s.arch || {}), err: String((e && e.message) || e).slice(0, 300), errAt: new Date(now).toISOString() };
+        }
+      }
+      if (deep) out = trimOutput(out, ctx);
       const body = JSON.stringify(out);
       await env.DATA.put("job:" + job.id, body);
       Object.assign(s, summarize(out), { ok: true, okAt: new Date(now).toISOString(), error: null, fails: 0, retryAt: null, bytes: body.length, ms: Date.now() - t0 });
     } catch (e) {
+      // scheitert der Abruf der ganzen Historie zweimal, läuft der Job danach mit dem üblichen Zeitraum weiter
+      if (deep) { s.deepFails = (s.deepFails || 0) + 1; if (s.deepFails >= 2) s.deepAt = "übersprungen"; }
       s.ok = false;
       s.fails = (s.fails || 0) + 1;
       s.error = String((e && e.message) || e).slice(0, 300);
@@ -111,7 +147,8 @@ export function statusOf(meta) {
   const status = {};
   for (const j of JOBS) {
     const s = meta.jobs[j.id] || {};
-    status[j.id] = { label: j.label, source: j.source, every: j.every, ok: s.ok ?? null, okAt: s.okAt || null, failAt: s.failAt || null, error: s.error || null, latest: s.latest || null, n: s.n || 0 };
+    status[j.id] = { label: j.label, source: j.source, every: j.every, ok: s.ok ?? null, okAt: s.okAt || null, failAt: s.failAt || null, error: s.error || null, latest: s.latest || null, n: s.n || 0,
+      arch: s.arch ? { at: s.arch.at || null, points: s.arch.points ?? null, err: s.arch.err || null } : null, deep: j.deep ? s.deepAt || null : undefined };
   }
   return status;
 }
