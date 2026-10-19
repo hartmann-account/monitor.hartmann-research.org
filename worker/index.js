@@ -111,6 +111,8 @@ async function archive(request, env, ctx) {
   if (!env.DB) return json({ error: "Keine D1-Datenbank gebunden" }, 404);
   return cached(request, ctx, async () => {
     const A = await archiveSummary(env.DB);
+    // Reihen des World Gold Council nur zur Anzeige auf der Seite (Lizenz), nicht im Verzeichnis
+    A.series = A.series.filter(x => x.src !== "wgc");
     // DBnomics (eigene Datenbank): Summen je Anbieter und Stand des Imports
     if (env.DBN) A.dbnomics = await dbnomicsSummary(env.DBN, await env.DATA.get("state:dbnomics", "json")).catch(e => ({ error: String((e && e.message) || e).slice(0, 200) }));
     // ein noch leeres Archiv nicht zwischenspeichern, damit die ersten Abrufe sofort sichtbar werden
@@ -161,6 +163,7 @@ async function series(request, env, ctx) {
   const url = new URL(request.url);
   const ids = (url.searchParams.get("id") || "").split(",").map(x => x.trim()).filter(x => /^[\w.:-]{1,120}$/.test(x)).slice(0, 20);
   if (!ids.length) return json({ error: "Parameter id fehlt (Kennungen der Reihen, durch Komma getrennt; Liste unter /api/archive)" }, 400);
+  if (ids.some(id => id.startsWith("wgc_"))) return json({ error: "Reihen des World Gold Council sind nicht abrufbar: Die Nutzungsbedingungen des WGC erlauben keine Weitergabe; die Seite zeigt nur die aktuellen Kennzahlen" }, 403);
   const from = /^\d{4}(-\d{2}(-\d{2})?)?$/.test(url.searchParams.get("from") || "") ? url.searchParams.get("from") : null;
   const to = /^\d{4}(-\d{2}(-\d{2})?)?$/.test(url.searchParams.get("to") || "") ? url.searchParams.get("to") + "~" : null;
   const weekly = url.searchParams.get("thin") === "w";

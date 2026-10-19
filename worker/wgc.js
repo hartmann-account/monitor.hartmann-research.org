@@ -7,15 +7,19 @@
    - Angebot und Nachfrage je Quartal seit 2010 in Tonnen, mit den nicht gemeldeten Zentralbankkäufen (GDT_Tables_….xlsx)
    - Preisaufschlag am chinesischen (seit 2003) und indischen Markt (seit 2012) gegenüber London in US-$ je Unze, täglich
      (gold-premiums.xlsx)
-   Quelle auf der Seite: World Gold Council (Goldhub). */
+   Quelle auf der Seite: World Gold Council (Goldhub). Lizenz: Die Nutzungsbedingungen des WGC erlauben die persönliche,
+   nicht-kommerzielle Nutzung und untersagen Kopieren, Veröffentlichen und automatisches Abrufen ohne Zustimmung. Die vollen
+   Reihen bleiben deshalb im Archiv (D1) und sind über die API nicht abrufbar; der Snapshot der Seite enthält nur die
+   letzten zwei Jahre (Tageswerte 60 Tage) für die Kennzahlen der Monatsübersicht Gold. */
 import { readXlsx, excelDate } from "./lib/xlsx.js";
 import { meta } from "./lib/jobutil.js";
-import { dailySeries, monthlySeries, quarterlySeries } from "./lib/series.js";
+import { dailySeries, monthlySeries, quarterlySeries, toPoints, trimFrom } from "./lib/series.js";
 import { INBOX } from "./inbox.js";
 
 const DIR = INBOX + "wgc/";
-// Stand des Einlesens: Eine Änderung hier liest unveränderte Dateien neu ein (2: ETF-Zuflüsse als Summe der Fonds)
-const PARSER_V = 2;
+// Stand des Einlesens: Eine Änderung hier liest unveränderte Dateien neu ein (2: ETF-Zuflüsse als Summe der Fonds,
+// 3: Snapshot nur mit den letzten Werten)
+const PARSER_V = 3;
 const num = v => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && v.trim() !== "" && Number.isFinite(+v) ? +v : null);
 const ym = d => d.slice(0, 7);
 const findSheet = (sheets, re) => sheets.find(s => re.test(s.name));
@@ -188,8 +192,15 @@ export const WGC_JOBS = [{
       const obj = await b.get(o.key);
       if (obj) books[k] = await readXlsx(new Uint8Array(await obj.arrayBuffer()));
     }
-    const series = wgcSeries(books);
-    if (!Object.keys(series).length) throw new Error("Keine WGC-Dateien im Eingang eingang/wgc/ erkannt");
+    const full = wgcSeries(books);
+    if (!Object.keys(full).length) throw new Error("Keine WGC-Dateien im Eingang eingang/wgc/ erkannt");
+    // volle Historie nur ins Archiv (ctx.raw), in den Snapshot die letzten zwei Jahre bzw. 60 Tage
+    const now = new Date(ctx.now), cut = d => new Date(now.getTime() - d * 864e5).toISOString().slice(0, 10);
+    const series = {};
+    for (const [sid, s] of Object.entries(full)) {
+      if (ctx.raw) ctx.raw[sid] = toPoints(s);
+      series[sid] = trimFrom(s, cut(s.f === "D" ? 60 : 730));
+    }
     return { series, items: [{ stamp, files: Object.fromEntries(Object.entries(files).map(([k, o]) => [k, o.key])) }] };
   },
 }];
