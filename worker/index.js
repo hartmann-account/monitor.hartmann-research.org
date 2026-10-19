@@ -16,6 +16,7 @@
                         die Einzelwerte einer Anlage (Monatsende, Gesamtwert, Stufe, Rendite danach), ?format=csv
    GET  /api/events     archivierte Meldungen (GDACS): ?from=
    POST /api/run        Abruf sofort anstoßen (nur mit Secret ADMIN_TOKEN; ?jobs=a,b für bestimmte Jobs)
+   Mit dem Secret SITE_PASSWORD ist alles passwortgeschützt (Anmeldung unter /login, Abmeldung /logout; worker/auth.js).
    Alles andere liefert die statische Seite aus public/. Der Cron-Trigger ruft scheduled() auf. */
 import { runDueJobs, META_KEY, SNAP_KEY } from "./runner.js";
 import { JOBS } from "./jobs.js";
@@ -23,6 +24,7 @@ import { readHistory, ensureSchema } from "./jobs-signals.js";
 import { archiveSummary, readSeries, ensureArchive } from "./archive.js";
 import { dbnomicsSummary, dbnomicsSearch, dbnomicsDatasets } from "./dbnomics.js";
 import { INBOX, PREVIEW } from "./inbox.js";
+import { gate, privateHeaders } from "./auth.js";
 import { readBacktest } from "./jobs-backtest.js";
 
 const CORS = {
@@ -111,8 +113,8 @@ async function archive(request, env, ctx) {
   if (!env.DB) return json({ error: "Keine D1-Datenbank gebunden" }, 404);
   return cached(request, ctx, async () => {
     const A = await archiveSummary(env.DB);
-    // Reihen des World Gold Council nur zur Anzeige auf der Seite (Lizenz), nicht im Verzeichnis
-    A.series = A.series.filter(x => x.src !== "wgc");
+    // Reihen des World Gold Council (Lizenz: persönliche Nutzung) nur auf der passwortgeschützten Seite im Verzeichnis
+    if (!env.SITE_PASSWORD) A.series = A.series.filter(x => x.src !== "wgc");
     // DBnomics (eigene Datenbank): Summen je Anbieter und Stand des Imports
     if (env.DBN) A.dbnomics = await dbnomicsSummary(env.DBN, await env.DATA.get("state:dbnomics", "json")).catch(e => ({ error: String((e && e.message) || e).slice(0, 200) }));
     // ein noch leeres Archiv nicht zwischenspeichern, damit die ersten Abrufe sofort sichtbar werden
@@ -163,7 +165,7 @@ async function series(request, env, ctx) {
   const url = new URL(request.url);
   const ids = (url.searchParams.get("id") || "").split(",").map(x => x.trim()).filter(x => /^[\w.:-]{1,120}$/.test(x)).slice(0, 20);
   if (!ids.length) return json({ error: "Parameter id fehlt (Kennungen der Reihen, durch Komma getrennt; Liste unter /api/archive)" }, 400);
-  if (ids.some(id => id.startsWith("wgc_"))) return json({ error: "Reihen des World Gold Council sind nicht abrufbar: Die Nutzungsbedingungen des WGC erlauben keine Weitergabe; die Seite zeigt nur die aktuellen Kennzahlen" }, 403);
+  if (!env.SITE_PASSWORD && ids.some(id => id.startsWith("wgc_"))) return json({ error: "Reihen des World Gold Council sind nur auf der passwortgeschützten Seite abrufbar (Nutzungsbedingungen des WGC: persönliche Nutzung, keine Weitergabe)" }, 403);
   const from = /^\d{4}(-\d{2}(-\d{2})?)?$/.test(url.searchParams.get("from") || "") ? url.searchParams.get("from") : null;
   const to = /^\d{4}(-\d{2}(-\d{2})?)?$/.test(url.searchParams.get("to") || "") ? url.searchParams.get("to") + "~" : null;
   const weekly = url.searchParams.get("thin") === "w";
@@ -216,22 +218,30 @@ async function manualRun(request, env, ctx) {
   return json(result);
 }
 
+async function route(request, env, ctx) {
+  const url = new URL(request.url);
+  if (url.pathname === "/api/snapshot" && request.method === "GET") return snapshot(request, env, ctx);
+  if (url.pathname === "/api/status" && request.method === "GET") return status(env);
+  if (url.pathname === "/api/signals" && request.method === "GET") return signals(request, env, ctx);
+  if (url.pathname === "/api/archive" && request.method === "GET") return archive(request, env, ctx);
+  if (url.pathname === "/api/series" && request.method === "GET") return series(request, env, ctx);
+  if (url.pathname === "/api/dbnomics" && request.method === "GET") return dbnomics(request, env, ctx);
+  if (url.pathname === "/api/rohdaten" && request.method === "GET") return rohdaten(request, env, ctx);
+  if (url.pathname === "/api/events" && request.method === "GET") return events(request, env, ctx);
+  if (url.pathname === "/api/backtest" && request.method === "GET") return backtest(request, env, ctx);
+  if (url.pathname === "/api/run" && request.method === "POST") return manualRun(request, env, ctx);
+  if (url.pathname.startsWith("/api/")) return json({ error: "unbekannter Endpunkt" }, 404);
+  if (url.pathname === "/logout") return new Response(null, { status: 303, headers: { location: "/" } });
+  return env.ASSETS.fetch(request);
+}
+
 export default {
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
-    if (url.pathname === "/api/snapshot" && request.method === "GET") return snapshot(request, env, ctx);
-    if (url.pathname === "/api/status" && request.method === "GET") return status(env);
-    if (url.pathname === "/api/signals" && request.method === "GET") return signals(request, env, ctx);
-    if (url.pathname === "/api/archive" && request.method === "GET") return archive(request, env, ctx);
-    if (url.pathname === "/api/series" && request.method === "GET") return series(request, env, ctx);
-    if (url.pathname === "/api/dbnomics" && request.method === "GET") return dbnomics(request, env, ctx);
-    if (url.pathname === "/api/rohdaten" && request.method === "GET") return rohdaten(request, env, ctx);
-    if (url.pathname === "/api/events" && request.method === "GET") return events(request, env, ctx);
-    if (url.pathname === "/api/backtest" && request.method === "GET") return backtest(request, env, ctx);
-    if (url.pathname === "/api/run" && request.method === "POST") return manualRun(request, env, ctx);
-    if (url.pathname.startsWith("/api/")) return json({ error: "unbekannter Endpunkt" }, 404);
-    return env.ASSETS.fetch(request);
+    // Passwortschutz der ganzen Seite (aktiv mit dem Secret SITE_PASSWORD)
+    const denied = await gate(request, env);
+    if (denied) return denied;
+    return privateHeaders(await route(request, env, ctx), env);
   },
 
   async scheduled(controller, env, ctx) {

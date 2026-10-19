@@ -12,17 +12,22 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "public", "data", "live.json");
 const url = process.env.LIVE_URL;
+// passwortgeschützte Seite: Anmeldung mit dem Passwort (GitHub-Secret SITE_PASSWORD)
+const headers = { "user-agent": "BigCycleMonitor-Seed/2.0", ...(process.env.SITE_PASSWORD ? { authorization: `Bearer ${process.env.SITE_PASSWORD}` } : {}) };
+// lizenzierte Daten (World Gold Council: persönliche Nutzung) nicht ins öffentliche Repository übernehmen
+const PRIVATE_JOBS = ["wgc"];
 
 async function fromWorker() {
   if (!url) return false;
   try {
-    const r = await fetch(url, { headers: { "user-agent": "BigCycleMonitor-Seed/2.0" }, signal: AbortSignal.timeout(60000) });
+    const r = await fetch(url, { headers, signal: AbortSignal.timeout(60000) });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     if (r.headers.get("x-snapshot-origin") !== "kv") throw new Error("Worker liefert noch keinen eigenen Datenstand");
     const snap = await r.json();
     const ok = Object.values(snap.status || {}).filter(s => s.ok).length;
     if (snap.schema !== 2 || !snap.data || ok < 20) throw new Error(`unvollständig (${ok} Jobs ok)`);
     snap.origin = "seed";
+    for (const id of PRIVATE_JOBS) { delete snap.data[id]; if (snap.status) delete snap.status[id]; }
     writeFileSync(out, JSON.stringify(snap));
     console.log(`Startbestand aus dem Worker übernommen: ${ok} Jobs, Stand ${snap.generated}`);
     return true;
@@ -36,7 +41,7 @@ async function fromWorker() {
 async function backtestFromWorker() {
   if (!url) return;
   try {
-    const r = await fetch(new URL("/api/backtest", url), { headers: { "user-agent": "BigCycleMonitor-Seed/2.0" }, signal: AbortSignal.timeout(60000) });
+    const r = await fetch(new URL("/api/backtest", url), { headers, signal: AbortSignal.timeout(60000) });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const bt = await r.json();
     if (!["m1", "y1", "lt"].every(h => bt[h] && bt[h].stats && bt[h].stats.all)) throw new Error("noch nicht für alle Horizonte gerechnet");

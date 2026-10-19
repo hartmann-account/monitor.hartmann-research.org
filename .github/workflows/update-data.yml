@@ -47,6 +47,8 @@ jobs:
           # workers.dev-Adresse des Workers "monitor": erreichbar, auch solange die eigene Domain noch auf All-Inkl zeigt
           LIVE_URL: ${{ vars.LIVE_URL || 'https://monitor.hartmann-it.workers.dev/api/snapshot' }}
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          # Passwort der Seite (gleich wie das Worker-Secret SITE_PASSWORD), solange die Seite geschützt ist
+          SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
         run: node scripts/refresh_seed.mjs
       - name: Seite bauen und testen
         run: |

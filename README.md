@@ -122,6 +122,7 @@ Im Dashboard unter Worker → **Einstellungen** → **Variablen und Secrets**, o
 
 | Name | Art | Zweck |
 |---|---|---|
+| `SITE_PASSWORD` | Secret | Passwortschutz der ganzen Seite: Seiten, Dateien und API nur nach Anmeldung unter `/login` (Sitzung 30 Tage, Abmelden über den Link im Fuß der Seite oder `/logout`; ein neues Passwort meldet alle Geräte ab). Skripte melden sich mit `Authorization: Bearer <Passwort>` an. Ohne das Secret ist die Seite offen |
 | `ADMIN_TOKEN` | Secret | Schaltet `POST /api/run` frei (Abruf sofort anstoßen) |
 | `ALFRED_API` | Secret | Schlüssel der FRED/ALFRED-Schnittstelle (St. Louis Fed). Schaltet den Job `alfred_vintages` frei: alle Datenstände einer Reihe in einem Abruf. Ohne ihn rechnet der Backtest Baugenehmigungen und Z.1 im heutigen Stand; lokal ersetzt `pipeline/alfred_snapshots.py` ihn durch Monatsend-Stände |
 | `FRED_API_KEY` | Secret | nicht nötig und derzeit nicht verwendet: die laufenden Abrufe nutzen den schlüssellosen CSV-Export von FRED |
@@ -129,7 +130,17 @@ Im Dashboard unter Worker → **Einstellungen** → **Variablen und Secrets**, o
 | `MAX_JOBS_PER_RUN`, `SUBREQUEST_BUDGET` | Variable | Jobs und Subrequests je Cron-Lauf (in `wrangler.jsonc`: 8 und 80); der DBnomics-Import hat ein eigenes Budget von 300 Abrufen je Lauf |
 | `DBNOMICS_MIRROR` | Variable | schaltet den Job `dbnomics_mirror` ein: Anbieterkennungen mit Komma (etwa `Eurostat,OECD`) oder `*` für alle; lädt deren Datensätze nur als Rohdaten nach R2 |
 
-### 5. Erste Befüllung
+### 5. Passwortschutz (private Seite)
+
+Die Seite ist für den eigenen Gebrauch gedacht; lizenzierte Daten (World Gold Council: persönliche, nicht-kommerzielle Nutzung) gehören hinter ein Passwort:
+
+1. Im Dashboard unter Worker `monitor` → **Einstellungen** → **Variablen und Secrets** → **Hinzufügen**, Typ **Secret**, Name `SITE_PASSWORD`, Wert: ein langes Passwort. Ab dem Speichern verlangt die Seite die Anmeldung; alle Anfragen laufen dafür zuerst durch den Worker (`run_worker_first: true` in `wrangler.jsonc`).
+2. Damit der wöchentliche Workflow den Snapshot weiter abholen kann: auf GitHub unter **Settings** → **Secrets and variables** → **Actions** dasselbe Passwort als Secret `SITE_PASSWORD` anlegen.
+3. Das Repository ist öffentlich. Lizenzierte Daten landen dort nicht: Der Startbestand `public/data/live.json` wird ohne die WGC-Daten geschrieben, die Rohdaten liegen im privaten Eingang des R2-Buckets. Wer auch den Code nicht zeigen will, stellt das Repository unter **Settings** → **General** → **Danger Zone** auf privat; Workers Builds funktioniert weiter.
+
+Solange `SITE_PASSWORD` fehlt, gibt die API die vollen WGC-Reihen nicht heraus (nur die Kennzahlen der Seite).
+
+### 6. Erste Befüllung
 
 Direkt nach dem ersten Deploy liefert `/api/snapshot` den Startbestand aus dem Repository (Header `x-snapshot-origin: seed`). Nach einem vollen Umlauf von rund 50 Minuten kommt alles aus dem KV (`x-snapshot-origin: kv`). Wer nicht warten will, stößt einzelne Jobs sofort an:
 
@@ -138,7 +149,7 @@ curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
   "https://monitor.hartmann-it.workers.dev/api/run?jobs=fred_markets,fred_rates,ecb_fx,six_ch"
 ```
 
-### 6. Domain monitor.hartmann-research.org
+### 7. Domain monitor.hartmann-research.org
 
 Die Subdomain zeigt derzeit per CNAME auf All-Inkl. Ein eigener Worker-Domainname (Custom Domain) setzt voraus, dass die Zone `hartmann-research.org` bei Cloudflare verwaltet wird; dafür reicht der kostenlose Plan:
 
@@ -148,7 +159,7 @@ Die Subdomain zeigt derzeit per CNAME auf All-Inkl. Ein eigener Worker-Domainnam
 
 Ohne Umzug der Zone bleibt nur die `workers.dev`-Adresse, gegebenenfalls mit einer Weiterleitung bei All-Inkl.
 
-### 7. GitHub Actions für die wöchentlichen Historien
+### 8. GitHub Actions für die wöchentlichen Historien
 
 Der Workflow `Daten aktualisieren` bringt die nötigen Schreibrechte selbst mit (`permissions: contents: write`). Der erste Lauf am 19. Oktober 2026 hat seine Daten erfolgreich committet. Er lässt sich unter **Actions** jederzeit auch von Hand starten. Optional:
 
@@ -372,7 +383,7 @@ Für den Big-Cycle-Monitor wurden bewusst nur nachvollziehbare, formelbasierte K
 - **Archiv:** Die Historie reicht so weit zurück, wie die Quellen sie frei anbieten (der S&P 500 auf FRED etwa nur zehn Jahre; die lange Reihe seit 1950 kommt aus den Shiller-Daten der Pipeline, Präfix `h_`). Revisionen überschreiben den gespeicherten Wert in D1; die damaligen Fassungen bleiben seit Oktober 2026 als tägliche Rohausgabe im R2-Bucket (`quellen/…`) und je DBnomics-Stand (`dbnomics/…`) erhalten. Der gespeicherte Signalverlauf hält fest, was die Seite an jedem Tag angezeigt hat.
 - **Prognosen:** Die Säulen der Horizonte 12 Monate und 5–10 Jahre nutzen IWF-Projektionen. Diese nimmt die Seite im jüngsten Stand; der Signalverlauf der letzten 24 Monate enthält daher etwas Wissen von heute, der Backtest ersetzt sie durch einfache Fortschreibungen. Die damaligen WEO-Ausgaben seit 2008 lädt der DBnomics-Import; sie sollen diese Fortschreibungen im Backtest ersetzen.
 - **DBnomics:** Der Bestand ist so aktuell wie DBnomics selbst. Manche Datensätze aktualisiert DBnomics nur selten: Die jüngste WEO-Ausgabe dort ist die vom April 2025, die Konjunkturumfragen der EU-Kommission wurden zuletzt im Mai 2023 indexiert, mehrere Zentralbanken der Schwellenländer im April 2022. Die laufenden Werte kommen deshalb weiter aus den eigenen Abrufen bei den Quellen.
-- **Goldnachfrage:** Die Daten des World Gold Council stehen in der Monatsübersicht Gold, zählen aber nicht im Signal. In der Prüfung 2003–2026 sagten die ETF-Zuflüsse der letzten drei Monate die Goldrendite des Folgemonats zwar voraus (Rangkorrelation +0,11, Zufallstest p = 0,03), folgen aber dem Kursmomentum (Rangkorrelation 0,46–0,57); ohne dieses bleibt +0,04 (p = 0,29). Die Zentralbanknachfrage wirkte nur ab 2019, davor gegenläufig; Preisaufschläge in China und Indien hatten keinen stabilen Zusammenhang. Die Dateien lädt man auf der Goldhub-Seite (kostenlose Anmeldung) und legt sie in den Eingang `eingang/wgc/`; ein automatischer Abruf ist nicht vorgesehen, weil die Nutzungsbedingungen des WGC Scrapen untersagen. Sie erlauben außerdem nur die persönliche, nicht-kommerzielle Nutzung und keine Weitergabe ohne Zustimmung: Die vollen Reihen (`wgc_…`) bleiben deshalb im Archiv, `/api/series` und `/api/archive` geben sie nicht heraus, und der Snapshot enthält nur die letzten zwei Jahre (Tageswerte 60 Tage) für die Kennzahlen der Seite.
+- **Goldnachfrage:** Die Daten des World Gold Council stehen in der Monatsübersicht Gold, zählen aber nicht im Signal. In der Prüfung 2003–2026 sagten die ETF-Zuflüsse der letzten drei Monate die Goldrendite des Folgemonats zwar voraus (Rangkorrelation +0,11, Zufallstest p = 0,03), folgen aber dem Kursmomentum (Rangkorrelation 0,46–0,57); ohne dieses bleibt +0,04 (p = 0,29). Die Zentralbanknachfrage wirkte nur ab 2019, davor gegenläufig; Preisaufschläge in China und Indien hatten keinen stabilen Zusammenhang. Die Dateien lädt man auf der Goldhub-Seite (kostenlose Anmeldung) und legt sie in den Eingang `eingang/wgc/`; ein automatischer Abruf ist nicht vorgesehen, weil die Nutzungsbedingungen des WGC Scrapen untersagen. Sie erlauben außerdem nur die persönliche, nicht-kommerzielle Nutzung und keine Weitergabe ohne Zustimmung: Die Seite ist deshalb für den eigenen Gebrauch hinter einem Passwort gedacht (Einrichtung, Schritt 5); erst dann geben `/api/series` und `/api/archive` die vollen Reihen (`wgc_…`) heraus. Der Snapshot enthält nur die letzten zwei Jahre (Tageswerte 60 Tage) für die Kennzahlen der Seite, und der Startbestand im öffentlichen Repository enthält keine WGC-Daten.
 - **Treffsicherheit:** Vergangene Treffer sind keine Garantie für künftige (siehe [Backtest und Treffsicherheit](#backtest-und-treffsicherheit)).
 - **Bewertung außerhalb der USA:** Für die meisten Aktienmärkte gibt es keine freie, laufend aktualisierte Bewertungshistorie (Dividendenrendite, KGV). Das Barometer nutzt dort den Abstand zum 20-Jahres-Trend, der in den JST-Daten deutlich schwächer war als die Dividendenrendite. Eine lizenzierte Quelle mit Länderbewertungen (etwa Global Financial Data) würde diese Lücke schließen.
 
