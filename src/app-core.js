@@ -371,8 +371,15 @@ function renderKpis() {
   if (usd != null) items.push({ label: "US-Dollar-Anteil an den Devisenreserven", value: fmt(usd, 1), unit: "%", meta: D.power.coferLatestQuarter.replace("-", " "), spark: D.power.years.map((y, i) => [y, D.power.components.cofer.share.USA[i]]).filter(p => p[0] >= 1995), color: "--s1" });
   items.push({ label: "US-Zolleinnahmen in % der Warenimporte", value: fmt(L.tariff_eff_q.value, 1), unit: "%", meta: deQuarter(L.tariff_eff_q.date), spark: A("us_tariff_eff"), color: "--s2" });
   items.push({ label: "Vermögensanteil des obersten 1 % (USA)", value: fmt(L.top1_wealth.value, 1), unit: "%", meta: deQuarter(L.top1_wealth.date), spark: A("us_top1_wealth_dfa"), color: "--s7" });
+  const gs = D.series.gpr_daily, gd = A("gpr_daily");
   const gpr = lastPt(A("gpr_hist_m"));
-  if (gpr) items.push({ label: "Geopolitischer Risikoindex (historisch)", value: fmt(gpr[1], 0), unit: "", meta: fmtYearFrac(gpr[0], "M"), spark: A("gpr_hist").filter(p => p[0] >= 1990), color: "--s8" });
+  if (gd.length) {
+    // 7-Tage-Mittel; Datum des letzten Tageswerts aus Start und Länge der Reihe
+    const sm = smoothDaily(gd, 7).filter(p => p[1] != null);
+    const iso = new Date(Date.parse(gs.start + "T00:00:00Z") + (gs.values.length - 1) * 864e5).toISOString().slice(0, 10);
+    items.push({ label: "Geopolitischer Risikoindex (7-Tage-Mittel)", value: fmt(lastPt(sm)[1], 0), unit: "", meta: deShort(iso),
+      spark: sm.filter((p, i, a) => p[0] >= a[a.length - 1][0] - 2 && (i % 7 === 0 || i === a.length - 1)), color: "--s8", sparkNote: "1985–2019 = 100" });
+  } else if (gpr) items.push({ label: "Geopolitischer Risikoindex (historisch)", value: fmt(gpr[1], 0), unit: "", meta: fmtYearFrac(gpr[0], "M"), spark: A("gpr_hist").filter(p => p[0] >= 1990), color: "--s8" });
   host.replaceChildren(...items.map(it => h("div", { class: "kpi" },
     h("div", { class: "label", text: it.label }),
     h("div", { class: "value" }, it.value, it.unit ? h("small", { text: it.unit }) : null),
