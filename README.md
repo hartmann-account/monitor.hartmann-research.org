@@ -68,20 +68,15 @@ test/              Tests des Signalmodells (node --test)
 
 ## Einrichtung
 
-### 1. Cloudflare-Plan
+### 1. Cloudflare-Plan (erledigt)
 
-Nötig ist **Workers Paid** (5 USD im Monat; im Konto vorhanden). Die Abrufjobs parsen CSV- und JSON-Antworten und brauchen dafür je Job 20 bis 120 ms Rechenzeit. Der Free-Plan erlaubt pro Cron-Lauf nur 10 ms CPU und 1.000 KV-Schreibvorgänge am Tag. Paid erlaubt 30 Sekunden CPU je Lauf, und KV-Schreibvorgänge sind nicht begrenzt.
+**Workers Paid** ist gebucht (5 USD im Monat). Er ist nötig: Die Abrufjobs parsen CSV- und JSON-Antworten und brauchen dafür je Job 20 bis 120 ms Rechenzeit. Der Free-Plan erlaubt pro Cron-Lauf nur 10 ms CPU und 1.000 KV-Schreibvorgänge am Tag. Paid erlaubt 30 Sekunden CPU je Lauf, und KV-Schreibvorgänge sind nicht begrenzt.
 
-### 2. Repository mit Cloudflare verbinden (Workers Builds)
+### 2. Repository mit Cloudflare verbunden (erledigt)
 
-1. Cloudflare-Dashboard → **Workers & Pages** → **Erstellen** → **Repository importieren**.
-2. GitHub verbinden und `hartmann-account/monitor.hartmann-research.org` wählen.
-3. Projektname: **`monitor`**, wie der `name` in `wrangler.jsonc`.
-4. Build-Befehl leer lassen; Deploy-Befehl `npx wrangler deploy`; Produktionszweig `main`.
+Das Repository ist über Workers Builds mit dem Worker **`monitor`** verbunden (wie der `name` in `wrangler.jsonc`) und läuft unter **https://monitor.hartmann-it.workers.dev**. Jeder Push auf `main` wird automatisch veröffentlicht; `wrangler deploy` baut die Seite vorher selbst (`node scripts/build.mjs`, eingetragen unter `build.command`).
 
-Danach wird jeder Push auf `main` automatisch veröffentlicht. `wrangler deploy` baut die Seite vorher selbst (`node scripts/build.mjs`, eingetragen unter `build.command`).
-
-Alternativ geht es lokal: `npx wrangler login` und danach `npm run deploy`.
+Für eine Neueinrichtung: Cloudflare-Dashboard → **Workers & Pages** → **Erstellen** → **Repository importieren**, `hartmann-account/monitor.hartmann-research.org` wählen, Projektname `monitor`, Build-Befehl leer, Deploy-Befehl `npx wrangler deploy`, Produktionszweig `main`. Alternativ lokal: `npx wrangler login` und `npm run deploy`.
 
 ### 3. Speicher und Cron
 
@@ -123,7 +118,7 @@ Ohne Umzug der Zone bleibt nur die `workers.dev`-Adresse, gegebenenfalls mit ein
 
 Der Workflow `Daten aktualisieren` bringt die nötigen Schreibrechte selbst mit (`permissions: contents: write`). Der erste Lauf am 19. Oktober 2026 hat seine Daten erfolgreich committet. Er lässt sich unter **Actions** jederzeit auch von Hand starten. Optional:
 
-- Repository-Variable `LIVE_URL`, falls die Seite unter einer anderen Adresse als `https://monitor.hartmann-research.org/api/snapshot` läuft.
+- Repository-Variable `LIVE_URL`, falls der Snapshot von einer anderen Adresse als `https://monitor.hartmann-it.workers.dev/api/snapshot` kommen soll (etwa nach dem Umzug auf die eigene Domain; nötig ist das nicht, die `workers.dev`-Adresse bleibt erreichbar).
 - Secret `FRED_API_KEY`.
 
 Jeder dieser Commits löst über Workers Builds einen neuen Deploy aus.
