@@ -106,7 +106,7 @@ Ohne Umzug der Zone bleibt nur die `workers.dev`-Adresse, gegebenenfalls mit ein
 
 ### 7. GitHub Actions für die wöchentlichen Historien
 
-Unter Repository → **Settings** → **Actions** → **General** → **Workflow permissions** muss **Read and write permissions** gesetzt sein, damit der Workflow `Daten aktualisieren` seine Ergebnisse committen kann. Optional:
+Der Workflow `Daten aktualisieren` bringt die nötigen Schreibrechte selbst mit (`permissions: contents: write`). Der erste Lauf am 19. Oktober 2026 hat seine Daten erfolgreich committet. Er lässt sich unter **Actions** jederzeit auch von Hand starten. Optional:
 
 - Repository-Variable `LIVE_URL`, falls die Seite unter einer anderen Adresse als `https://monitor.hartmann-research.org/api/snapshot` läuft.
 - Secret `FRED_API_KEY`.
