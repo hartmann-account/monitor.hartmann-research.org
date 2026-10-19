@@ -114,6 +114,7 @@ export async function runDueJobs(env, opts = {}) {
   const queue = only ? JOBS.filter(j => only.has(j.id) && hasBindings(j, env)) : dueJobs(meta, now, JOBS, env);
   const fetcher = makeFetcher(budget);
   const ran = [];
+  let dirty = false;
   for (const job of queue) {
     if (ran.length >= maxJobs) break;
     // rechenintensive Jobs (Backtests) laufen allein: nur als erster Job eines Aufrufs, danach keiner mehr
@@ -122,6 +123,20 @@ export async function runDueJobs(env, opts = {}) {
     // Quellen mit enger Drosselung (OECD) nur einmal je Lauf
     if (job.onePerRun && ran.some(id => { const j = JOBS.find(x => x.id === id); return j.onePerRun && j.source === job.source; })) continue;
     const s = meta.jobs[job.id] || {};
+    if (job.solo) {
+      // Schutz vor Abbrüchen: Bricht die Plattform einen Lauf ab (Rechenzeit, Speicher), bleibt nur der vermerkte Start.
+      // Er zählt beim nächsten Mal als Fehler mit Wartezeit, statt jeden Cron-Lauf erneut zu belegen.
+      if (s.startedAt && !(s.endedAt >= s.startedAt)) {
+        Object.assign(s, { ok: false, fails: (s.fails || 0) + 1, error: "Lauf abgebrochen (Rechenzeit oder Speicher überschritten)", failAt: s.startedAt, endedAt: new Date(now).toISOString() });
+        s.retryAt = now + backoff(s.fails);
+        meta.jobs[job.id] = s;
+        dirty = true;
+        continue;
+      }
+      s.startedAt = new Date(now).toISOString();
+      meta.jobs[job.id] = s;
+      await env.DATA.put(META_KEY, JSON.stringify(meta));
+    }
     const t0 = Date.now();
     // Datenarchiv (D1): jede Ausgabe wird archiviert, häufige Jobs (GDELT) höchstens alle drei Stunden; beim ersten
     // Archivlauf eines Jobs mit "deep" wird die ganze Historie der Quelle geladen
@@ -158,11 +173,15 @@ export async function runDueJobs(env, opts = {}) {
       s.failAt = new Date(now).toISOString();
       s.retryAt = now + backoff(s.fails);
     }
+    if (job.solo) s.endedAt = new Date(now).toISOString();
     meta.jobs[job.id] = s;
     ran.push(job.id);
     if (job.solo) break;
   }
-  if (!ran.length) return { ran, used: fetcher.used };
+  if (!ran.length) {
+    if (dirty) await env.DATA.put(META_KEY, JSON.stringify(meta));
+    return { ran, used: fetcher.used };
+  }
   meta.updatedAt = new Date(now).toISOString();
   // Häufige Jobs (GDELT) bauen den Snapshot höchstens alle 30 Minuten neu; andere Jobs sofort
   const onlyFrequent = ran.every(id => (JOBS.find(j => j.id === id) || {}).frequent);
