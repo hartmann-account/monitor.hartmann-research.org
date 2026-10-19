@@ -45,7 +45,7 @@ Browser ─► GET /data/bigcycle.json   lange Historien (wöchentlich über Git
 ```
 
 - **Ein Worker** liefert die statische Seite (`public/`), die API (`/api/*`) und führt die Abrufe aus. Der Browser ruft nie eine fremde Quelle direkt auf.
-- **Jobs** (`worker/jobs*.js`) haben einen Takt (`every`) und ein Subrequest-Budget (`cost`). Ein Lauf nimmt die fälligen Jobs in der Reihenfolge ihrer Überfälligkeit, höchstens acht. Nach einem vollen Umlauf (rund eine Stunde) sind alle 54 Jobs geladen; rechenintensive Jobs (Backtests, `solo`) laufen allein in einem Cron-Lauf.
+- **Jobs** (`worker/jobs*.js`) haben einen Takt (`every`) und ein Subrequest-Budget (`cost`). Ein Lauf nimmt die fälligen Jobs in der Reihenfolge ihrer Überfälligkeit, höchstens acht. Nach einem vollen Umlauf (rund eine Stunde) sind alle 58 Jobs geladen; rechenintensive Jobs (Backtests, `solo`) laufen allein in einem Cron-Lauf. Jobs mit `version` (Signalmodell, Länderlisten der IWF-, Weltbank- und BIZ-Abrufe) laufen nach einer Änderung sofort neu; Jobs mit `after` (Backtests) warten, bis ihre Quellen die ganze Historie in der aktuellen Version archiviert haben.
 - **Letzter guter Stand:** Schlägt ein Abruf fehl, bleibt die alte Ausgabe stehen. Der Job wartet dann 1, 2, 4, 8, 12 bzw. 24 Stunden bis zum nächsten Versuch (wie bei World Monitor).
 - **Historien wachsen mit:** Viele Jobs laden nur die letzten Wochen nach und hängen sie an die gespeicherte Reihe an (`keep: true`). Tageswerte, die älter als 800 Tage sind, werden auf Wochenwerte ausgedünnt.
 - **GDELT:** Alle 30 Minuten verarbeitet der Worker die neuesten 15-Minuten-Dateien der GDELT-Ereignisdatenbank und führt Tagessummen je Länderpaar für 150 Tage (Startbestand: `public/data/gdelt-state.json`).
