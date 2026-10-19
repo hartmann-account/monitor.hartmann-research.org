@@ -92,7 +92,8 @@ Im Dashboard unter Worker → **Einstellungen** → **Variablen und Secrets**, o
 | Name | Art | Zweck |
 |---|---|---|
 | `ADMIN_TOKEN` | Secret | Schaltet `POST /api/run` frei (Abruf sofort anstoßen) |
-| `FRED_API_KEY` | Secret | FRED über die offizielle API statt über den CSV-Download; nicht nötig |
+| `ALFRED_API` | Secret | Schlüssel der FRED/ALFRED-Schnittstelle (St. Louis Fed). Schaltet den Job `alfred_vintages` frei: alle Datenstände einer Reihe in einem Abruf. Ohne ihn rechnet der Backtest Baugenehmigungen und Z.1 im heutigen Stand; lokal ersetzt `pipeline/alfred_snapshots.py` ihn durch Monatsend-Stände |
+| `FRED_API_KEY` | Secret | nicht nötig und derzeit nicht verwendet: die laufenden Abrufe nutzen den schlüssellosen CSV-Export von FRED |
 | `GDELT_FILES_PER_RUN` | Variable | GDELT-Dateien je Lauf (Standard 3) |
 | `MAX_JOBS_PER_RUN`, `SUBREQUEST_BUDGET` | Variable | Jobs und Subrequests je Cron-Lauf (in `wrangler.jsonc`: 8 und 80) |
 
@@ -120,7 +121,7 @@ Ohne Umzug der Zone bleibt nur die `workers.dev`-Adresse, gegebenenfalls mit ein
 Der Workflow `Daten aktualisieren` bringt die nötigen Schreibrechte selbst mit (`permissions: contents: write`). Der erste Lauf am 19. Oktober 2026 hat seine Daten erfolgreich committet. Er lässt sich unter **Actions** jederzeit auch von Hand starten. Optional:
 
 - Repository-Variable `LIVE_URL`, falls der Snapshot von einer anderen Adresse als `https://monitor.hartmann-it.workers.dev/api/snapshot` kommen soll (etwa nach dem Umzug auf die eigene Domain; nötig ist das nicht, die `workers.dev`-Adresse bleibt erreichbar).
-- Secret `FRED_API_KEY`.
+- Secret `FRED_API_KEY`: nicht nötig (siehe Schritt 4).
 
 Jeder dieser Commits löst über Workers Builds einen neuen Deploy aus.
 
@@ -202,6 +203,7 @@ Alle Quellen sind ohne Schlüssel und dauerhaft abrufbar. Fast alle sind amtlich
 | `oecd_cli_em` | Frühindikatoren Brasilien, Mexiko, Korea, Südafrika, Indonesien, Türkei | OECD | 1 Tag |
 | `bis_em` | Leitzinsen und reale effektive Wechselkurse von Brasilien, Mexiko, Korea, Südafrika, Indonesien und der Türkei (Wechselkurs auch Taiwan) | BIZ | 12 Std. |
 | `eurostat_esi` | Wirtschaftsstimmung Euroraum und Deutschland | Eurostat | 1 Tag |
+| `alfred_vintages` | Echtzeit-Datenstände der Baugenehmigungen und der Z.1-Reihen (Aktienanteil am Anlegervermögen): jeder Wert mit dem Zeitraum, in dem er galt (Tabelle `vint`, für den Backtest; braucht das Secret `ALFRED_API`) | ALFRED (St. Louis Fed) | 1 Woche |
 | `signal_history` | Signalverlauf des Anlagebarometers, drei Horizonte (eigene Berechnung, D1) | – | 6 Std. |
 | `backtest_m1`, `backtest_y1`, `backtest_lt` | Backtest des Barometers seit 1970 je Horizont (eigene Berechnung auf dem Archiv, D1) | – | 1 Woche |
 | `archive_hist` | Langfristreihen des wöchentlichen Datensatzes ins Archiv (D1) | – | 1 Woche |
@@ -258,7 +260,7 @@ Die Darstellung lehnt sich an die Monatsübersicht von Pictet Asset Management a
 
 ## Backtest und Treffsicherheit
 
-**Vorgehen.** Zu jedem Monatsende seit Januar 1970 rechnet das unveränderte Modell (`src/signals.js`) alle Anlagen und Horizonte, und zwar nur mit Daten, die zum Stichtag veröffentlicht waren (übliche Fristen je Reihe: Monatswerte 15 Tage, OECD-Frühindikatoren 45 Tage, Quartale 45 Tage, Kreditdaten der BIZ 100, Fed Z.1 80 Tage). Die OECD-Frühindikatoren nimmt der Backtest ab 2001 in dem Stand, den die OECD jeden Monat veröffentlicht hat (Revisionsdatenbank der Main Economic Indicators, 16 Regionen), nicht in der heute revidierten Fassung. Die Historie stammt aus dem D1-Archiv; lange Reihen werden aus mehreren Quellen verkettet (S&P 500 seit 1871 aus den Shiller-Daten, Wechselkurse seit 1971 aus der Fed-Statistik, Euro vor 1999 über die D-Mark, Aktien von acht Ländern seit 1955 aus der OECD-Statistik, Schwellenländer seit 2001 aus dem Nasdaq-Index und davor aus dem BIP-gewichteten Korb von 15 Ländern, Risikoprämien über die Baa-Prämie seit 1953). IWF- und Weltbank-Projektionen liegen nur im heutigen Stand vor und werden durch einfache Fortschreibungen ersetzt. Verglichen wird mit der Rendite der folgenden 1, 12 bzw. 60 Monate.
+**Vorgehen.** Zu jedem Monatsende seit Januar 1970 rechnet das unveränderte Modell (`src/signals.js`) alle Anlagen und Horizonte, und zwar nur mit Daten, die zum Stichtag veröffentlicht waren (übliche Fristen je Reihe: Monatswerte 15 Tage, OECD-Frühindikatoren 45 Tage, Quartale 45 Tage, Kreditdaten der BIZ 100, Fed Z.1 80 Tage). Die OECD-Frühindikatoren nimmt der Backtest ab 2001 in dem Stand, den die OECD jeden Monat veröffentlicht hat (Revisionsdatenbank der Main Economic Indicators, 16 Regionen), nicht in der heute revidierten Fassung. Ebenso die US-Baugenehmigungen (ab 1999) und den Aktienanteil am Anlegervermögen (aus den Z.1-Reihen, ab 2013), sobald der Job `alfred_vintages` deren Datenstände aus ALFRED geladen hat. Die Historie stammt aus dem D1-Archiv; lange Reihen werden aus mehreren Quellen verkettet (S&P 500 seit 1871 aus den Shiller-Daten, Wechselkurse seit 1971 aus der Fed-Statistik, Euro vor 1999 über die D-Mark, Aktien von acht Ländern seit 1955 aus der OECD-Statistik, Schwellenländer seit 2001 aus dem Nasdaq-Index und davor aus dem BIP-gewichteten Korb von 15 Ländern, Risikoprämien über die Baa-Prämie seit 1953). IWF- und Weltbank-Projektionen liegen nur im heutigen Stand vor und werden durch einfache Fortschreibungen ersetzt. Verglichen wird mit der Rendite der folgenden 1, 12 bzw. 60 Monate.
 
 **Kennzahlen.**
 - *Trefferquote der Richtung:* Anteil der Stufen „positiv/klar positiv“ mit steigendem und „negativ/klar negativ“ mit fallendem Kurs (neutral = keine Aussage), 95-%-Intervall nach Wilson auf der effektiven Stichprobe (überlappende Zeiträume zählen anteilig).
@@ -275,21 +277,21 @@ Die Darstellung lehnt sich an die Monatsübersicht von Pictet Asset Management a
 
 | Horizont | Treffer | bei Zufall (95-%-Schwelle) | „steigt immer“ | Rangkorrelation | bei Zufall | Zufallstest p | ohne Vorgriff | Brier-Skill |
 |---|---|---|---|---|---|---|---|---|
-| 1 Monat | 56,1 % | 52,1 % (53,5 %) | 54,5 % | 0,11 | 0,02 | 0,013 | 0,08 | +0,3 % |
-| 12 Monate | 63,4 % | 51,9 % (57,1 %) | 59,0 % | 0,22 | 0,01 | 0,005 | 0,15 | +1,5 % |
+| 1 Monat | 56,2 % | 52,0 % (53,4 %) | 54,4 % | 0,11 | 0,02 | 0,016 | 0,08 | +0,3 % |
+| 12 Monate | 63,4 % | 51,9 % (57,1 %) | 58,9 % | 0,22 | 0,01 | 0,005 | 0,15 | +1,5 % |
 | 5–10 Jahre (5-Jahres-Rendite) | 67,4 % | 53,6 % (60,2 %) | 63,3 % | 0,35 | 0,07 | 0,002 | 0,32 | +0,5 % |
 
-Alle drei Horizonte schlagen den Zufall deutlich: Zeitlich verschobene Einstufungen treffen die Richtung in 52–54 % der Fälle, das Modell in 56, 63 bzw. 67 %. Am stärksten sind die Signale für Unternehmensanleihen (12 Monate: Rangkorrelation 0,39; 5 Jahre: 0,64), Staatsanleihen und Gold; Aktien liegen auf 12 Monate bei 0,19 (Zufallstest p = 0,07) und auf 5 Jahre bei 0,31. Nach „klar positiv“ stiegen die Kurse auf 12 Monate in 74 % der Fälle, nach „klar negativ“ in 35 %. Langfristig sind Währungen nicht besser als Zufall (p = 0,7): Ihre scheinbare Rangkorrelation von 0,24 entsteht allein durch dauerhafte Unterschiede zwischen den Währungen.
+Alle drei Horizonte schlagen den Zufall deutlich: Zeitlich verschobene Einstufungen treffen die Richtung in 52–54 % der Fälle, das Modell in 56, 63 bzw. 67 %. Am stärksten sind die Signale für Unternehmensanleihen (12 Monate: Rangkorrelation 0,39; 5 Jahre: 0,64), Staatsanleihen und Gold; Aktien liegen auf 12 Monate bei 0,19 (Zufallstest p = 0,07) und auf 5 Jahre bei 0,31. Nach „klar positiv“ stiegen die Kurse auf 12 Monate in 75 % der Fälle, nach „klar negativ“ in 34 %. Langfristig sind Währungen nicht besser als Zufall (p = 0,7): Ihre scheinbare Rangkorrelation von 0,24 entsteht allein durch dauerhafte Unterschiede zwischen den Währungen.
 
 **Prüfungen gegen Rückschaufehler.** Die Bausteine wurden mit Kenntnis der Geschichte seit 1970 ausgewählt. Drei Prüfungen nutzen Daten, die dabei keine Rolle spielten (`public/data/robustness.json`, auf der Seite unter „Treffsicherheit“):
 
 | Prüfung | Ergebnis |
 |---|---|
-| 1955–1969 (bei der Gewichtung nicht verwendet, ohne Gold und Währungen) | 12 Monate: Treffer 61,6 % gegen 55,1 % „steigt immer“, Rangkorrelation 0,20, Zufall −0,03 (p < 0,01); 1 Monat: Rangkorrelation 0,15 (p = 0,045), Treffer auf Höhe der Mehrheitsregel |
-| Frühindikatoren ab 2001 im damals veröffentlichten statt im revidierten Stand | Rangkorrelation 1 Monat 0,065 statt 0,071, 12 Monate 0,153 statt 0,163. Mit der früheren Formel (Dynamik über drei Monate) fiel sie auf 1 Monat von 0,080 auf 0,056 und die der Konjunktursäule von 0,06 auf null (−0,005); deshalb zählt heute nur das Niveau |
+| 1955–1969 (bei der Gewichtung nicht verwendet, ohne Gold und Währungen) | 12 Monate: Treffer 61,6 % gegen 55,0 % „steigt immer“, Rangkorrelation 0,20, Zufall −0,03 (p < 0,01); 1 Monat: Rangkorrelation 0,15 (p = 0,045), Treffer auf Höhe der Mehrheitsregel |
+| Frühindikatoren ab 2001 im damals veröffentlichten statt im revidierten Stand | Rangkorrelation 1 Monat 0,065 statt 0,072, 12 Monate 0,155 statt 0,164. Mit der früheren Formel (Dynamik über drei Monate) fiel sie auf 1 Monat von 0,080 auf 0,056 und die der Konjunktursäule von 0,06 auf null (−0,005); deshalb zählt heute nur das Niveau |
 | 16 Länder seit 1890 (Jordà-Schularick-Taylor), Aktien auf 5 Jahre | Gesamtwert Rangkorrelation 0,06 statt −0,02 mit den früheren Gewichten; Dividendenrendite 0,21, Langfristtrend −0,13 (in allen fünf Zeiträumen negativ), Wachstum −0,09; Staatsanleihen: Realrendite 0,43 |
 
-Daraus folgten drei Änderungen am Modell: Der Frühindikator zählt nur noch mit seinem Niveau, Aktien werden über 5–10 Jahre nur nach Bewertung eingestuft, und die Bausteine Wachstum, Schulden und Machtposition zählen langfristig nur dort, wo sie Prognosekraft zeigen (Wachstum bei Rohstoffen). Der Rohwert der Rangkorrelation sank dadurch auf 5 Jahre von 0,41 auf 0,35, der Abstand zum Zufall stieg aber von 0,27 auf 0,28: Ein Teil des früheren Werts kam daher, dass dieselben Märkte über Jahrzehnte vorn lagen (Zufallsmittel 0,14 statt 0,07). Die Schwellenländer-Daten haben die Zeile „Schwellenländer“ deutlich verbessert (Rangkorrelation 1 Monat 0,17 statt 0,09, 12 Monate 0,30 statt 0,14, 5 Jahre 0,61 statt 0,53; vorher ein Korb aus China und Indien). „Schwellenländer gegenüber USA“ bleibt auf 12 Monate ohne belegte Prognosekraft (−0,05), ebenso China allein (−0,10, Daten erst seit 2001). Die genauen, wöchentlich neu gerechneten Werte je Anlageart und Anlage stehen auf der Seite und unter `/api/backtest`.
+Daraus folgten vier Änderungen am Modell: Der Frühindikator zählt nur noch mit seinem Niveau; Aktien werden über 5–10 Jahre nur nach Bewertung eingestuft; die Bausteine Wachstum, Schulden und Machtposition zählen langfristig nur dort, wo sie Prognosekraft zeigen (Wachstum bei Rohstoffen); und bei Regionen-Paaren zählt der Wachstumsvorsprung nicht mehr (er war auf 1 und 12 Monate in allen vier Zeiträumen seit 1955 negativ, ohne ihn stieg die Rangkorrelation der relativen Stärke auf 12 Monate von 0,18 auf 0,20), ebenso bei Rohstoffen die Konjunktursäule auf 1 Monat. Der Rohwert der Rangkorrelation sank dadurch auf 5 Jahre von 0,41 auf 0,35, der Abstand zum Zufall stieg aber von 0,27 auf 0,28: Ein Teil des früheren Werts kam daher, dass dieselben Märkte über Jahrzehnte vorn lagen (Zufallsmittel 0,14 statt 0,07). Die Schwellenländer-Daten haben die Zeile „Schwellenländer“ deutlich verbessert (Rangkorrelation 1 Monat 0,17 statt 0,09, 12 Monate 0,30 statt 0,14, 5 Jahre 0,61 statt 0,53; vorher ein Korb aus China und Indien). „Schwellenländer gegenüber USA“ bleibt auf 12 Monate ohne belegte Prognosekraft (−0,05), ebenso China allein (−0,10, Daten erst seit 2001). Die genauen, wöchentlich neu gerechneten Werte je Anlageart und Anlage stehen auf der Seite und unter `/api/backtest`.
 
 **Was das heißt.** Das Modell trifft die Richtung häufiger als der Zufall und über alle Anlagen häufiger als „steigt immer“, aber nahezu sichere Prognosen sind an Märkten nicht möglich. Aktien steigen meistens; „negativ“ heißt bei ihnen „unterdurchschnittliche Aussichten“, deshalb liegt ihre Trefferquote der Richtung auf 12 Monate unter der Mehrheitsregel, obwohl die Rangkorrelation positiv ist. Aussagekräftiger ist die Wahrscheinlichkeit steigender Kurse, die jede Zeile des Barometers zeigt.
 

@@ -193,8 +193,9 @@ const SIG = (() => {
     credit: { trend: 0.15, cycle: 0.40, value: 0.35, liquidity: 0.10, risk: 0 },
     fx: { trend: 0.60, cycle: 0.05, value: 0, liquidity: 0.25, risk: 0.10 },
     gold: { trend: 0.55, cycle: 0.10, value: 0, liquidity: 0.25, risk: 0.10 },
-    commodity: { trend: 0.30, cycle: 0.35, value: 0.05, liquidity: 0.10, risk: 0.20 },
-    relative: { trend: 0.80, cycle: 0.20, value: 0, liquidity: 0, risk: 0 },
+    // Rohstoffe und Regionen-Paare ohne Konjunktursäule: im Backtest seit 1955 insgesamt bzw. in allen vier Zeiträumen negativ
+    commodity: { trend: 0.46, cycle: 0, value: 0.08, liquidity: 0.15, risk: 0.31 },
+    relative: { trend: 1, cycle: 0, value: 0, liquidity: 0, risk: 0 },
   };
   // 12 Monate: Bewertung, Konjunktur (antizyklisch), Stimmung und Positionierung zählen mehr, das kurzfristige Kursmomentum weniger
   const W_Y1 = {
@@ -204,7 +205,7 @@ const SIG = (() => {
     fx: { cycle12: 0, value: 0.30, liquidity: 0.15, mom12: 0.50, risk12: 0.05 },
     gold: { cycle12: 0.10, value: 0.25, liquidity: 0.15, mom12: 0.30, risk12: 0.20 },
     commodity: { cycle12: 0.45, value: 0.05, liquidity: 0.15, mom12: 0.05, risk12: 0.30 },
-    relative: { cycle12: 0.10, value: 0.45, liquidity: 0, mom12: 0.45, risk12: 0 },
+    relative: { cycle12: 0, value: 0.50, liquidity: 0, mom12: 0.50, risk12: 0 },
   };
   // 5–10 Jahre: Bewertung dominiert. Wachstum, Schulden und Machtposition (großer Zyklus) werden angezeigt, zählen aber nur,
   // wo sie im Backtest Prognosekraft zeigen (Wachstum bei Rohstoffen). Aktien nur nach Bewertung: In den Daten von 18 Ländern
@@ -221,7 +222,7 @@ const SIG = (() => {
   };
   const cfg = {
     // Stand des Modells; ändert sich die Rechnung, rechnet der Worker die gespeicherte Rückrechnung neu
-    version: "2026-10-19e",
+    version: "2026-10-19f",
     pillars: [
       { id: "trend", label: "Trend", short: "T", desc: "Kursmomentum über 3, 6 und 12 Monate, risikobereinigt, und Abstand zum gleitenden 200-Tage-Durchschnitt (Monatsreihen: 10 Monate)." },
       { id: "cycle", label: "Konjunktur", short: "K", desc: "OECD-Frühindikator der Region: Niveau gegenüber dem langfristigen Mittel (100). Bei Aktien, Unternehmensanleihen und Rohstoffen zählt ein hohes Niveau antizyklisch (Boom = spätes Zyklusstadium). Die Dynamik über drei Monate wird angezeigt, zählt aber nicht: mit den damals veröffentlichten Werten hatte sie keine Prognosekraft. Anleihen profitieren von schwächerem Wachstum und sinkender Inflation." },

@@ -102,6 +102,49 @@ function restoreVintages(L) {
   for (const [id, V] of Object.entries(L.vint)) { L.s[id] = V.base; V.cur = null; }
 }
 
+/* Echtzeit-Datenstände aus ALFRED (Archiv der FRED-Ausgaben; Job alfred_vintages, Tabelle vint): je Reihe die Werte mit
+   ihrem Gültigkeitszeitraum [rs, re] (Tag der Veröffentlichung bis zur nächsten Revision). Zum Stichtag gilt für jedes
+   Datum der Wert, der damals galt. Baugenehmigungen direkt; der Aktienanteil am Anlegervermögen aus den damals gültigen
+   Z.1-Reihen nachgerechnet (wie im Job fred_z1). Vor dem ersten Datenstand einer Reihe bleibt die heutige Reihe. */
+export const ALFRED_SERIES = ["PERMIT", "NCBEILQ027S", "FBCELLQ027S", "CMDEBT", "BCNSDODNS", "FGSDODNS", "SLGSDODNS", "DODFFSWCMI"];
+const Z1_EQ = ["NCBEILQ027S", "FBCELLQ027S"], Z1_DEBT = ["CMDEBT", "BCNSDODNS", "FGSDODNS", "SLGSDODNS", "DODFFSWCMI"];
+function prepAlfred(L, alfred) {
+  const rows = {};
+  for (const [s, list] of Object.entries(alfred)) {
+    if (!list || !list.length) continue;
+    // [Datum, gültig ab, gültig bis, Wert] → Tage; nach Datum sortiert
+    rows[s] = list.map(([d, rs, re, v]) => ({ d, t: dayOf(d), rs: dayOf(rs), re: re >= "9999" ? Infinity : dayOf(re), v })).sort((a, b) => a.t - b.t || a.rs - b.rs);
+  }
+  const first = s => (rows[s] ? Math.min(...rows[s].map(r => r.rs)) : Infinity);
+  const out = {};
+  if (rows.PERMIT && L.s.permit_us) out.permit_us = { base: L.s.permit_us, from: first("PERMIT"), make: cut => {
+    const pts = rows.PERMIT.filter(r => r.rs <= cut && cut <= r.re).map(r => point(r.d, "M", r.v));
+    return pts.length ? { ...L.s.permit_us, pts, lag: 0, vintage: true } : null;
+  } };
+  if ([...Z1_EQ, ...Z1_DEBT].every(s => rows[s]) && L.s.aiae_us) out.aiae_us = { base: L.s.aiae_us, from: Math.max(...[...Z1_EQ, ...Z1_DEBT].map(first)), make: cut => {
+    const at = s => { const m = new Map(); for (const r of rows[s]) if (r.rs <= cut && cut <= r.re) m.set(r.d, r.v); return m; };
+    const eq = Z1_EQ.map(at), debt = Z1_DEBT.map(at), pts = [];
+    for (const [d, v0] of eq[0]) {
+      const e = v0 + (eq[1].get(d) ?? NaN), dt = debt.reduce((a, m) => a + (m.get(d) ?? NaN), 0);
+      if (isFinite(e) && isFinite(dt) && e + dt > 0) pts.push(point(d, "Q", (100 * e) / (e + dt)));
+    }
+    pts.sort((a, b) => a.t - b.t);
+    return pts.length >= 40 ? { ...L.s.aiae_us, pts, lag: 0, vintage: true } : null;
+  } };
+  return out;
+}
+// zum Stichtag: Reihe im damaligen Stand (je Stichtag neu gebaut)
+export function applyAlfred(L, cut) {
+  for (const [id, A] of Object.entries(L.alfred)) {
+    if (cut < A.from) { L.s[id] = A.base; continue; }
+    const s = A.make(cut);
+    L.s[id] = s || A.base;
+  }
+}
+function restoreAlfred(L) {
+  for (const [id, A] of Object.entries(L.alfred)) L.s[id] = A.base;
+}
+
 /* Archivreihen, die der Backtest lädt (aus dem Reihenverzeichnis des Archivs) */
 export function btSeriesIds(catalog) {
   const want = new Set(BT_DIRECT);
@@ -152,7 +195,7 @@ function splice(newer, older, mode) {
 }
 
 /* Datensatz für den Backtest im Format von SIG.decodeSnapshot. raw: { id: { f, points: [[iso, v], ...] } } */
-export function buildBacktestLive(raw, { vintages = null } = {}) {
+export function buildBacktestLive(raw, { vintages = null, alfred = null } = {}) {
   const S = {};
   for (const [id, r] of Object.entries(raw)) {
     if (!r || !r.points || !r.points.length) continue;
@@ -186,6 +229,7 @@ export function buildBacktestLive(raw, { vintages = null } = {}) {
   const m = id => (raw[id] ? { f: "M", s: raw[id].points[0][0].slice(0, 7), v: monthlyValues(raw[id].points) } : null);
   SIG.prepareLive(L, { gold_usd_m: m("h_gold_usd_m"), sp500_m: m("h_sp500_m"), cape_m: m("h_cape_m"), gpr_m: m("h_gpr_hist_m"), cape: null });
   if (vintages) L.vint = prepVintages(L, vintages);
+  if (alfred) L.alfred = prepAlfred(L, alfred);
   return L;
 }
 // lückenlose Monatswerte ab dem ersten Monat (fehlende Monate = null)
@@ -239,6 +283,7 @@ export function runPanel(L, { from = "1970-01", to = null, horizons = ["m1", "y1
   }
   cuts.forEach((cut, k) => {
     if (L.vint) applyVintages(L, cut);
+    if (L.alfred) applyAlfred(L, cut);
     const ra = SIG.riskAppetite(L, cut);
     if (L._ra) L._ra.delete(cut); // je Stichtag nur einmal gebraucht
     for (const hz of horizons) {
@@ -256,6 +301,7 @@ export function runPanel(L, { from = "1970-01", to = null, horizons = ["m1", "y1
     if (onProgress && k % 12 === 11) onProgress(SIG.isoOf(cut), out.length);
   });
   if (L.vint) restoreVintages(L);
+  if (L.alfred) restoreAlfred(L);
   return out;
 }
 

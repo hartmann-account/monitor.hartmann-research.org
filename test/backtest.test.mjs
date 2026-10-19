@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { forward, logistic, categorize, accuracy, verdict, compactAccuracy, monthEnds, randomTest, buildBacktestLive, runPanel, applyVintages } from "../worker/backtest.js";
+import { forward, logistic, categorize, accuracy, verdict, compactAccuracy, monthEnds, randomTest, buildBacktestLive, runPanel, applyVintages, applyAlfred, ALFRED_SERIES } from "../worker/backtest.js";
 const require = createRequire(import.meta.url);
 const { SIG } = require("../src/signals.js");
 
@@ -161,4 +161,28 @@ test("Echtzeit-Datenstände: Frühindikator zum Stichtag aus der damals jüngste
   // nach einem Panel steht wieder die heutige Reihe
   runPanel(L, { from: "2005-02", to: day("2005-03-31"), horizons: [] });
   assert.equal(L.s.cli_us, L.vint.cli_us.base);
+});
+
+test("ALFRED: Baugenehmigungen und Aktienanteil zum Stichtag im damals gültigen Stand", () => {
+  const months = []; for (let y = 1995; y <= 2007; y++) for (let m = 1; m <= 12; m++) months.push(`${y}-${String(m).padStart(2, "0")}-01`);
+  const quarters = []; for (let y = 1995; y <= 2007; y++) for (let q = 0; q < 4; q++) quarters.push(`${y}-${String(3 * q + 1).padStart(2, "0")}-01`);
+  const raw = { permit_us: { freq: "M", points: months.map(d => [d, d === "2004-10-01" ? 2093 : 1500]) }, aiae_us: { freq: "Q", points: quarters.map(d => [d, 40]) } };
+  // Baugenehmigungen Oktober 2004: zuerst 2018 gemeldet, ab 2006 auf 2093 revidiert; übrige Monate unverändert seit 2000
+  const permit = months.flatMap(d => (d === "2004-10-01" ? [[d, "2004-11-17", "2005-12-31", 2018], [d, "2006-01-01", "9999-12-31", 2093]] : d < "2004-10-01" ? [[d, "2000-01-01", "9999-12-31", 1500]] : []));
+  // Z.1: Aktien 60 + 40 und Schulden 5 × 20 = 100 → Anteil 50 %; ab 2006 Aktien revidiert (Anteil 60 %)
+  const z = (v, v2) => quarters.filter(d => d <= "2004-10-01").flatMap(d => [[d, "2005-01-01", "2005-12-31", v], [d, "2006-01-01", "9999-12-31", v2]]);
+  const alfred = { PERMIT: permit, NCBEILQ027S: z(60, 90), FBCELLQ027S: z(40, 60), CMDEBT: z(20, 20), BCNSDODNS: z(20, 20), FGSDODNS: z(20, 20), SLGSDODNS: z(20, 20), DODFFSWCMI: z(20, 20) };
+  assert.deepEqual(Object.keys(alfred).sort(), ALFRED_SERIES.slice().sort());
+  const L = buildBacktestLive(raw, { alfred });
+  const lastAt = (id, cut) => { applyAlfred(L, day(cut)); const p = SIG.asOf(L.s[id], day(cut)); return p[p.length - 1]; };
+  // vor dem ersten Datenstand (1999): heutige Reihe
+  assert.equal(lastAt("permit_us", "1999-06-30").v, 1500);
+  assert.equal(L.s.permit_us, L.alfred.permit_us.base);
+  // Ende 2004: Oktober noch nicht veröffentlicht → September; Mitte 2005: Erstmeldung 2018; 2006: revidiert 2093
+  assert.equal(SIG.isoOf(lastAt("permit_us", "2004-10-31").t).slice(0, 7), "2004-09");
+  assert.equal(lastAt("permit_us", "2005-06-30").v, 2018);
+  assert.equal(lastAt("permit_us", "2006-06-30").v, 2093);
+  // Aktienanteil: 2005 aus den damaligen Z.1-Werten 50 %, 2006 nach der Revision 60 %
+  assert.equal(lastAt("aiae_us", "2005-06-30").v, 50);
+  assert.equal(lastAt("aiae_us", "2006-06-30").v, 60);
 });

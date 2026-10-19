@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* Backtest des Anlagebarometers auf der Historie im Datenarchiv (D1), dieselbe Rechnung wie die Worker-Jobs backtest_*.
    Aufruf: node scripts/backtest.mjs [--local] [--api https://monitor.hartmann-it.workers.dev] [--from 1970-01]
-                                    [--hz m1,y1,lt] [--panel datei.json] [--out datei.json]
+                                    [--hz m1,y1,lt] [--panel datei.json] [--out datei.json] [--alfred datei.json]
    --local liest die lokale D1-Datenbank von wrangler dev (.wrangler/state), sonst die öffentliche API des Workers.
    --panel speichert alle Einzelwerte (Säulen, Gesamtwert, spätere Renditen), --out die Zusammenfassungen
    (public/data/backtest.json: Rückfall der Seite, solange der Worker noch keine eigenen Ergebnisse liefert). */
@@ -52,7 +52,9 @@ console.log(`geladen: ${Object.keys(raw).length} Reihen, ${Object.values(raw).re
 const vintFile = join(root, "public", "data", "cli_vintages.json");
 const vintages = existsSync(vintFile) ? JSON.parse(readFileSync(vintFile, "utf8")).editions : null;
 if (!vintages) console.log("Hinweis: public/data/cli_vintages.json fehlt, Frühindikatoren in der revidierten Fassung");
-const L = buildBacktestLive(raw, { vintages });
+// Baugenehmigungen und Fed Z.1 im damaligen Stand: ALFRED-Datenstände (pipeline/alfred_snapshots.py oder Tabelle vint)
+const alfred = arg("--alfred") ? JSON.parse(readFileSync(arg("--alfred"), "utf8")) : null;
+const L = buildBacktestLive(raw, { vintages, alfred });
 const hzs = arg("--hz", "m1,y1,lt").split(",");
 const t1 = Date.now();
 const panel = runPanel(L, { from: arg("--from", "1970-01"), horizons: hzs });
@@ -65,7 +67,7 @@ const VERDICT = { ok: "belegt", weak: "schwach", fail: "NICHT belegt" };
 const out = {};
 for (const hz of hzs) {
   const S = summarizeBacktest(panel, hz);
-  out[hz] = { ...S, realtime: { cli: Object.keys(L.vint || {}).length, from: "2001-01" }, at: new Date().toISOString(), version: `${SIG.cfg.version}/${BT_VERSION}`, origin: "Datei" };
+  out[hz] = { ...S, realtime: { cli: Object.keys(L.vint || {}).length, from: "2001-01", alfred: Object.fromEntries(Object.entries(L.alfred || {}).map(([id, A]) => [id, SIG.isoOf(A.from)])) }, at: new Date().toISOString(), version: `${SIG.cfg.version}/${BT_VERSION}`, origin: "Datei" };
   console.log(`\n=== ${SIG.horizon(hz).title}: ${S.months} Monatsenden ${S.from} – ${S.to} ===`);
   console.log("Anlageart    Fälle   nEff  Treffer [95 %-KI]     Basis  IC     [95 %-KI]        Teilperioden IC          ohne Vorgriff IC/Treffer  Brier-Skill  Urteil");
   for (const [k, a] of Object.entries(S.stats)) {

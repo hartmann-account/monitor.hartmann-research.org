@@ -4,7 +4,9 @@
    2. Echtzeit-Frühindikatoren: Kennzahlen seit 2001 mit den heute revidierten Werten (Frist 15 Tage) gegenüber den damals
       veröffentlichten Ausgaben (OECD-Revisionsdatenbank, data/cli_vintages.json).
    3. JST-Prüfung der Langfrist-Bausteine an 18 Ländern seit 1890 (pipeline/jst_check.py → data/jst_check.json), übernommen.
-   Aufruf: node scripts/robustness.mjs   (liest die lokale D1-Datenbank von wrangler dev wie scripts/backtest.mjs --local) */
+   4. mit --alfred datei.json: Baugenehmigungen und Fed Z.1 (Aktienanteil am Anlegervermögen) im damals veröffentlichten
+      gegenüber dem heutigen Stand, ab dem ersten Datenstand (pipeline/alfred_snapshots.py bzw. Job alfred_vintages).
+   Aufruf: node scripts/robustness.mjs [--alfred datei.json]   (liest die lokale D1-Datenbank wie scripts/backtest.mjs --local) */
 import { writeFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,5 +69,24 @@ const out = { generated: new Date().toISOString(), version: SIG.cfg.version };
 }
 // 3. JST
 if (existsSync(data("jst_check.json"))) out.jst = JSON.parse(readFileSync(data("jst_check.json"), "utf8"));
+// 4. ALFRED: Aktien und Gold (Bewertung über den Aktienanteil), Horizonte 12 Monate und 5–10 Jahre, ab dem ersten Z.1-Datenstand
+const ai = process.argv.indexOf("--alfred");
+if (ai > 0) {
+  const alfred = JSON.parse(readFileSync(process.argv[ai + 1], "utf8"));
+  out.alfred = {};
+  let from = null;
+  for (const mode of ["revised", "realtime"]) {
+    const L = buildBacktestLive(raw, { vintages: vint, alfred: mode === "realtime" ? alfred : null });
+    if (mode === "realtime") from = SIG.isoOf(L.alfred.aiae_us.from).slice(0, 7);
+    const panel = runPanel(L, { from: from || "2013-06", horizons: ["m1", "y1", "lt"] });
+    out.alfred[mode] = {};
+    for (const hz of ["m1", "y1", "lt"]) {
+      const E = categorize(panel.filter(e => e.hz === hz && e.score != null).map(e => ({ ...e })));
+      out.alfred[mode][hz] = { all: pick(compactAccuracy(accuracy(E, hz))), equity: pick(compactAccuracy(accuracy(E.filter(e => e.kind === "equity"), hz))) };
+      console.log(`ALFRED ${mode} ${hz} ab ${from || "2013-06"}: IC alle ${out.alfred[mode][hz].all && out.alfred[mode][hz].all.ic}, Aktien ${out.alfred[mode][hz].equity && out.alfred[mode][hz].equity.ic}`);
+    }
+  }
+  out.alfred.from = from;
+}
 writeFileSync(data("robustness.json"), JSON.stringify(out));
 console.log("geschrieben: public/data/robustness.json");

@@ -26,11 +26,12 @@ const ARCHIVE_CATCHUP_PER_RUN = 4;
 
 /* Job mit "after": erst fällig, wenn diese Jobs ihre Daten (bei "deep" die ganze Historie) archiviert haben; Jobs, die
    selbst in D1 schreiben (noArchive, etwa archive_hist), müssen einmal erfolgreich gelaufen sein. Quellen mit "version"
-   (etwa einer erweiterten Länderliste) müssen in dieser Version gelaufen sein */
-export function inputsReady(j, meta, jobs = JOBS) {
+   (etwa einer erweiterten Länderliste) müssen in dieser Version gelaufen sein. Quellen, denen eine Bindung oder ein Secret
+   fehlt (env bekannt), zählen nicht */
+export function inputsReady(j, meta, jobs = JOBS, env = null) {
   return !j.after || j.after.every(id => {
     const d = jobs.find(x => x.id === id), s = (meta.jobs && meta.jobs[id]) || {};
-    if (!d) return true;
+    if (!d || (env && !hasBindings(d, env))) return true;
     if (d.version && s.version !== d.version) return false;
     return d.noArchive ? !!s.okAt : !!(s.arch && s.arch.at && !deepPending(d, s));
   });
@@ -40,7 +41,7 @@ export function dueJobs(meta, now, jobs = JOBS, env = null) {
   const due = [];
   for (const j of jobs) {
     if (env && !hasBindings(j, env)) continue;
-    if (!inputsReady(j, meta, jobs)) continue;
+    if (!inputsReady(j, meta, jobs, env)) continue;
     const s = (meta.jobs && meta.jobs[j.id]) || {};
     if (s.retryAt && s.retryAt > now) continue;
     const last = s.okAt ? Date.parse(s.okAt) : 0;
