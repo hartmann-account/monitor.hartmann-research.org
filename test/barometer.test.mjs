@@ -25,6 +25,16 @@ test("Kategorien decken die ganze Skala ab", () => {
   assert.equal(SIG.category(1.5).n, 2);
 });
 
+test("Toleranzband: Stufe wechselt erst deutlich jenseits der Schwelle", () => {
+  const neutral = SIG.category(0), positiv = SIG.category(0.5);
+  assert.equal(SIG.category(0.35, neutral).n, 0, "knapp über 0,3 bleibt neutral");
+  assert.equal(SIG.category(0.45, neutral).n, 1, "deutlich über 0,3 wird positiv");
+  assert.equal(SIG.category(0.25, positiv).n, 1, "knapp unter 0,3 bleibt positiv");
+  assert.equal(SIG.category(0.15, positiv).n, 0, "deutlich unter 0,3 wird neutral");
+  assert.equal(SIG.category(1.5, neutral).n, 2, "Sprünge über zwei Stufen bleiben möglich");
+  assert.equal(SIG.category(-0.95, SIG.category(-1.5)).n, -2);
+});
+
 test("Anleiheindex steigt bei fallender Rendite", () => {
   const pts = [4, 3.9, 3.8, 3.7].map((v, i) => ({ t: 20000 + i * 30, e: 20000 + i * 30, x: 2024 + i / 12, v }));
   const idx = SIG.bondIndex(pts);

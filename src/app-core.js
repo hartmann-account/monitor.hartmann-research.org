@@ -13,6 +13,7 @@ function A(id, scale = 1) {
   const sc = v => (v == null ? null : v * scale);
   if (s.freq === "M") { const [y, m] = s.start.split("-").map(Number); return s.values.map((v, i) => [y + (m - 1 + i) / 12, sc(v)]); }
   if (s.freq === "Q") { const [y, q] = s.start.split("-Q").map(Number); return s.values.map((v, i) => { const k = q - 1 + i; return [y + Math.floor(k / 4) + (k % 4) / 4 + 0.125, sc(v)]; }); }
+  if (s.freq === "D") { const t0 = Math.round(Date.parse(s.start + "T00:00:00Z") / 864e5); return s.values.map((v, i) => [SIG.yearFrac(t0 + i), sc(v)]); }
   return s.values.map((v, i) => [s.start + i, sc(v)]);
 }
 function smooth(arr, k = 3) {
@@ -331,13 +332,40 @@ function renderKpis() {
   items.push({ label: "US-Schulden in Händen der Öffentlichkeit", value: fmt(L.debt_public_gdp_now.value, 1), unit: "% BIP", meta: deShort(L.debt_public_gdp_now.date), spark: A("us_debt_public_gdp").filter(p => p[0] >= 1990), color: "--s1" });
   if (ni && ytd) items.push({ label: `Nettozinsen in % der Bundeseinnahmen, Fiskaljahr ${fy ? fy.fy : ""}`, value: fmt(100 * ni.current / ytd.current.rcpt, 1), unit: "%", meta: `MTS ${deShort(ni.date)}`, spark: A("us_interest_revenue").filter(p => p[0] >= 1990).concat([[fy.fy, 100 * ni.current / ytd.current.rcpt]]), color: "--s1" });
   if (ytd && fy) items.push({ label: `Bundesdefizit Fiskaljahr ${fy.fy}`, value: fmt(100 * ytd.current.def / fy.value, 1), unit: "% BIP", meta: `${fmt(ytd.current.def, 0)} Mrd. US-$`, spark: A("us_deficit_gdp").filter(p => p[0] >= 1990).map(([x, y]) => [x, y == null ? null : -y]).concat([[fy.fy, 100 * ytd.current.def / fy.value]]), color: "--s8" });
-  const t10 = L.us10y_d || L.us10y, ffr = L.dff || L.fedfunds;
+  // tagesaktuelle Werte des Workers haben Vorrang vor dem wöchentlichen Datensatz, sofern sie jünger sind
+  const fresh = (id, base) => {
+    const p = typeof lastLive === "function" ? lastLive(id) : null;
+    if (!p) return base;
+    const iso = SIG.isoOf(p.t);
+    return !base || !base.date || iso >= base.date ? { ...(base || {}), value: p.v, date: iso } : base;
+  };
+  const t10 = fresh("y10_us", L.us10y_d || L.us10y), ffr = fresh("dff", L.dff || L.fedfunds);
+  const cpiL = typeof LP === "function" ? LP("cpi_us_index") : [];
+  if (cpiL.length > 13) {
+    const a = cpiL[cpiL.length - 1], b = SIG.valueAt(cpiL, a.t - 360);
+    const iso = SIG.isoOf(a.t);
+    if (b && (!L.cpi_yoy || iso > L.cpi_yoy.date)) L.cpi_yoy = { ...L.cpi_yoy, value: 100 * (a.v / b.v - 1), date: iso };
+  }
+  const hi = typeof LP === "function" ? LP("fed_hi") : [], lo = typeof LP === "function" ? LP("fed_lo") : [];
+  if (hi.length && lo.length && (!L.fed_target || SIG.isoOf(hi[hi.length - 1].t) >= L.fed_target.date)) {
+    const cur = hi[hi.length - 1].v;
+    let i = hi.length - 1;
+    while (i > 0 && hi[i - 1].v === cur) i--;
+    L.fed_target = { ...L.fed_target, lo: lo[lo.length - 1].v, hi: cur, date: SIG.isoOf(hi[hi.length - 1].t),
+      last_change: i > 0 ? SIG.isoOf(hi[i].t) : L.fed_target && L.fed_target.last_change, last_change_bp: i > 0 ? Math.round(100 * (cur - hi[i - 1].v)) : L.fed_target && L.fed_target.last_change_bp };
+  }
   items.push({ label: "Rendite 10-jähriger Treasuries", value: fmt(t10.value, 2), unit: "%", meta: deShort(t10.date), spark: A("us_10y_m").filter(p => p[0] >= 2000), color: "--s1",
     sparkNote: t10.max_year ? `Hoch ${fmt(t10.max_year, 2)} % (${deShort(t10.max_date)})` : null });
   items.push({ label: `Inflation (VPI, ${deMonth(L.cpi_yoy.date)})`, value: fmt(L.cpi_yoy.value, 1), unit: "%", meta: `Realzins kurz ${signed(ffr.value - L.cpi_yoy.value, 2)} Pp.`, spark: A("us_cpi_infl").filter(p => p[0] >= 2000), color: "--s2" });
   if (L.fed_target) items.push({ label: "Zielband der Federal Funds Rate", value: `${fmt(L.fed_target.lo, 2)}–${fmt(L.fed_target.hi, 2)}`, unit: "%", meta: L.fed_target.last_change ? `seit ${deShort(L.fed_target.last_change)}, ${signed(L.fed_target.last_change_bp, 0)} Bp.` : "", spark: A("us_fedfunds_m").filter(p => p[0] >= 2000), color: "--s7" });
   const G = D.curated && D.curated.values && D.curated.values.gold;
-  if (G) items.push({ label: "Goldpreis (LBMA, Nachmittag)", value: fmt(G.lbmaPm, 0), unit: "US-$/oz", meta: deShort(G.lbmaDate), spark: A("gold_usd").filter(p => p[0] >= 2000), color: "--s4", sparkNote: `Rekord ${fmt(G.athLbmaPm, 0)} (${deShort(G.athDate)})` });
+  const gl = typeof LP === "function" ? LP("gold_usd") : [];
+  const glast = gl.length ? gl[gl.length - 1] : null;
+  if (glast && (!G || SIG.isoOf(glast.t) > G.lbmaDate)) {
+    const top = gl.reduce((m, q) => (q.v > m.v ? q : m), gl[0]);
+    const ath = G && G.athLbmaPm > top.v ? { v: G.athLbmaPm, iso: G.athDate } : { v: top.v, iso: SIG.isoOf(top.t) };
+    items.push({ label: "Goldpreis", value: fmt(glast.v, 0), unit: "US-$/oz", meta: deShort(SIG.isoOf(glast.t)), spark: A("gold_usd").filter(p => p[0] >= 2000).concat(gl.filter(q => q.x > (lastPt(A("gold_usd")) || [0])[0]).map(q => [q.x, q.v])), color: "--s4", sparkNote: `Höchststand ${fmt(ath.v, 0)} (${deShort(ath.iso)})` });
+  } else if (G) items.push({ label: "Goldpreis (LBMA, Nachmittag)", value: fmt(G.lbmaPm, 0), unit: "US-$/oz", meta: deShort(G.lbmaDate), spark: A("gold_usd").filter(p => p[0] >= 2000), color: "--s4", sparkNote: `Rekord ${fmt(G.athLbmaPm, 0)} (${deShort(G.athDate)})` });
   else items.push({ label: "Goldpreis, Monatsmittel", value: fmt(L.gold_m.value, 0), unit: "US-$/oz", meta: deMonth(L.gold_m.date), spark: A("gold_usd").filter(p => p[0] >= 2000), color: "--s4" });
   const usd = D.power.coferLatest && D.power.coferLatest.CI_USD;
   if (usd != null) items.push({ label: "US-Dollar-Anteil an den Devisenreserven", value: fmt(usd, 1), unit: "%", meta: D.power.coferLatestQuarter.replace("-", " "), spark: D.power.years.map((y, i) => [y, D.power.components.cofer.share.USA[i]]).filter(p => p[0] >= 1995), color: "--s1" });

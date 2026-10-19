@@ -50,6 +50,24 @@ export async function snbCube(F, cube, dimSel, start) {
   return out;
 }
 
+/* SIX Swiss Exchange: Tagesschlusskurse von Indizes über die Kursabfrage der Börsenseite (15 Minuten verzögert).
+   valors: Valor-Kennungen wie "CH0009980894CHF9" (SMI); Rückgabe { valor: [[iso, schluss], ...] } */
+export async function sixDaily(F, valors, start) {
+  const ymd = iso => iso.slice(0, 10).replace(/-/g, "");
+  const url = `https://www.six-group.com/fqs/charts.json?select=ValorId,ClosingPrice,MarketDate&where=ValorId=${valors.join("|")}` +
+    `&fromdate=${ymd(start)}&todate=${ymd(new Date().toISOString())}&netting=1440`;
+  const j = await F.json(url, { timeout: 30000 });
+  const out = {};
+  for (const v of (j && j.valors) || []) {
+    const d = v.data || {};
+    if (!v.ValorId || !Array.isArray(d.Date) || !Array.isArray(d.Close)) continue;
+    const iso = n => { const s = String(n); return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`; };
+    out[v.ValorId] = d.Date.map((x, i) => [iso(x), d.Close[i]]).filter(p => p[1] != null && isFinite(p[1]));
+  }
+  if (!Object.keys(out).length) throw new Error("SIX: keine Kursdaten");
+  return out;
+}
+
 /* SNB-RSS (RSS-CB): tagesaktuelle Zinssätze, etwa R10 = Rendite 10-jähriger Eidgenossen */
 export async function snbRssRates(F) {
   const xml = await F.text("https://www.snb.ch/public/rss/en/interestRates", { timeout: 20000 });

@@ -38,12 +38,13 @@ for (const job of JOBS) {
     },
     seed: async p => { const f = join(root, "public", p); return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : null; },
   };
-  const t0 = Date.now();
+  const t0 = Date.now(), c0 = process.cpuUsage();
   try {
     const res = await runJob(job, F, ctx);
+    const cpu = process.cpuUsage(c0);
     data[job.id] = res;
     meta.jobs[job.id] = { ...summarize(res), ok: true, okAt: new Date().toISOString(), error: null };
-    console.log(`ok    ${job.id.padEnd(18)} ${String(meta.jobs[job.id].n).padStart(3)} Reihen  bis ${meta.jobs[job.id].latest || "–"}  (${F.used} Abrufe, ${Date.now() - t0} ms)`);
+    console.log(`ok    ${job.id.padEnd(18)} ${String(meta.jobs[job.id].n).padStart(3)} Reihen  bis ${meta.jobs[job.id].latest || "–"}  (${F.used} Abrufe, ${Date.now() - t0} ms, CPU ${((cpu.user + cpu.system) / 1000).toFixed(0)} ms)`);
   } catch (e) {
     failed++;
     const prevSt = (prevSnap.status || {})[job.id] || {};

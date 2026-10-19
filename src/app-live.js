@@ -10,6 +10,7 @@ const LSRC = {
   fred: { name: "FRED, Federal Reserve Bank of St. Louis", url: "https://fred.stlouisfed.org/" },
   ecb: { name: "Europäische Zentralbank, Data Portal", url: "https://data.ecb.europa.eu/" },
   snb: { name: "Schweizerische Nationalbank, Datenportal", url: "https://data.snb.ch/" },
+  six: { name: "SIX Swiss Exchange, Indexkurse (15 Minuten verzögert)", url: "https://www.six-group.com/de/market-data/indices.html" },
   bundesbank: { name: "Deutsche Bundesbank, Zeitreihen-Datenbank", url: "https://www.bundesbank.de/de/statistiken/zeitreihen-datenbanken" },
   boe: { name: "Bank of England, Database", url: "https://www.bankofengland.co.uk/boeapps/database/" },
   mof: { name: "Japanisches Finanzministerium, JGB-Renditen", url: "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/index.htm" },
@@ -19,7 +20,7 @@ const LSRC = {
   imf_cofer: { name: "IWF COFER", url: "https://data.imf.org/en/datasets/IMF.STA:COFER" },
   wb: { name: "Weltbank, World Development Indicators und Bevölkerungsprojektionen", url: "https://data.worldbank.org/" },
   treasury: { name: "U.S. Treasury, Fiscal Data", url: "https://fiscaldata.treasury.gov/" },
-  gdelt: { name: "GDELT Project, DOC 2.0 API", url: "https://www.gdeltproject.org/" },
+  gdelt: { name: "GDELT Project, Ereignisdatenbank (Event Export 2.0)", url: "https://www.gdeltproject.org/data.html#rawdatafiles" },
   polymarket: { name: "Polymarket (Prognosemarkt)", url: "https://polymarket.com/" },
   gdacs: { name: "GDACS, Global Disaster Alert and Coordination System", url: "https://www.gdacs.org/" },
   nasa: { name: "NASA GISS, GISTEMP v4", url: "https://data.giss.nasa.gov/gistemp/" },
@@ -55,7 +56,25 @@ function catOf(r) { return r && r.now ? r.now.cat : null; }
 /* ------------------------------------------------------------------ Was steigt, was fällt (Kopfbereich) */
 const MOVER_IDS = ["eq_us", "eq_ch", "eq_ea", "eq_cn", "gold_usd", "fx_chf", "bd_us", "brent"];
 function trendWord(r) { const t = r.now.pillars.trend; if (!t) return "→ seitwärts"; return t.s > 0.3 ? "↑ Aufwärtstrend" : t.s < -0.3 ? "↓ Abwärtstrend" : "→ seitwärts"; }
-function moverName(r) { return r.row.group === "aktien" ? `Aktien ${r.row.label}` : r.row.group === "anleihen" ? r.row.label : r.row.label; }
+function moverName(r) {
+  const { id, group, label } = r.row;
+  if (id === "eq_world") return "Aktien weltweit";
+  if (group === "aktien") return `Aktien ${label}`;
+  if (group === "anleihen") return `Staatsanleihen ${label}`;
+  return label;
+}
+/* Hinweis bei Zeilen, deren jüngster Kurs nicht tagesaktuell ist (Monatsreihen, verzögert veröffentlichte Reihen) */
+function staleNote(r) {
+  const p = r.now && r.now.price;
+  if (!p || p.length < 2 || BARO.tNow == null) return null;
+  const a = p[p.length - 1], b = p[p.length - 2], iso = SIG.isoOf(a.t);
+  if (a.t - b.t > 20) {
+    const m = new Date(iso + "T12:00:00Z");
+    return { short: "Stand " + m.toLocaleDateString(LOCALE, { month: "short", timeZone: "UTC" }), long: `Monatswert ${deMonth(iso)}` };
+  }
+  if (BARO.tNow - a.t > 6) return { short: `Stand ${+iso.slice(8, 10)}.${+iso.slice(5, 7)}.`, long: `letzter Kurs vom ${deShort(iso)}` };
+  return null;
+}
 function renderMovers() {
   const host = document.getElementById("movers");
   if (!BARO) { host.replaceChildren(); return; }
@@ -79,7 +98,8 @@ function renderMovers() {
 const GROUP_LABELS = { klassen: "Anlageklassen", aktien: "Aktien", anleihen: "Staatsanleihen", kredit: "Unternehmensanleihen", waehrungen: "Währungen gegenüber dem US-Dollar", rohstoffe: "Rohstoffe", relativ: "Relative Stärke" };
 function barEl(label, short, n, prevN, title) {
   const chg = prevN != null && prevN !== n;
-  const el = h("span", { class: `pg-bar c${n}${chg ? " chg " + (n > prevN ? "up" : "down") : ""}`, style: `left:${(n + 2) * 16.6667}%`, title, "data-short": short || "" },
+  const sym = (SIG.cfg.cats.find(c => c.n === n) || {}).sym || "";
+  const el = h("span", { class: `pg-bar c${n}${chg ? " chg " + (n > prevN ? "up" : "down") : ""}`, style: `left:${(n + 2) * 16.6667}%`, title, "data-short": short || "", "data-sym": sym },
     chg ? h("i", { "aria-hidden": "true" }) : null, h("b", { text: label }));
   if (chg) el.style.setProperty("box-shadow", "none"), el.style.setProperty("background", `var(--o${n})`);
   return el;
@@ -129,6 +149,7 @@ function detailPanel(r) {
     h("p", { class: "small", style: "margin-top:8px" },
       `${r.row.label}${r.row.sub ? " (" + r.row.sub + ")" : ""}: Gesamtwert ${signed(r.now.score, 2)} auf der Skala −2 bis +2, Datenstand ${deShort(SIG.isoOf(r.now.date))}; abgedeckt sind ${fmt(100 * r.now.coverage, 0)} % der Säulengewichte.`,
       r.prev && r.prev.cat ? ` Vor einem Monat: ${signed(r.prev.score, 2)} (${r.prev.cat.label}).` : "",
+      r.now.raw && r.now.raw.n !== r.now.cat.n ? ` Die Stufe bleibt wegen des Toleranzbands bei „${r.now.cat.label}“; rechnerisch läge der Wert bei „${r.now.raw.label}“.` : "",
       r.perf ? ` Seit Jahresbeginn ${signed(100 * (r.perf.ytd ?? NaN), 1)} %, drei Monate ${signed(100 * (r.perf.m3 ?? NaN), 1)} %.` : ""));
 }
 function gridHead(extra = true) {
@@ -141,8 +162,11 @@ function gridHead(extra = true) {
 function gridRow(r) {
   const c = r.now.cat, pc = r.prev && r.prev.cat ? r.prev.cat.n : null;
   const title = `${r.row.label}${r.row.sub ? " (" + r.row.sub + ")" : ""}: ${c.label} (${signed(r.now.score, 2)})${pc != null ? `; vor einem Monat ${r.prev.cat.label}` : ""}. ${trendWord(r)}.`;
-  const row = h("div", { class: "pg-row", id: "baro-" + r.row.id, role: "button", tabindex: "0", "aria-expanded": "false", "aria-label": title },
-    h("div", { class: "pg-track" }, barEl(r.row.label, r.row.short, c.n, pc, title)),
+  const st = staleNote(r);
+  const row = h("div", { class: "pg-row", id: "baro-" + r.row.id, role: "button", tabindex: "0", "aria-expanded": "false", "aria-label": title + (st ? ` Datenstand: ${st.long}.` : "") },
+    h("div", { class: "pg-name", "aria-hidden": "true", text: r.row.label }),
+    h("div", { class: "pg-track" }, barEl(r.row.label, r.row.short, c.n, pc, title),
+      st ? h("span", { class: `pg-stale ${c.n >= 1 ? "l" : "r"}`, title: st.long, text: st.short }) : null),
     h("div", { class: "pg-spark" }, sparkline(r.spark, "--ink-2")),
     perfDiv(r.perf.m1, "m1"), perfDiv(r.perf.y1, "y1"),
     h("div", { class: "pg-caret", "aria-hidden": "true", text: "▸" }));
@@ -205,6 +229,7 @@ function renderBarometer() {
 function collectIds(spec) {
   if (spec == null) return [];
   if (typeof spec === "string") return [spec];
+  if (Array.isArray(spec)) return collectIds(spec[0]);
   if (spec.bond) return [spec.bond];
   if (spec.spread) return [spec.spread];
   if (spec.inv) return collectIds(spec.inv);
@@ -230,13 +255,14 @@ function riskScorecard(host) {
   rows.push({ label: "Modell gesamt", now: w.now.score, prev: w.prev ? w.prev.score : null, total: true });
   const sh = sheet(host, { title: "Indikatoren für die Risikoausrichtung", sub: "Säulen des Signals für Aktien weltweit: positiv = Umfeld spricht für riskante Anlagen, negativ = für sichere Häfen" });
   const grid = h("div", { class: "pgrid" },
-    h("div", { class: "pg-group pg-hgroup no-label" }, h("div", { class: "pg-head", style: "grid-template-columns:minmax(200px,1fr) 150px" },
+    h("div", { class: "pg-group pg-hgroup no-label" }, h("div", { class: "pg-head score" },
       h("div", { class: "pg-scale-h" }, h("span", { text: "risikoscheu −" }), h("span", { text: "neutral o" }), h("span", { text: "risikofreudig +" })), h("div", { class: "h num-h", text: "Wert (Vormonat)" }))));
   const body = h("div", { class: "pg-group no-label" }, h("div", { class: "pg-rows" }, ...rows.map(x => {
-    const c = SIG.category(x.now), pc = x.prev == null ? null : SIG.category(x.prev).n;
-    return h("div", { class: "pg-row", style: "grid-template-columns:minmax(200px,1fr) 150px;cursor:default" + (x.total ? ";border-top:1px solid var(--axis)" : "") },
+    const pc = x.prev == null ? null : SIG.category(x.prev).n, c = SIG.category(x.now, pc);
+    return h("div", { class: "pg-row score" + (x.total ? " total" : "") },
+      h("div", { class: "pg-name", "aria-hidden": "true", text: x.label }),
       h("div", { class: "pg-track" }, barEl(x.label, x.label.split(" ")[0], c.n, pc, `${x.label}: ${c.label} (${signed(x.now, 2)})`)),
-      h("div", { class: "pg-num", text: `${signed(x.now, 2)} (${x.prev == null ? "–" : signed(x.prev, 2)})` }));
+      h("div", { class: "pg-num y1", text: `${signed(x.now, 2)} (${x.prev == null ? "–" : signed(x.prev, 2)})` }));
   })));
   grid.append(body);
   sh.body.append(h("div", { style: "overflow-x:auto" }, grid));
@@ -277,7 +303,7 @@ function renderBaroMethod() {
     h("div", { style: "overflow-x:auto" }, h("table", null,
       h("thead", null, h("tr", null, h("th", { text: "Gewichte" }), ...P.map(p => h("th", { text: p.label })))),
       h("tbody", null, ...Object.entries(W).map(([k, w]) => h("tr", null, h("td", { text: kinds[k] }), ...P.map(p => h("td", { text: w[p.id] ? fmt(100 * w[p.id], 0) + " %" : "–" }))))))),
-    h("p", { text: `Einstufung nach Gesamtwert: ${SIG.cfg.cats.map((c, i) => `${c.sym} ${c.label} ${c.max === Infinity ? `über ${fmt(SIG.cfg.cats[i - 1].max, 1)}` : `bis ${fmt(c.max, 1)}`}`).join(" · ")}.` }),
+    h("p", { text: `Einstufung nach Gesamtwert: ${SIG.cfg.cats.map((c, i) => `${c.sym} ${c.label} ${c.max === Infinity ? `über ${fmt(SIG.cfg.cats[i - 1].max, 1)}` : `bis ${fmt(c.max, 1)}`}`).join(" · ")}. Gegenüber der Vormonatsstufe gilt ein Toleranzband von ${fmt(SIG.cfg.hyst, 1)}: Die Stufe wechselt erst, wenn der Gesamtwert die Schwelle um mehr als diesen Betrag überschreitet. Das verhindert, dass Werte nahe einer Schwelle jeden Monat hin- und herspringen.` }),
     h("p", { text: "Anleihekurse werden aus der Rendite zehnjähriger Staatsanleihen geschätzt (Duration 8,5, Konvexität 85, laufender Kupon). Währungen sind als Preis der Währung in US-Dollar notiert; ein positives Signal bedeutet erwartete Aufwertung gegenüber dem Dollar. Die geopolitische Komponente nutzt den Spannungsmonitor: Steigt die Berichterstattung über eine Konfliktlinie deutlich über ihr Viermonatsmittel, belastet das die betroffenen Märkte (etwa China bei Spannungen mit den USA oder um Taiwan) und stützt Öl bei Spannungen im Nahen Osten." }),
     h("p", { class: "small", text: "Darstellung und Säulen lehnen sich an die monatliche Asset-Allocation-Übersicht von Pictet Asset Management an (Konjunkturzyklus, Liquidität, Bewertung, Technik und Stimmung). Der Monitor verwendet keine Daten oder Einschätzungen von Pictet; Regeln, Schwellen und Gewichte sind Setzungen dieses Monitors. Keine Anlageberatung." }));
 }

@@ -7,7 +7,7 @@
 import { dailySeries, monthlySeries } from "./lib/series.js";
 import { meta, since, D, M, ratio } from "./lib/jobutil.js";
 import { fredMulti } from "./providers/official.js";
-import { ecbData, snbCube, snbRssRates, bundesbank, boe, mofJgb, bis, imfSdmx, nbpGoldUsd, bojApi } from "./providers/markets.js";
+import { ecbData, snbCube, snbRssRates, sixDaily, bundesbank, boe, mofJgb, bis, imfSdmx, nbpGoldUsd, bojApi } from "./providers/markets.js";
 import { MACRO_JOBS } from "./jobs-macro.js";
 import { GEO_JOBS } from "./jobs-geo.js";
 
@@ -180,6 +180,17 @@ const MARKET_JOBS = [
     },
   },
   {
+    // tagesaktuell; die SNB-Reihen (monatlich veröffentlicht) bleiben Rückfall und liefern die ältere Historie
+    id: "six_ch", label: "Schweizer Aktien tagesaktuell (SMI, SPI)", source: "six", every: 6, cost: 1, keep: true,
+    async run(F, ctx) {
+      const r = await sixDaily(F, ["CH0009980894CHF9", "CH0009987501CHF9"], since(ctx, "eq_ch_six", "2014-01-01"));
+      const s = {};
+      if (r.CH0009980894CHF9) s.eq_ch_six = D(ctx, "eq_ch_six", r.CH0009980894CHF9, meta("Swiss Market Index (SMI)", "Punkte", "six"));
+      if (r.CH0009987501CHF9) s.eq_ch_spi_six = D(ctx, "eq_ch_spi_six", r.CH0009987501CHF9, meta("Swiss Performance Index (SPI)", "Punkte", "six"));
+      return { series: s };
+    },
+  },
+  {
     id: "boe", label: "Gilts 10 Jahre und Bank Rate", source: "boe", every: 12, cost: 2, keep: true,
     async run(F, ctx) {
       const r = await boe(F, ["IUDMNPY", "IUDBEDR"], since(ctx, "y10_gb", "2014-01-01"));
@@ -215,6 +226,19 @@ const MARKET_JOBS = [
         const sid = "pr_" + (c === "XM" ? "ea" : c.toLowerCase());
         if (pts && pts.length) s[sid] = D(ctx, sid, pts, meta(`Leitzins ${l}`, "%", "bis"));
         else if (ctx.prev && ctx.prev.series && ctx.prev.series[sid]) s[sid] = ctx.prev.series[sid];
+      }
+      return { series: s };
+    },
+  },
+  {
+    id: "bis_reer", label: "Reale effektive Wechselkurse (Bewertung der Währungen)", source: "bis", every: 24, cost: 1,
+    async run(F) {
+      const r = await bis(F, "WS_EER", "M.R.B.US+XM+CH+JP+GB+CN+IN", "2000-01");
+      const s = {};
+      const names = { US: "US-Dollar", XM: "Euro", CH: "Schweizer Franken", JP: "Yen", GB: "Pfund", CN: "Renminbi", IN: "Rupie" };
+      for (const [c, l] of Object.entries(names)) {
+        const pts = r["M.R.B." + c];
+        if (pts && pts.length) s["reer_" + (c === "XM" ? "ea" : c.toLowerCase())] = monthlySeries(pts, meta(`Realer effektiver Wechselkurs: ${l}`, "Index 2020 = 100", "bis"));
       }
       return { series: s };
     },

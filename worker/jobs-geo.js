@@ -27,13 +27,12 @@ function pickMarkets(ev, now) {
     try { outcomes = JSON.parse(m.outcomes || "[]"); } catch { /* ignorieren */ }
     return { q: m.question, p: prices[0], vol: +(m.volume || 0), end: (m.endDate || "").slice(0, 10), d1: m.oneDayPriceChange == null ? null : +m.oneDayPriceChange, label: m.groupItemTitle || outcomes[0] || null };
   }).filter(m => m.p != null && isFinite(m.p) && (!m.end || Date.parse(m.end) > now));
-  if (parsed.length <= 2) return parsed;
-  // Ereignisse mit Fristen ("bis ..."): nächster Termin mindestens 30 Tage voraus und spätester Termin
-  if (parsed.every(m => /by|before|bis/i.test(m.q))) {
-    const sorted = parsed.slice().sort((a, b) => (a.end < b.end ? -1 : 1));
-    const near = sorted.find(m => Date.parse(m.end) - now > 30 * 864e5) || sorted[0];
-    const far = sorted[sorted.length - 1];
-    return near === far ? [near] : [near, far];
+  if (parsed.length <= 1) return parsed;
+  // Fristen-Staffeln ("bis …", "vor …"): ein Markt je Ereignis, der umsatzstärkste mit mindestens drei Wochen Restlaufzeit
+  if (new Set(parsed.map(m => m.end)).size > 1 && parsed.every(m => /\b(by|before|in)\b/i.test(m.q))) {
+    const later = parsed.filter(m => !m.end || Date.parse(m.end) - now >= 21 * 864e5);
+    const pool = later.length ? later : parsed;
+    return [pool.slice().sort((a, b) => b.vol - a.vol)[0]];
   }
   // Ereignisse mit mehreren Ausgängen (etwa Zinsentscheid): die zwei wahrscheinlichsten
   return parsed.sort((a, b) => b.p - a.p).slice(0, 2);

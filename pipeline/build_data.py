@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import html
 import json
 import math
 import os
+import re
 import sys
 import urllib.request
 import zipfile
@@ -27,7 +29,7 @@ import zipfile
 import numpy as np
 import pandas as pd
 
-UA = "bigcycle-monitor/0.1 (+https://github.com/)"
+UA = "Mozilla/5.0 (compatible; BigCycleMonitor/2.0; +https://monitor.hartmann-research.org)"
 Y0, Y1 = 1820, 2026          # Zeitraum des Machtindex
 YEARS = np.arange(Y0, Y1 + 1)
 NY = len(YEARS)
@@ -77,8 +79,10 @@ WB_IDS = ["NE.EXP.GNFS.CD", "CM.MKT.LCAP.CD", "NY.GDP.MKTP.PP.CD", "NY.GDP.MKTP.
 IMF_DM_IDS = ["d", "ie", "DEBT1", "PPPSH", "GGXWDG_NGDP", "BCA_NGDPD"]
 
 URLS = {
-    "shiller": ("shiller/ie_data.xls", "http://www.econ.yale.edu/~shiller/data/ie_data.xls"),
+    "shiller": ("shiller/ie_data.xls", None),  # Adresse wechselt mit jeder Aktualisierung, siehe shiller_url()
     "gpr": ("gpr/data_gpr_export.xls", "https://www.matteoiacoviello.com/gpr_files/data_gpr_export.xls"),
+    "gpr_daily": ("gpr/data_gpr_daily_recent.xls", "https://www.matteoiacoviello.com/gpr_files/data_gpr_daily_recent.xls"),
+    "tpu": ("tpu/tpu_web_latest.xlsx", "https://www.matteoiacoviello.com/tpu_files/tpu_web_latest.xlsx"),
     "jst": ("jst/JSTdatasetR6.dta", "https://www.macrohistory.net/app/download/9834512469/JSTdatasetR6.dta?t=1720600177"),
     "cow": ("cow/NMCv7.zip", "https://correlatesofwar.org/wp-content/uploads/NMCv7.zip"),
     "gold": ("gold/monthly.csv", "https://raw.githubusercontent.com/datasets/gold-prices/main/data/monthly.csv"),
@@ -91,6 +95,26 @@ URLS = {
     "treasury_mts9": ("treasury/mts9.json", "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/mts/mts_table_9?sort=-record_date&page[size]=1000"),
     "cofer": ("imf_cofer/cofer.csv", "https://api.imf.org/external/sdmx/2.1/data/IMF.STA,COFER/?startPeriod=1990"),
 }
+
+
+# Shiller-Daten: Die Yale-Datei wird seit 2023 nicht mehr fortgeschrieben; die aktuelle Fassung liegt auf
+# shillerdata.com unter einer Adresse, die sich mit jeder Aktualisierung ändert. Sie wird daher aus der Seite gelesen.
+SHILLER_PAGE = "https://shillerdata.com/"
+SHILLER_FALLBACK = ("https://img1.wsimg.com/blobby/go/e5e77e0b-59d1-44d9-ab25-4763ac982e53/downloads/"
+                    "1449043e-a1ed-4e2e-8e9c-7b9a2a064493/ie_data.xls?ver=1791297298731")
+
+
+def shiller_url() -> str:
+    try:
+        req = urllib.request.Request(SHILLER_PAGE, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            page = r.read().decode("utf-8", "replace")
+        m = re.search(r'https://img1\.wsimg\.com/blobby/go/[^"\'\s<>]+?/ie_data\.xls[^"\'\s<>]*', page)
+        if m:
+            return html.unescape(m.group(0))
+    except Exception as e:  # noqa: BLE001
+        print("WARN shillerdata.com nicht erreichbar:", e, file=sys.stderr)
+    return SHILLER_FALLBACK
 
 
 # ----------------------------------------------------------------------------
@@ -144,6 +168,8 @@ def fetch_all(cache: str, refresh: bool) -> list[str]:
         safe(f"https://www.imf.org/external/datamapper/api/v1/{ind}", os.path.join(cache, "imf_dm", f"{ind}.json"))
     for key, (rel, url) in URLS.items():
         hdr = {"Accept": "application/vnd.sdmx.data+csv;version=1.0.0"} if key == "cofer" else None
+        if key == "shiller":
+            url = shiller_url()
         safe(url, os.path.join(cache, rel), hdr)
     cow_zip = os.path.join(cache, "cow", "NMCv7.zip")
     if os.path.exists(cow_zip):
@@ -921,6 +947,30 @@ def build_series(cache):
         if col in g.columns:
             put(f"gpr_hist_{iso.lower()}", f"Geopolitisches Risiko mit Bezug auf {CTRY_DE[iso]}", "Index, Jahresmittel",
                 ["gpr"], annual_mean(g[col].dropna()))
+    gprc_de = {"USA": "die USA", "CHN": "China", "RUS": "Russland", "UKR": "die Ukraine", "ISR": "Israel", "TWN": "Taiwan",
+               "DEU": "Deutschland", "JPN": "Japan", "IND": "Indien", "GBR": "Großbritannien", "CHE": "die Schweiz"}
+    for iso, name in gprc_de.items():
+        col = f"GPRC_{iso}"
+        if col in g.columns:
+            put(f"gprc_{iso.lower()}", f"Geopolitisches Risiko mit Bezug auf {name}", "% der Artikel",
+                ["gpr"], monthly=g[col][g.index >= "2000-01-01"].dropna(), nd=3)
+    try:
+        gd = pd.read_excel(os.path.join(cache, "gpr", "data_gpr_daily_recent.xls"))
+        gd["d"] = pd.to_datetime(gd["DAY"].astype(int).astype(str), format="%Y%m%d")
+        gd = gd.set_index("d")["GPRD"].astype(float)
+        gd = gd[gd.index >= gd.index[-1] - pd.Timedelta(days=4 * 366)]
+        gd = gd.reindex(pd.date_range(gd.index[0], gd.index[-1], freq="D"))
+        S["gpr_daily"] = {"label": "Geopolitischer Risikoindex, täglich (GPRD)", "unit": "Index, 1985–2019 = 100", "src": ["gpr"],
+                          "freq": "D", "start": gd.index[0].strftime("%Y-%m-%d"), "values": arr(gd.values, 4)}
+    except Exception as e:  # noqa: BLE001
+        print("WARN GPR täglich:", e, file=sys.stderr)
+    try:
+        tp = pd.read_excel(os.path.join(cache, "tpu", "tpu_web_latest.xlsx"), sheet_name="TPU_MONTHLY")
+        tp["DATE"] = pd.to_datetime(tp["DATE"])
+        tp = tp.set_index("DATE")["TPU"].astype(float).dropna()
+        put("tpu_m", "Handelspolitische Unsicherheit (TPU)", "Index, 1985–2010 = 100", ["tpu"], monthly=tp, nd=4)
+    except Exception as e:  # noqa: BLE001
+        print("WARN TPU:", e, file=sys.stderr)
     lr = owid_df(cache, "global-deaths-in-violent-political-conflicts-over-the-long-run")
     put("conflict_deaths_longrun", "Todesopfer in Konflikten weltweit (Conflict Catalog)", "Todesopfer pro Jahr",
         ["owid_conflict_catalog"], series_points(lr, "World", "number_deaths_ongoing_conflicts__conflict_type_all"), nd=3)
@@ -1116,6 +1166,20 @@ def build_latest(cache):
         L[key] = {"label": label, "value": r4(float(s.iloc[-1]) * scale, nd), "date": s.index[-1].strftime("%Y-%m-%d"),
                   "unit": unit, "src": src}
 
+    try:
+        sh = pd.read_excel(os.path.join(cache, "shiller", "ie_data.xls"), sheet_name="Data", header=7)
+        sh = sh[pd.to_numeric(sh["Date"], errors="coerce").notna()].copy()
+        cape = pd.to_numeric(sh["CAPE"], errors="coerce")
+        dates = sh["Date"].astype(float)
+        ok = cape.notna()
+        cape, dates = cape[ok], dates[ok]
+        v = float(cape.iloc[-1])
+        y = int(dates.iloc[-1])
+        m = int(round((float(dates.iloc[-1]) - y) * 100))
+        L["cape"] = {"label": "Shiller-KGV (CAPE) S&P 500", "value": r4(v, 4), "pct": r4(float((cape <= v).mean()), 3),
+                     "date": f"{y}-{m:02d}-01", "since": int(dates.iloc[0]), "unit": "", "src": ["shiller"]}
+    except Exception as e:  # noqa: BLE001
+        print("WARN CAPE:", e, file=sys.stderr)
     last(fred(cache, "FEDFUNDS"), "fedfunds", "Federal Funds Rate (Monatsmittel)", "%", ["fred:FEDFUNDS"])
     last(fred(cache, "GS10"), "us10y", "Rendite 10-jähriger Treasuries (Monatsmittel)", "%", ["fred:GS10"])
     last(fred(cache, "TB3MS"), "us3m", "Rendite 3-monatiger Schatzwechsel (Monatsmittel)", "%", ["fred:TB3MS"])
@@ -1269,7 +1333,8 @@ def build_sources(cache):
         "imf_cofer": {"name": "IMF COFER: Währungszusammensetzung der Devisenreserven", "citation": "International Monetary Fund. Currency Composition of Official Foreign Exchange Reserves (COFER).", "url": "https://data.imf.org/en/datasets/IMF.STA:COFER"},
         "wb": {"name": "Weltbank, World Development Indicators (API)", "url": "https://data.worldbank.org/"},
         "fred": {"name": "FRED, Federal Reserve Bank of St. Louis", "url": "https://fred.stlouisfed.org/"},
-        "shiller": {"name": "Robert J. Shiller, Online Data (ie_data.xls)", "url": "http://www.econ.yale.edu/~shiller/data.htm"},
+        "shiller": {"name": "Robert J. Shiller, Online Data (ie_data.xls)", "url": "https://shillerdata.com/"},
+        "tpu": {"name": "Trade Policy Uncertainty Index", "citation": "Caldara, D., Iacoviello, M., Molligo, P., Prestipino, A., Raffo, A. (2020): The Economic Effects of Trade Policy Uncertainty. Journal of Monetary Economics 109, 38–59.", "url": "https://www.matteoiacoviello.com/tpu.htm"},
         "gpr": {"name": "Geopolitical Risk Index", "citation": "Caldara, D., Iacoviello, M. (2022): Measuring Geopolitical Risk. American Economic Review 112(4), 1194–1225.", "url": "https://www.matteoiacoviello.com/gpr.htm"},
         "jst": {"name": "Jordà-Schularick-Taylor Macrohistory Database, Release 6", "citation": "Jordà, Ò., Schularick, M., Taylor, A. M. (2017): Macrofinancial History and the New Business Cycle Facts. NBER Macroeconomics Annual 2016, Vol. 31.", "url": "https://www.macrohistory.net/database/"},
         "cow": {"name": "Correlates of War, National Material Capabilities v7", "citation": "Singer, J. D., Bremer, S., Stuckey, J. (1972): Capability Distribution, Uncertainty, and Major Power War, 1820–1965. In: Russett, B. (Hg.): Peace, War, and Numbers. Beverly Hills: Sage, 19–48.", "url": "https://correlatesofwar.org/data-sets/national-material-capabilities/"},

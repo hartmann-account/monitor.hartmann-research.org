@@ -189,6 +189,7 @@ const SIG = (() => {
       { n: 1, sym: "+", label: "positiv", max: 0.9 },
       { n: 2, sym: "++", label: "klar positiv", max: Infinity },
     ],
+    hyst: 0.1,
     // Risiko-Beta: wie stark eine Anlage von Risikoappetit (+) oder Risikoscheu (−) profitiert
     beta: { equity: 1, em: 1.2, credit: 1, commodity: 0.7, gold: -0.7, safeFx: -0.9, fx: 0.2, usd: -0.3, safeBond: -0.6, bond: -0.3, crypto: 1.2 },
     regions: {
@@ -251,7 +252,8 @@ const SIG = (() => {
 
     { id: "rel_ch_us", group: "relativ", label: "Schweiz vs. USA", short: "CH vs. US", sub: "SMI gegenüber S&P 500, beide in Franken", kind: "relative", regions: ["CH", "US"], price: { ratio: ["eq_ch", { product: ["eq_us", { inv: "fx_chf" }] }] } },
     { id: "rel_ea_us", group: "relativ", label: "Eurozone vs. USA", short: "EZ vs. US", sub: "Euro Stoxx 50 gegenüber S&P 500, beide in US-Dollar", kind: "relative", regions: ["EA", "US"], price: { ratio: [{ product: ["eq_ea", "fx_eur"] }, "eq_us"] } },
-    { id: "rel_em_us", group: "relativ", label: "Schwellenl. vs. USA", short: "EM vs. US", sub: "MSCI EM gegenüber S&P 500", kind: "relative", regions: ["EM", "US"], price: { ratio: ["eq_em", "eq_us"] } },
+    { id: "rel_em_us", group: "relativ", label: "Schwellenl. vs. USA", short: "EM vs. US", sub: "MSCI EM gegenüber S&P 500; ohne MSCI-Daten Korb aus China und Indien in US-Dollar", kind: "relative", regions: ["EM", "US"], price: { ratio: ["eq_em", "eq_us"] },
+      fallback: { ratio: [{ basket: [[{ product: ["eq_cn", "fx_cny"] }, 0.6], [{ product: ["eq_in", "fx_inr"] }, 0.4]] }, "eq_us"] } },
     { id: "rel_eq_bd", group: "relativ", label: "Aktien vs. Anleihen", short: "Akt./Anl.", sub: "S&P 500 gegenüber 10-jährigen Treasuries", kind: "relative", regions: ["US", null], price: { ratio: ["eq_us", { bond: "y10_us" }] } },
     { id: "rel_gold_eq", group: "relativ", label: "Gold vs. Aktien", short: "Gold/Akt.", sub: "Gold gegenüber S&P 500", kind: "relative", regions: [null, "US"], price: { ratio: ["gold_usd", "eq_us"] } },
   ];
@@ -579,9 +581,16 @@ const SIG = (() => {
     return { s: Math.max(-2, Math.min(2, s)), parts };
   }
 
-  function category(score) {
+  /* Einstufung; mit Vorstufe gilt ein Toleranzband: Die Stufe wechselt erst, wenn der Wert die Schwelle um mehr
+     als cfg.hyst überschreitet. So springen Werte nahe einer Schwelle nicht jeden Monat hin und her. */
+  function category(score, prev) {
     if (score == null) return null;
-    return cfg.cats.find(c => score <= c.max);
+    const c = cfg.cats.find(c => score <= c.max);
+    const pn = prev == null ? null : typeof prev === "object" ? prev.n : prev;
+    const P = pn == null ? null : cfg.cats[pn + 2];
+    if (!P) return c;
+    const lo = pn > -2 ? cfg.cats[pn + 1].max : -Infinity;
+    return score > lo - cfg.hyst && score <= P.max + cfg.hyst ? P : c;
   }
 
   // lange Monatshistorie (Kennung <id>_m) für die Bewertung, sonst die Tagesreihe
@@ -631,6 +640,7 @@ const SIG = (() => {
       // Vormonat: 30 Tage vor dem jüngsten Kurs der Zeile (Monatsreihen und verzögert veröffentlichte Reihen)
       const cutRow = tPrev != null ? Math.min(tPrev, now.date - 30) : null;
       const prev = cutRow != null ? evaluate(L, row, cutRow, cutRow === tPrev ? raPrev : riskAppetite(L, cutRow)) : null;
+      if (prev && prev.cat) { now.raw = now.cat; now.cat = category(now.score, prev.cat); }
       const p = now.price;
       const perf = {
         m1: change(p, 30, "pct"), m3: change(p, 91, "pct"), y1: change(p, 365, "pct"),
@@ -713,6 +723,15 @@ const SIG = (() => {
       const pts = m.filter(q => q.t < firstDaily).concat(dedup);
       if (pts.length) S[id] = { id, f: dedup.length ? "D" : "M", l: label, src: (S[dailyIds.find(x => S[x])] || S[monthlyId] || {}).src, pts };
     };
+    // tagesaktuelle Reihe ab ihrem Beginn, davor die ältere Reihe (etwa SMI: SIX tagesaktuell, davor SNB)
+    const prefer = (id, newerId) => {
+      const n = S[newerId];
+      if (!n || !n.pts.length) return;
+      const o = S[id] ? S[id].pts.filter(q => q.t < n.pts[0].t) : [];
+      S[id] = { ...n, id, pts: o.concat(n.pts) };
+    };
+    prefer("eq_ch", "eq_ch_six");
+    prefer("eq_ch_spi", "eq_ch_spi_six");
     if (!S.y10_ch || S.y10_ch.derived !== false) splice("y10_ch", "y10m_ch", ["y10_ch_d"], "Rendite 10-jähriger Eidgenossen");
     splice("y10_jp", "y10m_jp", ["y10_jp_hist", "y10_jp"], "Rendite 10-jähriger japanischer Staatsanleihen");
     if (!S.y10_in && S.y10m_in) S.y10_in = { ...S.y10m_in, id: "y10_in" };

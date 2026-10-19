@@ -200,7 +200,7 @@ export const MACRO_JOBS = [
     ["SP.DYN.LE00.IN", "le_", "Lebenserwartung bei Geburt", "Jahre", { date: "1990:2025" }],
     ["MS.MIL.XPND.GD.ZS", "milx_", "Militärausgaben (SIPRI)", "% des BIP", { date: "1990:2025" }],
   ]),
-  wbJob("wb_tech", "Forschung, Patente, Hightech-Exporte (Weltbank)", [
+  wbJob("wb_tech", "Forschungsausgaben, Forschende, Patente (Weltbank)", [
     ["GB.XPD.RSDV.GD.ZS", "rd_", "F&E-Ausgaben", "% des BIP", { date: "1996:2025" }],
     ["SP.POP.SCIE.RD.P6", "res_", "Forschende", "je Mio. Einwohner", { date: "1996:2025" }],
     ["IP.PAT.RESD", "pat_", "Patentanmeldungen von Inländern", "Anzahl", { date: "1996:2025" }],

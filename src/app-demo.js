@@ -151,7 +151,7 @@ function renderGrowthBalance() {
 const TECH = [
   ["rd_", "F&E-Ausgaben", "% des BIP", 2],
   ["res_", "Forschende", "je Mio. Einwohner", 0],
-  ["htx_", "Hochtechnologie-Exporte", "% der Industriegüterexporte", 1],
+  ["htx_", "Hightech-Exporte", "% der Industriegüterexporte", 1],
   ["net_", "Internetnutzung", "% der Bevölkerung", 0],
 ];
 function renderTech() {
@@ -165,7 +165,7 @@ function renderTech() {
   const patMax = Math.max(...cs.map(c => (pat(c) || { v: 0 }).v));
   const cell = (l, max, d) => l ? h("td", null, h("span", { class: "barcell" }, h("i", { style: `width:${Math.max(1, 46 * l.v / max)}px` }), `${fmt(l.v, d)} `, h("span", { class: "small", text: `(${Math.round(l.x)})` }))) : h("td", { text: "–" });
   sh.body.append(h("div", { style: "overflow-x:auto" }, h("table", { class: "data demo-table" },
-    h("thead", null, h("tr", null, h("th", { text: "Land" }), ...TECH.map(([, l, u]) => h("th", { title: u, text: `${l} (${u})` })), h("th", { text: "Patentanmeldungen (je Mio. Einwohner)" }))),
+    h("thead", null, h("tr", null, h("th", { text: "Land" }), ...TECH.map(([, l, u]) => h("th", null, l, h("div", { class: "th-unit", text: u }))), h("th", null, "Patente", h("div", { class: "th-unit", text: "Anmeldungen je Mio. Einw." })))),
     h("tbody", null, ...cs.map(c => h("tr", null, h("td", { text: c.name }), ...TECH.map(([p, , , d]) => cell(lastAnnual(p + c.iso.toLowerCase()), mx[p], d)), cell(pat(c), patMax, 0)))))));
   const rd = DEMO.filter(c => c.r && LP("rd_" + c.iso.toLowerCase()).length);
   if (rd.length) chartSheet(host, { title: "Ausgaben für Forschung und Entwicklung", sub: "% des BIP", src: ["live:wb"] },
