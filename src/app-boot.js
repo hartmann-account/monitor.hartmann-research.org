@@ -184,6 +184,7 @@ function renderArchive(host) {
       (A.events || []).length ? h("a", { href: `${base}/api/events`, text: `GDACS-Meldungen (${fmt(A.events.reduce((a, e) => a + e.n, 0), 0)})` }) : null));
     const q = h("input", { type: "search", placeholder: "Reihe suchen, etwa gold, y10, debt_usa …", "aria-label": "Reihe im Archiv suchen", class: "arch-q" });
     const tb = h("tbody");
+    const tbl = h("table", { class: "sources ds-table" }, h("thead", null, h("tr", null, h("th", { text: "Reihe" }), h("th", { text: "Frequenz, Einheit" }), h("th", { text: "von" }), h("th", { text: "bis" }), h("th", { text: "Werte" }), h("th", { text: "Abruf" }))), tb);
     const fill = () => {
       const s = q.value.trim().toLowerCase();
       const list = A.series.filter(x => !s || x.id.toLowerCase().includes(s) || (x.label || "").toLowerCase().includes(s)).slice(0, 300);
@@ -194,10 +195,10 @@ function renderArchive(host) {
         h("td", { class: "when", text: x.last ? (x.freq === "A" ? x.last.slice(0, 4) : x.last) : "–" }),
         h("td", { class: "when", text: fmt(x.n || 0, 0) }),
         h("td", null, h("a", { href: `${base}/api/series?id=${encodeURIComponent(x.id)}&format=csv`, text: "CSV" }), " · ", h("a", { href: `${base}/api/series?id=${encodeURIComponent(x.id)}`, text: "JSON" })))));
+      stackTable(tbl); // auf dem Telefon als Karten
     };
     q.addEventListener("input", fill);
     fill();
-    const tbl = h("table", { class: "sources ds-table" }, h("thead", null, h("tr", null, h("th", { text: "Reihe" }), h("th", { text: "Frequenz, Einheit" }), h("th", { text: "von" }), h("th", { text: "bis" }), h("th", { text: "Werte" }), h("th", { text: "Abruf" }))), tb);
     sh.body.append(h("details", { class: "more" }, h("summary", { text: `Alle ${fmt(A.series.length, 0)} archivierten Reihen anzeigen` }), q, h("div", { style: "overflow-x:auto" }, tbl)));
   }).catch(() => {
     box.append(h("p", { class: "note-box", text: "Das Datenarchiv (Cloudflare D1) ist über den Worker erreichbar, sobald die Datenbank gebunden ist und die ersten Abrufe gespeichert sind; in der statischen Vorschau gibt es kein Archiv." }));
