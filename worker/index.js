@@ -231,7 +231,8 @@ async function route(request, env, ctx) {
   if (url.pathname === "/api/backtest" && request.method === "GET") return backtest(request, env, ctx);
   if (url.pathname === "/api/run" && request.method === "POST") return manualRun(request, env, ctx);
   if (url.pathname.startsWith("/api/")) return json({ error: "unbekannter Endpunkt" }, 404);
-  if (url.pathname === "/logout") return new Response(null, { status: 303, headers: { location: "/" } });
+  // ohne SITE_PASSWORD gibt es keine Anmeldung: beide Adressen führen zur Startseite
+  if (url.pathname === "/login" || url.pathname === "/logout") return new Response(null, { status: 303, headers: { location: "/" } });
   return env.ASSETS.fetch(request);
 }
 
