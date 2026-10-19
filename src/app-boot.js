@@ -38,8 +38,10 @@ function liveStamp() {
 async function boot() {
   setupNav();
   // Backtest-Kennzahlen: Rückfall, solange der Worker sie noch nicht im Snapshot liefert
-  const [hist, snap, bt] = await Promise.all([fetchJson("data/bigcycle.json").catch(e => ({ __error: e })), loadLive(), fetchJson("data/backtest.json").catch(() => null)]);
+  const [hist, snap, bt, rob] = await Promise.all([fetchJson("data/bigcycle.json").catch(e => ({ __error: e })), loadLive(), fetchJson("data/backtest.json").catch(() => null),
+    fetchJson("data/robustness.json").catch(() => null)]);
   BT_SEED = bt;
+  ROBUST = rob;
   if (hist.__error) {
     document.getElementById("verdict").replaceChildren(h("span", { class: "err", text: `Die Datendatei data/bigcycle.json konnte nicht geladen werden (${hist.__error.message}). Lokal die Seite über einen Webserver öffnen, etwa mit npx wrangler dev.` }));
     return;

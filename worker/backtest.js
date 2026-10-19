@@ -60,8 +60,47 @@ export const BT_DIRECT = ["y10_ch_d", "y10_jp_hist", "y10_jp", "y2_us", "silver_
   "baa10y", "curve3m_us", "ebp", "ofr_fsi", "cfnai", "claims_us", "sahm_us", "umcsent", "permit_us", "expinf10_us", "be10_us", "curve_us", "skew", "usrec", "tb3m_m",
   "h_sp500_m", "h_cape_m", "h_gold_usd_m", "h_gpr_hist_m", "r3m_us", "r3m_de", "r3m_gb", "r3m_ch", "r3m_jp", "r3m_ea", "eqh_us",
   "aiae_us", "hh_equity_us", "eq_tw_usd"];
-// Veröffentlichungsfristen in Tagen nach Periodenende, die das Archiv nicht speichert (sonst gelten die üblichen Fristen je Frequenz)
-const ARCHIVE_LAG = [[/^(cgap_|credit_gdp_|dsr_)/, 100], [/^(aiae_us|hh_equity_us|z1_)/, 80]];
+// Veröffentlichungsfristen in Tagen nach Periodenende, die das Archiv nicht speichert (sonst gelten die üblichen Fristen je Frequenz).
+// OECD-Frühindikatoren erscheinen rund sechs Wochen nach Monatsende (Ausgabe um die Monatsmitte, mit Daten bis zum Vorvormonat)
+const ARCHIVE_LAG = [[/^(cgap_|credit_gdp_|dsr_)/, 100], [/^(aiae_us|hh_equity_us|z1_)/, 80], [/^cli_/, 45]];
+
+/* Echtzeit-Datenstände der OECD-Frühindikatoren (Revisionsdatenbank, monatliche Ausgaben seit 2001; Datei
+   data/cli_vintages.json aus pipeline/fetch_cli_vintages.py): je Land die Ausgaben { "JJJJMM": ["JJJJ-MM", [Werte]] } mit
+   den jüngsten Monaten ab dem genannten Monat. Zum Stichtag gilt die jüngste Ausgabe, die schon erschienen war (Mitte
+   ihres Monats), davor die heutige Reihe. Vor der ersten Ausgabe bleibt die heutige, revidierte Reihe mit ihrer
+   Veröffentlichungsfrist. */
+export const VINTAGE_IDS = { USA: "cli_us", DEU: "cli_de", JPN: "cli_jp", GBR: "cli_gb", CHN: "cli_cn", IND: "cli_in", BRA: "cli_br", MEX: "cli_mx",
+  KOR: "cli_kr", ZAF: "cli_za", IDN: "cli_id", TUR: "cli_tr", G7: "cli_g7", G20: "cli_g20", G4E: "cli_g4e", A5M: "cli_a5m" };
+const addMonth = (ym, k) => { const n = +ym.slice(0, 4) * 12 + (+ym.slice(5, 7) - 1) + k; return `${Math.floor(n / 12)}-${String((n % 12) + 1).padStart(2, "0")}`; };
+function prepVintages(L, byArea) {
+  const out = {};
+  for (const [area, eds] of Object.entries(byArea)) {
+    const id = VINTAGE_IDS[area];
+    if (!id || !L.s[id]) continue;
+    const list = Object.entries(eds).filter(([, e]) => e && e[1] && e[1].length)
+      .map(([ed, [start, vals]]) => ({ pub: dayOf(`${ed.slice(0, 4)}-${ed.slice(4, 6)}-15`), pts: vals.map((v, i) => (v == null ? null : point(addMonth(start, i) + "-01", "M", v))).filter(Boolean) }))
+      .filter(e => e.pts.length)
+      .sort((a, b) => a.pub - b.pub);
+    if (list.length) out[id] = { base: L.s[id], list, cur: null };
+  }
+  return out;
+}
+// Reihen zum Stichtag auf den damaligen Datenstand setzen (Stichtage aufsteigend; je Reihe nur die aktuelle Ausgabe im Speicher)
+export function applyVintages(L, cut) {
+  for (const [id, V] of Object.entries(L.vint)) {
+    let lo = 0, hi = V.list.length - 1, ed = null;
+    while (lo <= hi) { const m = (lo + hi) >> 1; if (V.list[m].pub <= cut) { ed = V.list[m]; lo = m + 1; } else hi = m - 1; }
+    if (!ed) { L.s[id] = V.base; continue; }
+    if (!V.cur || V.cur.ed !== ed) {
+      const t0 = ed.pts[0].t;
+      V.cur = { ed, ser: { ...V.base, pts: V.base.pts.filter(p => p.e < t0).concat(ed.pts), lag: 0, vintage: true } };
+    }
+    L.s[id] = V.cur.ser;
+  }
+}
+function restoreVintages(L) {
+  for (const [id, V] of Object.entries(L.vint)) { L.s[id] = V.base; V.cur = null; }
+}
 
 /* Archivreihen, die der Backtest lädt (aus dem Reihenverzeichnis des Archivs) */
 export function btSeriesIds(catalog) {
@@ -113,7 +152,7 @@ function splice(newer, older, mode) {
 }
 
 /* Datensatz für den Backtest im Format von SIG.decodeSnapshot. raw: { id: { f, points: [[iso, v], ...] } } */
-export function buildBacktestLive(raw) {
+export function buildBacktestLive(raw, { vintages = null } = {}) {
   const S = {};
   for (const [id, r] of Object.entries(raw)) {
     if (!r || !r.points || !r.points.length) continue;
@@ -146,6 +185,7 @@ export function buildBacktestLive(raw) {
   // wie im Live-Betrieb: Monatshistorien, Verkettungen, Ersatzreihen; ohne GDELT (keine lange Historie)
   const m = id => (raw[id] ? { f: "M", s: raw[id].points[0][0].slice(0, 7), v: monthlyValues(raw[id].points) } : null);
   SIG.prepareLive(L, { gold_usd_m: m("h_gold_usd_m"), sp500_m: m("h_sp500_m"), cape_m: m("h_cape_m"), gpr_m: m("h_gpr_hist_m"), cape: null });
+  if (vintages) L.vint = prepVintages(L, vintages);
   return L;
 }
 // lückenlose Monatswerte ab dem ersten Monat (fehlende Monate = null)
@@ -198,6 +238,7 @@ export function runPanel(L, { from = "1970-01", to = null, horizons = ["m1", "y1
     full[row.id] = SIG.rowPrice(L, row, null);
   }
   cuts.forEach((cut, k) => {
+    if (L.vint) applyVintages(L, cut);
     const ra = SIG.riskAppetite(L, cut);
     if (L._ra) L._ra.delete(cut); // je Stichtag nur einmal gebraucht
     for (const hz of horizons) {
@@ -214,6 +255,7 @@ export function runPanel(L, { from = "1970-01", to = null, horizons = ["m1", "y1
     }
     if (onProgress && k % 12 === 11) onProgress(SIG.isoOf(cut), out.length);
   });
+  if (L.vint) restoreVintages(L);
   return out;
 }
 
@@ -449,21 +491,70 @@ export function compactAccuracy(a) {
 }
 /* Urteil je Horizont und Anlageart: belegt = Rangkorrelation mit 95 % Sicherheit positiv und in jeder Teilperiode
    positiv; schwach = insgesamt positiv; nicht belegt = sonst */
-export function verdict(all, subs) {
+/* Urteil: belegt, wenn die Rangkorrelation mit 95 % Sicherheit über null liegt, in jeder Teilperiode positiv ist und der
+   Zufallstest sie mit p < 0,05 bestätigt; nicht belegt, wenn sie nicht positiv ist oder zeitlich verschobene Signale
+   mindestens halb so oft ebenso gut abschneiden (p ≥ 0,5) */
+export function verdict(all, subs, random = null) {
   if (!all || all.ic == null || all.ic <= 0) return "fail";
+  if (random && random.pIc >= 0.5) return "fail";
   const okSubs = subs.filter(x => x && x.nEff >= 3);
-  return all.icLo > 0 && okSubs.length >= 2 && okSubs.every(x => x.ic > 0) ? "ok" : "weak";
+  const randOk = !random || random.pIc < 0.05;
+  return all.icLo > 0 && okSubs.length >= 2 && okSubs.every(x => x.ic > 0) && randOk ? "ok" : "weak";
+}
+
+/* Zufallstest: Gesamtwerte zeitlich gegen die späteren Renditen verschoben (zyklisch, für alle Anlagen derselbe Abstand,
+   mindestens ein Horizont), damit Autokorrelation und Gleichlauf der Anlagen erhalten bleiben. Je Verschiebung die
+   Rangkorrelation (Ränge über alle Fälle) und die Trefferquote der Richtung; p = Anteil der Verschiebungen, die das
+   Modell erreichen oder übertreffen (einschließlich der echten Zuordnung). */
+export function randomTest(E, hz) {
+  const rk = retKey(hz), months = FWD[hz];
+  const ok = E.filter(e => e[rk] != null && e.score != null && e.cat != null);
+  if (ok.length < 200) return null;
+  const mi = t => { const d = new Date(t * DAY); return d.getUTCFullYear() * 12 + d.getUTCMonth(); };
+  let m0 = Infinity, m1 = -Infinity;
+  for (const e of ok) { const m = mi(e.t); if (m < m0) m0 = m; if (m > m1) m1 = m; }
+  const M = m1 - m0 + 1;
+  if (M < 3 * months + 24) return null;
+  // Ränge über alle Fälle (Gesamtwert bzw. schwankungsbereinigte Rendite), je Anlage als Monatsreihe abgelegt
+  const rankOf = vals => { const idx = vals.map((v, i) => [v, i]).sort((a, b) => a[0] - b[0]); const r = new Float64Array(vals.length); idx.forEach(([, i], k) => { r[i] = k; }); return r; };
+  const rs = rankOf(ok.map(e => e.score)), rr = rankOf(ok.map(e => e[rk] / Math.max(0.02, e.vol || 0.15)));
+  const ids = [...new Set(ok.map(e => e.id))];
+  const S = ids.map(() => new Float64Array(M).fill(NaN)), C = ids.map(() => new Int8Array(M)), R = ids.map(() => new Float64Array(M).fill(NaN)), U = ids.map(() => new Int8Array(M));
+  ok.forEach((e, i) => { const a = ids.indexOf(e.id), m = mi(e.t) - m0; S[a][m] = rs[i]; C[a][m] = e.cat; R[a][m] = rr[i]; U[a][m] = e[rk] > 0 ? 1 : 0; });
+  const stat = k => {
+    let n = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, hit = 0, dir = 0;
+    for (let a = 0; a < ids.length; a++) {
+      const s = S[a], c = C[a], r = R[a], u = U[a];
+      for (let m = 0; m < M; m++) {
+        const y = r[m]; if (y !== y) continue;
+        const j = (m - k + M) % M, x = s[j]; if (x !== x) continue;
+        n++; sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y;
+        if (c[j] !== 0) { dir++; if ((c[j] > 0) === (u[m] === 1)) hit++; }
+      }
+    }
+    const v = (sxx - sx * sx / n) * (syy - sy * sy / n);
+    return { ic: v > 0 ? (sxy - sx * sy / n) / Math.sqrt(v) : 0, hit: dir ? hit / dir : 0 };
+  };
+  const act = stat(0), sims = [];
+  for (let k = months + 1; k <= M - months - 1; k++) sims.push(stat(k));
+  const q95 = a => a.slice().sort((x, y) => x - y)[Math.floor(0.95 * (a.length - 1))];
+  const ics = sims.map(s => s.ic), hits = sims.map(s => s.hit);
+  return { n: sims.length, ic: r3(act.ic), hit: r3(act.hit), icRand: r3(SIG.mean(ics)), ic95: r3(q95(ics)), hitRand: r3(SIG.mean(hits)), hit95: r3(q95(hits)),
+    pIc: r3((ics.filter(x => x >= act.ic).length + 1) / (sims.length + 1)), pHit: r3((hits.filter(x => x >= act.hit).length + 1) / (sims.length + 1)) };
 }
 
 /* Alle Kennzahlen eines Horizonts aus dem Panel (nur Einträge dieses Horizonts) */
 export function summarizeBacktest(panel, hz, { firstYear = 1990 } = {}) {
   const E = categorize(panel.filter(e => e.hz === hz && e.score != null).map(e => ({ ...e })));
-  const stats = {};
+  const stats = {}, random = {};
   for (const [k, g] of groups(E)) {
     const all = compactAccuracy(accuracy(g, hz));
     if (!all) continue;
     const subs = PERIODS.map(([a, b]) => compactAccuracy(accuracy(g.filter(e => e.t >= SIG.dayOf(a) && e.t < SIG.dayOf(b)), hz)));
-    stats[k] = { ...all, sub: subs.map(x => x && { n: x.n, nEff: x.nEff, hit: x.hit, base: x.base, ic: x.ic }), verdict: verdict(all, subs) };
+    // Zufallstest je Anlageart und gesamt
+    const r = randomTest(g, hz);
+    if (r) random[k] = r;
+    stats[k] = { ...all, sub: subs.map(x => x && { n: x.n, nEff: x.nEff, hit: x.hit, base: x.base, ic: x.ic }), verdict: verdict(all, subs, r) };
   }
   // ohne Vorgriff: Gewichte jährlich aus gleichen Startgewichten geschätzt
   const wf = walkForward(panel.filter(e => e.hz === hz), hz, { firstYear, shrink: 0.5, equal: true });
@@ -479,5 +570,5 @@ export function summarizeBacktest(panel, hz, { firstYear = 1990 } = {}) {
   }
   const months = new Set(E.map(e => e.t)).size;
   return { hz, months, from: stats.all && stats.all.from, to: stats.all && stats.all.to, stats, oos, wfWeights: latest,
-    calib: calibrate(E, hz), brier: brierWalkForward(E, hz, { firstYear }), rows };
+    calib: calibrate(E, hz), brier: brierWalkForward(E, hz, { firstYear }), random, rows };
 }

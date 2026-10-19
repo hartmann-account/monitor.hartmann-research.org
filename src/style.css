@@ -641,6 +641,8 @@ a.brand { text-decoration: none; color: inherit; }
 .acc-n { color: var(--muted); font-variant-numeric: tabular-nums; }
 .acc-table td, .acc-table th { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .acc-table tr.acc-all td { font-weight: 650; }
+.acc-robust-table td, .acc-robust-table th { white-space: normal; vertical-align: top; }
+.acc-robust-table td:first-child { min-width: 14em; }
 .acc-notes { display: grid; gap: 6px; margin-top: 12px; max-width: 90ch; color: var(--ink-2); }
 .acc-notes p { margin: 0; }
 .bt-line { margin: 8px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }

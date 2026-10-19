@@ -33,6 +33,13 @@ jobs:
         run: python -I pipeline/build_data.py --cache .cache --out public/data/bigcycle.json --refresh
       - name: Plausibilität prüfen
         run: python -I pipeline/check_data.py public/data/bigcycle.json
+      - name: Echtzeit-Datenstände der OECD-Frühindikatoren (für den Backtest)
+        # ergänzt die Ausgaben der letzten beiden Jahre; ältere Ausgaben bleiben aus der Datei im Repository
+        continue-on-error: true
+        run: python -I pipeline/fetch_cli_vintages.py --out public/data/cli_vintages.json
+      - name: Langfrist-Bausteine an 18 Ländern prüfen (JST)
+        continue-on-error: true
+        run: python -I pipeline/jst_check.py --cache .cache --out public/data/jst_check.json
       - name: Live-Startbestand erneuern
         # übernimmt den aktuellen Snapshot des Workers; ist er nicht erreichbar, laufen die Abrufjobs hier
         continue-on-error: true
@@ -49,7 +56,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/data/bigcycle.json public/data/live.json public/data/backtest.json
+          git add public/data/bigcycle.json public/data/live.json public/data/backtest.json public/data/cli_vintages.json public/data/jst_check.json
           if git diff --cached --quiet; then
             echo "Keine Änderungen."
           else

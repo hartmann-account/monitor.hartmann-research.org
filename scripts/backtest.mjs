@@ -5,7 +5,7 @@
    --local liest die lokale D1-Datenbank von wrangler dev (.wrangler/state), sonst die öffentliche API des Workers.
    --panel speichert alle Einzelwerte (Säulen, Gesamtwert, spätere Renditen), --out die Zusammenfassungen
    (public/data/backtest.json: Rückfall der Seite, solange der Worker noch keine eigenen Ergebnisse liefert). */
-import { writeFileSync, readdirSync } from "node:fs";
+import { writeFileSync, readdirSync, readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -48,7 +48,11 @@ async function loadApi(base) {
 const t0 = Date.now();
 const raw = flag("--local") ? await loadLocal() : await loadApi(arg("--api", "https://monitor.hartmann-it.workers.dev"));
 console.log(`geladen: ${Object.keys(raw).length} Reihen, ${Object.values(raw).reduce((a, r) => a + r.points.length, 0)} Werte (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
-const L = buildBacktestLive(raw);
+// Frühindikatoren ab 2001 im damals veröffentlichten Stand (pipeline/fetch_cli_vintages.py)
+const vintFile = join(root, "public", "data", "cli_vintages.json");
+const vintages = existsSync(vintFile) ? JSON.parse(readFileSync(vintFile, "utf8")).editions : null;
+if (!vintages) console.log("Hinweis: public/data/cli_vintages.json fehlt, Frühindikatoren in der revidierten Fassung");
+const L = buildBacktestLive(raw, { vintages });
 const hzs = arg("--hz", "m1,y1,lt").split(",");
 const t1 = Date.now();
 const panel = runPanel(L, { from: arg("--from", "1970-01"), horizons: hzs });
@@ -61,7 +65,7 @@ const VERDICT = { ok: "belegt", weak: "schwach", fail: "NICHT belegt" };
 const out = {};
 for (const hz of hzs) {
   const S = summarizeBacktest(panel, hz);
-  out[hz] = { ...S, at: new Date().toISOString(), version: `${SIG.cfg.version}/${BT_VERSION}`, origin: "Datei" };
+  out[hz] = { ...S, realtime: { cli: Object.keys(L.vint || {}).length, from: "2001-01" }, at: new Date().toISOString(), version: `${SIG.cfg.version}/${BT_VERSION}`, origin: "Datei" };
   console.log(`\n=== ${SIG.horizon(hz).title}: ${S.months} Monatsenden ${S.from} – ${S.to} ===`);
   console.log("Anlageart    Fälle   nEff  Treffer [95 %-KI]     Basis  IC     [95 %-KI]        Teilperioden IC          ohne Vorgriff IC/Treffer  Brier-Skill  Urteil");
   for (const [k, a] of Object.entries(S.stats)) {

@@ -176,9 +176,10 @@ const C12 = ["Teilsäule Frühindikator: wie beim Ausblick 1 Monat.", "Teilsäul
 const PILLAR_RULES = {
   trend: { all: ["Rendite über 3, 6 und 12 Monate ÷ (annualisierte Volatilität × √(Monate ÷ 12)) ergibt je Zeitraum einen z-Wert.", "Abstand zum 200-Tage-Schnitt (bei Monatsreihen: 10-Monats-Schnitt) ÷ (Volatilität × 0,45).", "Säule = 0,6 × Mittel der Renditewerte + 0,4 × Abstandswert."] },
   cycle: {
-    equity: ["OECD-Frühindikator der Region: Wert = 1,4 × Veränderung über 3 Monate − 0,3 × (Niveau − 100); bei mehreren Regionen das Mittel (Welt: sechs große Volkswirtschaften; Schwellenländer: China, Indien, Korea, Brasilien, Mexiko, Südafrika, Indonesien, Türkei).", "Das Niveau zählt antizyklisch: ein Frühindikator weit über 100 zeigt ein spätes Zyklusstadium, nach dem Aktien und Unternehmensanleihen im Backtest seit 1970 eher schwächer liefen."],
-    commodity: ["OECD-Frühindikator der Region bzw. der Welt (Mittel aus USA, Eurozone, China, Japan, Großbritannien, Indien): 1,4 × Veränderung über 3 Monate − 0,3 × (Niveau − 100) (Niveau antizyklisch)."],
-    bond: ["Wachstum: −0,7 × Frühindikator-Wert der Region (gute Konjunktur belastet Anleihen).", "Inflation: −(Veränderung der Inflationsrate über 6 Monate ÷ 0,8 Pp.).", "Säule = Mittel beider Werte."],
+    equity: ["OECD-Frühindikator der Region: Wert = −0,3 × (Niveau − 100); bei mehreren Regionen das Mittel (Welt: sechs große Volkswirtschaften; Schwellenländer: China, Indien, Korea, Brasilien, Mexiko, Südafrika, Indonesien, Türkei).", "Das Niveau zählt antizyklisch: ein Frühindikator weit über 100 zeigt ein spätes Zyklusstadium, nach dem Aktien und Unternehmensanleihen im Backtest seit 1970 eher schwächer liefen."],
+    commodity: ["OECD-Frühindikator der Region bzw. der Welt (Mittel aus USA, Eurozone, China, Japan, Großbritannien, Indien): −0,3 × (Niveau − 100) (Niveau antizyklisch)."],
+    note: ["Die Veränderung über 3 Monate zählt bei keiner Anlage: Sie wird in den ersten Monaten stark revidiert. Mit den damals tatsächlich veröffentlichten Werten (OECD-Revisionsdatenbank, seit 2001) hatte sie keine Prognosekraft; das Niveau blieb nützlich."],
+    bond: ["Wachstum: −0,7 × Frühindikator-Wert der Region, Frühindikator-Wert = 0,3 × (Niveau − 100) (gute Konjunktur belastet Anleihen).", "Inflation: −(Veränderung der Inflationsrate über 6 Monate ÷ 0,8 Pp.).", "Säule = Mittel beider Werte."],
     fx: ["Wachstumsvorsprung = Frühindikator-Wert der Region − Wert der USA (beim Dollar: USA − Welt; bei EUR/CHF: Eurozone − Schweiz)."],
     gold: ["Weltkonjunktur: −0,5 × Frühindikator-Wert der Welt.", "US-Inflation: Veränderung der Inflationsrate über 6 Monate ÷ 0,8 Pp.", "Säule = Mittel beider Werte."],
     relative: ["Wachstumsvorsprung der ersten gegenüber der zweiten Region; Aktien vs. Anleihen: US-Frühindikator; Gold vs. Aktien: −0,6 × US-Frühindikator; Gold vs. Anleihen: Veränderung der US-Inflation über 6 Monate ÷ 0,8 Pp."],
@@ -248,7 +249,7 @@ function pillarRules(pid, kind) {
   const R = PILLAR_RULES[pid];
   if (!R) return [];
   if (R.all) return R.all;
-  return R[kind] || R.equity || [];
+  return [...(R[kind] || R.equity || []), ...(R.note || [])];
 }
 // Unternehmensanleihen folgen bei Konjunktur, Liquidität und den Strukturfaktoren der Aktienlogik
 const ruleKind = (row, pid) => (row.kind === "credit" && pid !== "value" && pid !== "valueLT" ? "equity" : row.kind);
@@ -525,6 +526,8 @@ function renderGold() {
 /* ------------------------------------------------------------------ Treffsicherheit (Backtest) */
 // Kennzahlen je Horizont aus dem Snapshot (Jobs backtest_m1, backtest_y1, backtest_lt), sonst aus data/backtest.json
 let BT_SEED = null;
+// Prüfungen gegen Rückschaufehler (scripts/robustness.mjs): vor 1970, Echtzeit-Frühindikatoren, 18 Länder seit 1890 (JST)
+let ROBUST = null;
 function backtestFor(hz = HZ) {
   const it = LIVE && LIVE.items && LIVE.items["backtest_" + hz];
   if (it && it[0] && it[0].stats && it[0].stats.all) return it[0];
@@ -541,6 +544,9 @@ const KIND_DE = { all: "Alle Anlagen", equity: "Aktien", bond: "Staatsanleihen",
 const VERDICT_DE = { ok: { t: "belegt", sym: "✓", cls: "ok" }, weak: { t: "schwach", sym: "~", cls: "weak" }, fail: { t: "nicht belegt", sym: "✗", cls: "fail" } };
 const pc0 = v => (v == null ? "–" : fmt(100 * v, 0) + " %");
 const ci0 = (lo, hi) => (lo == null ? "–" : `${fmt(100 * lo, 0)}–${fmt(100 * hi, 0)} %`);
+// p-Wert des Zufallstests: kleinster möglicher Wert hängt von der Zahl der Verschiebungen ab (rund 0,002)
+const fmtP = v => (v == null ? "–" : v < 0.01 ? "< 0,01" : fmt(v, 2));
+const pTxt = v => (v == null ? "p –" : v < 0.01 ? "p < 0,01" : `p = ${fmt(v, 2)}`);
 const yr = iso => (iso ? iso.slice(0, 4) : "–");
 function backtestLine(r) {
   const B = backtestFor(BARO.hz);
@@ -580,21 +586,22 @@ function renderAccuracy() {
     host.append(h("p", { class: "note-box", text: `Die Treffsicherheit für „${H.title}“ erscheint, sobald der Worker den Backtest gerechnet hat (wöchentlich, Jobs „backtest_${BARO.hz}“).` }));
     return;
   }
-  const A = B.stats.all, O = B.oos && B.oos.all, BS = B.brier && B.brier.all, LV = B.live;
+  const A = B.stats.all, O = B.oos && B.oos.all, BS = B.brier && B.brier.all, LV = B.live, RT = B.random && B.random.all;
   const months = { m1: 1, y1: 12, lt: 60 }[BARO.hz];
   const sh = sheet(host, {
     title: `Treffsicherheit im Backtest · ${H.title}`,
     sub: `${B.months} Monatsenden von ${deMonth(B.from)} bis ${deMonth(B.to)}: jede Anlage mit dem damals veröffentlichten Datenstand eingestuft und mit der Kursentwicklung der folgenden ${months === 1 ? "Monats" : months === 12 ? "zwölf Monate" : "fünf Jahre"} verglichen`,
     info: () => ({
       d: ["Rückrechnung des unveränderten Modells zu jedem Monatsende seit 1970 mit der Historie aus der D1-Datenbank: für jede Anlage die Einstufung, die das Modell damals gezeigt hätte, und die tatsächliche Rendite danach.",
-        "Nur Daten, die zum Stichtag veröffentlicht waren (übliche Fristen je Reihe); IWF-Prognosen werden durch einfache Fortschreibungen ersetzt, weil alte Prognosestände nicht vorliegen."],
+        "Nur Daten, die zum Stichtag veröffentlicht waren (übliche Fristen je Reihe, OECD-Frühindikatoren 45 Tage); die Frühindikatoren ab 2001 in dem Stand, den die OECD damals veröffentlicht hat (Revisionsdatenbank), nicht in der heute revidierten Fassung. IWF-Prognosen werden durch einfache Fortschreibungen ersetzt, weil alte Prognosestände nicht vorliegen."],
       f: ["Trefferquote: Anteil der positiven und negativen Stufen, deren Richtung eintraf (neutral = keine Aussage).",
         `Effektive Stichprobe: überlappende Zeiträume zählen anteilig, je Anlage ein unabhängiger Fall je ${months === 1 ? "Monat" : months === 12 ? "zwölf Monate" : "fünf Jahre"}; daraus das 95-%-Intervall (Wilson).`,
         "Mehrheitsregel („steigt immer“): bei denselben Fällen immer die häufigere Richtung tippen – der Maßstab, den ein Modell schlagen muss.",
         "Rangkorrelation (IC): Spearman-Korrelation zwischen Gesamtwert und späterer, um die Schwankung bereinigter Rendite; 0 = keine Prognosekraft, 95-%-Intervall über Fisher-z.",
         "Ohne Vorgriff: Gewichte der Säulen Jahr für Jahr nur aus der bis dahin bekannten Geschichte geschätzt (ausgehend von gleichen Gewichten), ab 1990.",
         "Brier-Skill: Güte der Wahrscheinlichkeiten ohne Vorgriff im Vergleich zur bloßen Grundhäufigkeit (0 = nicht besser, 1 = perfekt).",
-        "Urteil „belegt“: Rangkorrelation mit 95 % Sicherheit über null und in jeder der drei Teilperioden (1970–89, 1990–2007, ab 2008) positiv; „schwach“: insgesamt positiv; sonst „nicht belegt“."],
+        "Zufallstest: alle Einstufungen gemeinsam zeitlich gegen die Renditen verschoben; p = Anteil der Verschiebungen, die das Modell erreichen.",
+        "Urteil „belegt“: Rangkorrelation mit 95 % Sicherheit über null, in jeder der drei Teilperioden (1970–89, 1990–2007, ab 2008) positiv und im Zufallstest p < 0,05; „nicht belegt“: nicht positiv oder Zufall mindestens halb so oft ebenso gut (p ≥ 0,5); sonst „schwach“."],
       r: [`${A.n} Einstufungen, davon ${A.nDir} mit Richtung (${pc0(A.cov)}), effektiv ${A.nEff} unabhängige Fälle`, `Trefferquote ${fmt(100 * A.hit, 1)} % (95 %-KI ${ci0(A.lo, A.hi)}), Mehrheitsregel ${fmt(100 * A.base, 1)} %`],
       s: `Rohdaten: /api/backtest (Kennzahlen) und /api/backtest?h=${BARO.hz}&id=eq_us (Einzelwerte, auch &format=csv). Stand der Rechnung: ${B.at ? deShort(B.at) : "mitgelieferte Datei"}.`,
     }),
@@ -602,7 +609,11 @@ function renderAccuracy() {
   const tiles = h("div", { class: "gold-facts acc-tiles" },
     accTile("Richtungstreffer", fmt(100 * A.hit, 0), "%", [`95 %-KI ${ci0(A.lo, A.hi)}`, `„steigt immer“ ${pc0(A.base)}`],
       { t: "Trefferquote der Richtung", f: ["Anteil der Einstufungen „positiv“/„klar positiv“, nach denen die Kurse stiegen, und „negativ“/„klar negativ“, nach denen sie fielen.", "Vergleich: Mehrheitsregel auf denselben Fällen."], r: `${A.nDir} Richtungssignale, effektiv ${A.nEff} unabhängige Fälle` }),
-    accTile("Rangkorrelation", fmt(A.ic, 2), "", [`95 %-KI ${fmt(A.icLo, 2)} bis ${fmt(A.icHi, 2)}`, "0 = Zufall"],
+    RT ? accTile("Gegen den Zufall", signed(100 * (RT.hit - RT.hitRand), 0), "Pp.", [`Treffer ${pc0(RT.hit)} statt ${pc0(RT.hitRand)}`, pTxt(RT.pHit)],
+      { t: "Vergleich mit dem Zufall", d: "Wie gut wären dieselben Einstufungen, wenn sie zeitlich nichts mit den späteren Kursen zu tun hätten? Dazu werden alle Einstufungen gemeinsam gegen die Renditen verschoben (um mindestens einen Horizont, zyklisch über den ganzen Zeitraum). So bleiben Trends, Gleichlauf der Anlagen und die Häufigkeit der Stufen erhalten; nur der zeitliche Zusammenhang geht verloren.",
+        f: ["Je Verschiebung: Trefferquote der Richtung und Rangkorrelation.", "p = Anteil der Verschiebungen, die das Modell erreichen oder übertreffen (einschließlich der echten Zuordnung); p < 0,05 heißt: Zufall erreicht das höchstens in 5 % der Fälle."],
+        r: [`Treffer ${fmt(100 * RT.hit, 1)} % gegenüber ${fmt(100 * RT.hitRand, 1)} % im Mittel des Zufalls (95-%-Schwelle ${fmt(100 * RT.hit95, 1)} %), ${pTxt(RT.pHit)}`, `Rangkorrelation ${fmt(RT.ic, 3)} gegenüber ${fmt(RT.icRand, 3)} (95-%-Schwelle ${fmt(RT.ic95, 3)}), ${pTxt(RT.pIc)}`, `${RT.n} Verschiebungen`] }) : null,
+    accTile("Rangkorrelation", fmt(A.ic, 2), "", [`95 %-KI ${fmt(A.icLo, 2)} bis ${fmt(A.icHi, 2)}`, RT ? `Zufall ${fmt(RT.icRand, 2)}` : "0 = Zufall"],
       { t: "Rangkorrelation (Informationskoeffizient)", d: "Misst, ob höhere Gesamtwerte mit höheren späteren Renditen einhergehen – auch innerhalb der Stufen.", f: "Spearman-Korrelation zwischen Gesamtwert und Rendite danach ÷ Schwankungsbreite der Anlage, über alle Anlagen und Monatsenden; Werte um 0,1 gelten bei Monatsprognosen bereits als nützlich." }),
     O ? accTile("Ohne Vorgriff", fmt(O.ic, 2), "IC", [`Treffer ${pc0(O.hit)}`, `ab ${yr(O.from)}`],
       { t: "Ohne Vorgriff geschätzt", d: "Strengere Prüfung: Das Modell lernt die Gewichte seiner Säulen Jahr für Jahr nur aus der bis dahin bekannten Geschichte.", f: "Gewicht je Säule ∝ positive Rangkorrelation mit der späteren Rendite auf den Daten vor dem Jahr, zur Hälfte mit gleichen Gewichten gemischt; angewandt auf die Monatsenden des Jahres.", r: `Rangkorrelation ${fmt(O.ic, 3)}, Trefferquote ${fmt(100 * O.hit, 1)} % (Mehrheitsregel ${fmt(100 * O.base, 1)} %)` }) : null,
@@ -628,12 +639,12 @@ function renderAccuracy() {
   // Tabelle je Anlageart
   const kinds = Object.keys(B.stats).filter(k => k !== "all");
   const tbl = h("table", { class: "acc-table" },
-    h("thead", null, h("tr", null, ...["Anlageart", "Signale (effektiv)", "Treffer", "95 %-KI", "Mehrheit", "Rangkorr.", "1970–89 · 1990–2007 · ab 2008", "Ohne Vorgriff", "Urteil"].map(t => h("th", { text: t })))),
+    h("thead", null, h("tr", null, ...["Anlageart", "Signale (effektiv)", "Treffer", "95 %-KI", "Mehrheit", "Rangkorr.", "1970–89 · 1990–2007 · ab 2008", "Zufallstest p", "Ohne Vorgriff", "Urteil"].map(t => h("th", { text: t })))),
     h("tbody", null, ...["all", ...kinds].map(k => {
-      const a = B.stats[k], o = B.oos && B.oos[k], vv = VERDICT_DE[a.verdict];
+      const a = B.stats[k], o = B.oos && B.oos[k], vv = VERDICT_DE[a.verdict], rr = B.random && B.random[k];
       return h("tr", { class: k === "all" ? "acc-all" : null },
         h("td", { text: KIND_DE[k] || k }), h("td", { text: `${a.nDir} (${a.nEff})` }), h("td", { text: pc0(a.hit) }), h("td", { text: ci0(a.lo, a.hi) }), h("td", { text: pc0(a.base) }),
-        h("td", { text: fmt(a.ic, 2) }), h("td", { text: a.sub.map(x => (x && x.ic != null ? fmt(x.ic, 2) : "–")).join(" · ") }),
+        h("td", { text: fmt(a.ic, 2) }), h("td", { text: a.sub.map(x => (x && x.ic != null ? fmt(x.ic, 2) : "–")).join(" · ") }), h("td", { text: rr ? fmtP(rr.pIc) : "–" }),
         h("td", { text: o ? `${fmt(o.ic, 2)} / ${pc0(o.hit)}` : "–" }), h("td", null, h("span", { class: `bt-verdict ${vv.cls}`, text: `${vv.sym} ${vv.t}` })));
     })));
   sh.body.append(h("h4", { class: "gold-sub" }, "Je Anlageart"), h("div", { style: "overflow-x:auto" }, stackTable(tbl)));
@@ -641,7 +652,43 @@ function renderAccuracy() {
   sh.body.append(h("div", { class: "acc-notes small" },
     h("p", null, h("b", { text: "Was die Zahlen heißen. " }), "Das Modell trifft die Richtung häufiger als der Zufall und – über alle Anlagen – häufiger als die Mehrheitsregel. Nahezu sichere Prognosen sind an Märkten nicht möglich: Auch nach „klar positiv“ fielen die Kurse in einem Teil der Fälle. Aussagekräftiger als die Stufe allein ist deshalb die Wahrscheinlichkeit steigender Kurse in den Zeilen des Barometers."),
     eq && eq.base > eq.hit ? h("p", null, h("b", { text: "Aktien. " }), `Aktien steigen meistens (${pc0(eq.base)} der Fälle in diesem Horizont). „Negativ“ bedeutet hier unterdurchschnittliche Aussichten, nicht zwingend fallende Kurse – deshalb liegt die Trefferquote der Richtung unter der Mehrheitsregel, obwohl die Rangkorrelation positiv ist.`) : null,
-    h("p", null, h("b", { text: "Grenzen. " }), "Die Bausteine des Modells wurden mit Kenntnis dieser Geschichte ausgewählt; ein Rest an Rückschaufehler bleibt. Die Spalte „ohne Vorgriff“ ist die strengere Prüfung, die Echtzeit-Bilanz die eigentliche. Frühindikatoren und Konjunkturdaten liegen nur im heutigen, revidierten Stand vor. Beim Horizont 5–10 Jahre gibt es seit 1970 nur wenige unabhängige Zeiträume; die Intervalle sind entsprechend breit.")));
+    h("p", null, h("b", { text: "Grenzen. " }), "Die Bausteine des Modells wurden mit Kenntnis der Geschichte seit 1970 ausgewählt. Ganz ausschließen lässt sich Rückschaufehler nicht; der Monitor prüft deshalb zusätzlich an Daten, die bei der Entwicklung keine Rolle spielten (unten), und mit dem Zufallstest. Die eigentliche Bewährungsprobe bleibt die Echtzeit-Bilanz. Konjunkturdaten außer den Frühindikatoren (etwa Baugenehmigungen, Kreditlücken, Fed Z.1) liegen nur im heutigen, revidierten Stand vor. Beim Horizont 5–10 Jahre gibt es seit 1970 nur wenige unabhängige Zeiträume; die Intervalle sind breit.")));
+  renderRobustness(sh.body, BARO.hz);
+}
+
+// Prüfungen gegen Rückschaufehler: Zeitraum vor 1970, Echtzeit-Frühindikatoren seit 2001, 18 Länder seit 1890 (JST)
+function renderRobustness(parent, hz) {
+  const R = ROBUST;
+  if (!R) return;
+  const wrap = h("div", { class: "acc-robust" });
+  const P = R.pre1970 && R.pre1970[hz], a = P && P.stats && P.stats.all, pr = P && P.random;
+  const rows = [];
+  if (a) rows.push([`1955–1969, bei der Gewichtung nicht verwendet (${P.ids.length} Anlagen)`,
+    `Treffer ${pc0(a.hit)} (Mehrheit ${pc0(a.base)}), Rangkorr. ${fmt(a.ic, 2)}`, pr ? `Zufall ${fmt(pr.icRand, 2)}, ${pTxt(pr.pIc)}` : "Zeitraum für den Zufallstest zu kurz"]);
+  const rv = R.realtime && R.realtime.revised && R.realtime.revised[hz], rt = R.realtime && R.realtime.realtime && R.realtime.realtime[hz];
+  if (rv && rt) rows.push([`Frühindikatoren ab 2001 im damals veröffentlichten Stand`,
+    `Rangkorr. ${fmt(rt.all.ic, 2)} (revidiert: ${fmt(rv.all.ic, 2)})`, `Konjunktursäule ${fmt(rt.cycle, 2)} (revidiert: ${fmt(rv.cycle, 2)})`]);
+  else if (hz === "lt") rows.push(["Frühindikatoren ab 2001 im damaligen Stand", "nicht nötig", "5–10 Jahre ohne Frühindikatoren"]);
+  const J = R.jst;
+  if (J && J.model) {
+    const per = "1890-2015", s = J.signals.find(x => x.key === "trend"), v = J.signals.find(x => x.key === "dp");
+    rows.push([`${J.countries.length} Länder seit 1890 (JST), Aktien auf 5 Jahre`,
+      `Rangkorr. ${fmt(J.model.neu[per], 2)} (vorher ${fmt(J.model.bisher[per], 2)})`, s && v ? `Langfristtrend ${fmt(s.ic[per], 2)}, Dividendenrendite ${fmt(v.ic[per], 2)}` : ""]);
+  }
+  if (!rows.length) return;
+  const tbl = h("table", { class: "acc-table acc-robust-table" },
+    h("thead", null, h("tr", null, ...["Prüfung", "Ergebnis", "Vergleich"].map(t => h("th", { text: t })))),
+    h("tbody", null, ...rows.map(r => h("tr", null, ...r.map(t => h("td", { text: t }))))));
+  const jstInfo = J ? () => ({
+    t: "Prüfung an 18 Ländern seit 1890",
+    d: `Die Jordà-Schularick-Taylor Macrohistory Database enthält für 18 Industrieländer Jahreswerte seit 1870, für ${J.countries.length} davon mit Aktienrenditen: Aktien- und Anleiherenditen, Dividendenrenditen, Zinsen, Inflation, Schulden. Länder und Jahrzehnte, die bei der Entwicklung des Modells keine Rolle spielten, liefern rund 350 unabhängige 5-Jahres-Zeiträume statt etwa elf seit 1970.`,
+    f: ["Rangkorrelation (Spearman) zwischen dem Baustein zum Jahresende und der realen Rendite der folgenden fünf Jahre (Aktien mit Dividenden), über alle Länder und Jahre.", "Bewertung im Modell außerhalb der USA: Abstand des realen Kursindex zum 20-Jahres-Trend (antizyklisch)."],
+    r: J.signals.map(x => `${x.label}: ${J.periods.map(p => `${p.replace("-", "–")} ${x.ic[p] == null ? "–" : fmt(x.ic[p], 2)}`).join(" · ")}`),
+    s: `Quelle: ${J.source}. Folgerung: Bei Aktien zählt langfristig nur noch die Bewertung; Langfristtrend und Wachstum werden angezeigt, gehen aber nicht in den Gesamtwert ein.`,
+  }) : null;
+  wrap.append(h("h4", { class: "gold-sub" }, "Prüfungen gegen Rückschaufehler", info(jstInfo || { t: "Prüfungen gegen Rückschaufehler", d: "Daten, die bei der Entwicklung des Modells keine Rolle spielten." }, "Prüfungen gegen Rückschaufehler")),
+    h("div", { style: "overflow-x:auto" }, stackTable(tbl)));
+  parent.append(wrap);
 }
 
 /* ------------------------------------------------------------------ Signalverlauf (D1) */

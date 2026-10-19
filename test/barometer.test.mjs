@@ -78,8 +78,11 @@ test("Barometer auf dem Startbestand, alle Horizonte", { skip: !existsSync(snapF
   const lt = SIG.barometer(L, "lt");
   assert.equal(lt.rows.find(r => r.row.id === "btc").now, null, "Bitcoin ohne langfristige Einstufung");
   const g = lt.rows.find(r => r.row.id === "gold_usd").now;
-  assert.ok(g.pillars.valueLT && g.pillars.power, "Gold langfristig mit Bewertung und Machtposition");
-  assert.ok(!g.pillars.debt, "Schuldensäule ohne Gewicht bei Gold (im Backtest ohne Prognosekraft)");
+  assert.ok(g.pillars.valueLT && g.pillars.trendLT, "Gold langfristig mit Bewertung und Langfristtrend");
+  assert.ok(!g.pillars.debt && !g.pillars.power, "Schulden und Machtposition ohne Gewicht bei Gold (im Backtest ohne Prognosekraft)");
+  // Aktien langfristig nur nach Bewertung (Prüfung an 18 Ländern seit 1890)
+  const us = lt.rows.find(r => r.row.id === "eq_us").now;
+  assert.ok(us.pillars.valueLT && !us.pillars.trendLT && !us.pillars.growth, "US-Aktien langfristig nur nach Bewertung");
 });
 
 test("Signalverlauf: Rückrechnung zu Monatsenden, alle Horizonte", { skip: !existsSync(snapFile) }, async () => {

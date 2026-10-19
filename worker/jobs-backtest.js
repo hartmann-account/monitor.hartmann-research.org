@@ -68,17 +68,20 @@ const REQUIRED = { h_sp500_m: "1960", h_cape_m: "1960", aiae_us: "1960", eqh_de:
 const BT_INPUT_JOBS = ["fred_markets", "fred_rates", "fred_risk", "fred_credit", "fred_cycle", "fred_fxhist", "fred_intl", "fred_z1",
   "oecd_cli", "oecd_prices", "imf_commodities", "bis_reer", "archive_hist", "em_markets", "em_history", "oecd_cli_em", "bis_em", "bis_credit"];
 
-export async function runBacktest(db, hz, nowIso) {
+export async function runBacktest(db, hz, nowIso, vintages = null) {
   await ensureBacktestSchema(db);
   let raw = await loadArchive(db);
   const missing = Object.entries(REQUIRED).filter(([id, y]) => !raw[id] || !raw[id].points.length || raw[id].points[0][0] > y).map(([id]) => id);
   if (missing.length) throw new Error(`Archiv noch ohne lange Historie für ${missing.join(", ")}; der Backtest folgt nach den Archivläufen`);
-  const L = buildBacktestLive(raw);
+  // Frühindikatoren ab 2001 im damals veröffentlichten Stand (OECD-Revisionsdatenbank), nicht in der heute revidierten Fassung
+  if (!vintages) throw new Error("data/cli_vintages.json fehlt: ohne Echtzeit-Datenstände der Frühindikatoren kein Backtest");
+  const L = buildBacktestLive(raw, { vintages });
   raw = null; // Rohdaten freigeben (Speichergrenze des Workers: 128 MB)
   const panel = runPanel(L, { from: "1970-01", horizons: [hz] });
   if (panel.length < 1000) throw new Error(`Backtest ${hz}: nur ${panel.length} Einträge – Archiv unvollständig?`);
   const summary = summarizeBacktest(panel, hz);
   await writePanel(db, hz, categorize(panel.filter(e => e.score != null)));
+  summary.realtime = { cli: Object.keys(L.vint || {}).length, from: "2001-01" };
   summary.live = await liveTrack(db, L, hz);
   summary.at = nowIso;
   summary.version = `${SIG.cfg.version}/${BT_VERSION}`;
@@ -91,7 +94,8 @@ export const BACKTEST_JOBS = SIG.cfg.horizons.map(H => ({
   id: "backtest_" + H.id, label: `Backtest des Anlagebarometers seit 1970: ${H.title} (D1)`, source: "d1", every: 24 * 7, cost: 0,
   requires: ["DB"], noArchive: true, solo: true, version: `${SIG.cfg.version}/${BT_VERSION}`, after: BT_INPUT_JOBS,
   async run(F, ctx) {
-    const s = await runBacktest(ctx.env.DB, H.id, new Date(ctx.now).toISOString());
+    const vint = await ctx.seed("data/cli_vintages.json");
+    const s = await runBacktest(ctx.env.DB, H.id, new Date(ctx.now).toISOString(), vint && vint.editions);
     return { series: {}, items: [s] };
   },
 }));

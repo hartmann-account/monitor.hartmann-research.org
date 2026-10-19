@@ -206,22 +206,25 @@ const SIG = (() => {
     commodity: { cycle12: 0.45, value: 0.05, liquidity: 0.15, mom12: 0.05, risk12: 0.30 },
     relative: { cycle12: 0.10, value: 0.45, liquidity: 0, mom12: 0.45, risk12: 0 },
   };
-  // 5–10 Jahre: Bewertung dominiert; Wachstum, Schulden und Machtposition (großer Zyklus) zeigen im Backtest wenig Prognosekraft
+  // 5–10 Jahre: Bewertung dominiert. Wachstum, Schulden und Machtposition (großer Zyklus) werden angezeigt, zählen aber nur,
+  // wo sie im Backtest Prognosekraft zeigen (Wachstum bei Rohstoffen). Aktien nur nach Bewertung: In den Daten von 18 Ländern
+  // seit 1890 (Jordà-Schularick-Taylor) sagten ein starker Langfristtrend und hohes Wachstum eher schwächere Jahre voraus,
+  // im eigenen Backtest seit 1970 eher stärkere; ohne beide schlägt das Signal den Zufall gleich deutlich.
   const W_LT = {
-    equity: { valueLT: 0.55, growth: 0.20, debt: 0.05, power: 0.05, trendLT: 0.15 },
+    equity: { valueLT: 1, growth: 0, debt: 0, power: 0, trendLT: 0 },
     bond: { valueLT: 0.75, growth: 0, debt: 0, power: 0, trendLT: 0.25 },
-    credit: { valueLT: 0.65, growth: 0.05, debt: 0, power: 0, trendLT: 0.30 },
-    fx: { valueLT: 0.55, growth: 0.05, debt: 0.05, power: 0.05, trendLT: 0.30 },
-    gold: { valueLT: 0.70, growth: 0, debt: 0, power: 0.15, trendLT: 0.15 },
+    credit: { valueLT: 0.70, growth: 0, debt: 0, power: 0, trendLT: 0.30 },
+    fx: { valueLT: 0.65, growth: 0, debt: 0, power: 0, trendLT: 0.35 },
+    gold: { valueLT: 0.80, growth: 0, debt: 0, power: 0, trendLT: 0.20 },
     commodity: { valueLT: 0.20, growth: 0.30, debt: 0, power: 0, trendLT: 0.50 },
-    relative: { valueLT: 0.60, growth: 0.10, debt: 0.05, power: 0.05, trendLT: 0.20 },
+    relative: { valueLT: 0.75, growth: 0, debt: 0, power: 0, trendLT: 0.25 },
   };
   const cfg = {
     // Stand des Modells; ändert sich die Rechnung, rechnet der Worker die gespeicherte Rückrechnung neu
-    version: "2026-10-19d",
+    version: "2026-10-19e",
     pillars: [
       { id: "trend", label: "Trend", short: "T", desc: "Kursmomentum über 3, 6 und 12 Monate, risikobereinigt, und Abstand zum gleitenden 200-Tage-Durchschnitt (Monatsreihen: 10 Monate)." },
-      { id: "cycle", label: "Konjunktur", short: "K", desc: "OECD-Frühindikator der Region: Dynamik über drei Monate und Niveau gegenüber dem langfristigen Mittel (100). Bei Aktien, Unternehmensanleihen und Rohstoffen zählt ein hohes Niveau antizyklisch (Boom = spätes Zyklusstadium). Anleihen profitieren von schwächerem Wachstum und sinkender Inflation." },
+      { id: "cycle", label: "Konjunktur", short: "K", desc: "OECD-Frühindikator der Region: Niveau gegenüber dem langfristigen Mittel (100). Bei Aktien, Unternehmensanleihen und Rohstoffen zählt ein hohes Niveau antizyklisch (Boom = spätes Zyklusstadium). Die Dynamik über drei Monate wird angezeigt, zählt aber nicht: mit den damals veröffentlichten Werten hatte sie keine Prognosekraft. Anleihen profitieren von schwächerem Wachstum und sinkender Inflation." },
       { id: "value", label: "Bewertung", short: "B", desc: "Aktien: Aktienanteil am Anlegervermögen der USA (Fed-Finanzierungsrechnung Z.1, antizyklisch), bei den übrigen Märkten zusammen mit dem Abstand zum log-linearen 10-Jahres-Trend. Anleihen: reale Rendite gegenüber ihrer 10-Jahres-Spanne und Steilheit der Zinskurve (Laufzeitprämie). Unternehmensanleihen: Risikoaufschlag gegenüber seiner Historie (Hochzins bzw. Baa-Anleihen seit 1919). Währungen: realer effektiver Wechselkurs (BIS) gegenüber dem 10-Jahres-Mittel. Gold: realer Goldpreis." },
       { id: "liquidity", label: "Liquidität", short: "L", desc: "Richtung der Geldpolitik (Leitzinsänderung über 12 Monate), Steilheit der Zinskurve, Zentralbankbilanz und Dollartrend." },
       { id: "risk", label: "Risikoappetit", short: "R", desc: "Risikoappetit aus Volatilität (VIX), Hochzins-Risikoprämien und Finanzstress, gewichtet mit dem Risikobeta der Anlage. Sichere Häfen (Franken, Yen, Gold, Staatsanleihen) gewinnen bei Risikoaversion. Geopolitische Spannungen des Spannungsmonitors werden angezeigt, zählen aber nicht: ohne lange Historie lassen sie sich nicht im Backtest prüfen." },
@@ -229,10 +232,10 @@ const SIG = (() => {
       { id: "mom12", label: "Momentum 12 M.", short: "M", desc: "Kursentwicklung der letzten zwölf Monate ohne den jüngsten Monat, risikobereinigt (Zeitreihen-Momentum), und Abstand zum Zwölfmonatsmittel." },
       { id: "risk12", label: "Stimmung & Risiko", short: "R", desc: "Antizyklische Stimmungs- und Positionierungsdaten: Verbraucherstimmung (Michigan, EU-Kommission), Kreditlücke (BIS), Positionierung der Spekulanten an den Terminmärkten (CFTC), Anleihe-Risikoprämie (Gilchrist-Zakrajšek) und geopolitisches Risiko (für Gold). Euphorie und hohe Verschuldung warnen, Pessimismus ist eine Chance." },
       { id: "valueLT", label: "Bewertung", short: "B", desc: "Aktien USA und Welt: Aktienanteil am Anlegervermögen (Fed Z.1), Shiller-KGV und Verbraucherstimmung, jeweils antizyklisch; übrige Märkte: Abstand zum langfristigen Trend (bis 20 Jahre), der US-Aktienanteil als globale Bewertung und die Wirtschaftsstimmung. Rohstoffe: realer Preis gegenüber dem langfristigen Trend. Anleihen: erwartete Realrendite (Rendite minus IWF-Inflationsprognose für fünf Jahre). Unternehmensanleihen: Risikoaufschlag und Anleihe-Risikoprämie. Währungen: realer effektiver Wechselkurs gegenüber dem langjährigen Mittel. Gold: realer Goldpreis seit 1971." },
-      { id: "growth", label: "Wachstum & Demografie", short: "W", desc: "IWF-Prognose des realen Wachstums für die nächsten fünf Jahre, Entwicklung der Bevölkerung im erwerbsfähigen Alter in den nächsten zehn Jahren (Projektion der Weltbank) und Produktivitätswachstum der letzten zehn Jahre." },
-      { id: "debt", label: "Schulden", short: "S", desc: "Langer Schuldenzyklus: Staatsschulden in % des BIP, ihre Entwicklung bis in fünf Jahren laut IWF, Haushaltssaldo und Zins minus nominales Wachstum. Hohe und steigende Schulden belasten Anleihen und Währung und stützen Gold." },
-      { id: "power", label: "Machtposition", short: "P", desc: "Großer Zyklus nach Dalio: Veränderung des Anteils an der Weltwirtschaft (Kaufkraftparitäten, IWF) über zehn Jahre, Leistungsbilanz und bei Währungen der Anteil an den Weltdevisenreserven (IWF COFER)." },
-      { id: "trendLT", label: "Langfristtrend", short: "T", desc: "Steigung des log-linearen Zehnjahrestrends und Kursentwicklung über drei Jahre, jeweils im Verhältnis zur Schwankungsbreite. Bei Unternehmensanleihen und Rohstoffen antizyklisch: lange Haussen enden eher in Rückschlägen." },
+      { id: "growth", label: "Wachstum & Demografie", short: "W", desc: "IWF-Prognose des realen Wachstums für die nächsten fünf Jahre, Entwicklung der Bevölkerung im erwerbsfähigen Alter in den nächsten zehn Jahren (Projektion der Weltbank) und Produktivitätswachstum der letzten zehn Jahre. Zählt nur bei Rohstoffen: Bei Aktien gingen hohes Wachstum und ein starker Langfristtrend in 16 Ländern seit 1890 eher schwächeren Jahren voraus." },
+      { id: "debt", label: "Schulden", short: "S", desc: "Langer Schuldenzyklus: Staatsschulden in % des BIP, ihre Entwicklung bis in fünf Jahren laut IWF, Haushaltssaldo und Zins minus nominales Wachstum. Hohe und steigende Schulden belasten Anleihen und Währung und stützen Gold. Für die Renditen der folgenden fünf Jahre zeigte die Säule im Backtest keine Prognosekraft; sie fließt derzeit nicht ein." },
+      { id: "power", label: "Machtposition", short: "P", desc: "Großer Zyklus nach Dalio: Veränderung des Anteils an der Weltwirtschaft (Kaufkraftparitäten, IWF) über zehn Jahre, Leistungsbilanz und bei Währungen der Anteil an den Weltdevisenreserven (IWF COFER). Im Backtest ohne Prognosekraft für die Renditen der folgenden fünf Jahre; fließt derzeit nicht ein." },
+      { id: "trendLT", label: "Langfristtrend", short: "T", desc: "Steigung des log-linearen Zehnjahrestrends und Kursentwicklung über drei Jahre, jeweils im Verhältnis zur Schwankungsbreite. Bei Unternehmensanleihen und Rohstoffen antizyklisch: lange Haussen enden eher in Rückschlägen. Bei Aktien ohne Gewicht (seit 1970 eher prozyklisch, in 16 Ländern seit 1890 eher antizyklisch)." },
     ],
     horizons: [
       { id: "m1", label: "1 Monat", title: "Ausblick 1 Monat", short: "1 M.", desc: "Taktische Sicht für die nächsten Wochen: Trend, Konjunkturdynamik, Liquidität und Risikoappetit stehen im Vordergrund.", pillars: ["trend", "cycle", "value", "liquidity", "risk"], weights: W_M1 },
@@ -249,6 +252,10 @@ const SIG = (() => {
       { n: 2, sym: "++", label: "klar positiv", max: Infinity },
     ],
     hyst: 0.1,
+    // Frühindikator: Gewicht der Veränderung über drei Monate und des Niveaus gegenüber 100 (je Punkt). Die Veränderung
+    // zählt nicht: sie wird in den ersten Monaten stark revidiert und hatte mit den damals veröffentlichten Werten
+    // (OECD-Revisionsdatenbank, seit 2001) keine Prognosekraft; das Niveau bleibt
+    cli: { mom: 0, lvl: 0.3 },
     // Risiko-Beta: wie stark eine Anlage von Risikoappetit (+) oder Risikoscheu (−) profitiert
     beta: { equity: 1, em: 1.2, credit: 1, commodity: 0.7, gold: -0.7, safeFx: -0.9, fx: 0.2, usd: -0.3, safeBond: -0.6, bond: -0.3, crypto: 1.2 },
     // Reihen je Region; imf/wb/cofer: Kürzel der Jahresreihen von IWF (WEO) und Weltbank und der Reservewährung
@@ -468,21 +475,21 @@ const SIG = (() => {
     return { s, parts };
   }
 
-  /* Frühindikator: Dynamik über drei Monate und Niveau gegenüber 100. mode "contra" wertet das Niveau antizyklisch:
+  /* Frühindikator: Niveau gegenüber 100 (die Dynamik über drei Monate mit dem Gewicht cfg.cli.mom, derzeit 0). mode "contra" wertet das Niveau antizyklisch:
      Märkte nehmen die Erholung vorweg, ein hohes Niveau geht im Backtest schwächeren Aktien- und Kreditjahren voraus. */
   function growthScore(L, ids, cut, mode = "mom") {
     const sc = [], parts = [];
-    const lw = mode === "contra" ? -0.3 : 0.3;
+    const mw = cfg.cli.mom, lw = mode === "contra" ? -cfg.cli.lvl : cfg.cli.lvl;
     for (const id of ids) {
       const p = asOf(L.s[id], cut);
       if (p.length < 6) continue;
       const a = last(p), b = valueAt(p, a.t - 85);
       if (!b) continue;
       const mom = a.v - b.v, lvl = a.v - 100;
-      sc.push(clip2(1.4 * mom + lw * lvl));
+      sc.push(clip2(mw * mom + lw * lvl));
       if (ids.length === 1) {
         parts.push({ k: "Frühindikator (OECD)", v: a.v, u: "Punkte", s: null, d: isoOf(a.t).slice(0, 7) });
-        parts.push({ k: "Veränderung über 3 Monate", v: mom, u: "Punkte", s: clip2(1.4 * mom) });
+        parts.push({ k: mw ? "Veränderung über 3 Monate" : "Veränderung über 3 Monate (nur zur Information)", v: mom, u: "Punkte", s: mw ? clip2(mw * mom) : null });
         parts.push({ k: mode === "contra" ? "Niveau gegenüber 100 (antizyklisch)" : "Niveau gegenüber 100", v: lvl, u: "Punkte", s: clip2(lw * lvl) });
       }
     }

@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { forward, logistic, categorize, accuracy, verdict, compactAccuracy, monthEnds } from "../worker/backtest.js";
+import { forward, logistic, categorize, accuracy, verdict, compactAccuracy, monthEnds, randomTest, buildBacktestLive, runPanel, applyVintages } from "../worker/backtest.js";
 const require = createRequire(import.meta.url);
 const { SIG } = require("../src/signals.js");
 
@@ -118,4 +118,47 @@ test("Schwellenländerkorb: BIP-gewichtete Renditen in US-Dollar, Zeitfenster de
   // Februar: (300 × 10 % + 100 × (−33,3 %) + 100 × 0 %) ÷ 500 = −0,67 %
   assert.ok(Math.abs(index[1][1] - 100 * (1 + (300 * 0.1 + 100 * (6 / 9 - 1)) / 500)) < 1e-9);
   assert.ok(Math.abs(usd.in.get("2000-02") - 110 / 40) < 1e-12);
+});
+
+test("Zufallstest: echte Prognosekraft gegenüber zeitlich verschobenen Signalen", () => {
+  const cuts = monthEnds("1970-01", day("2019-12-31"));
+  let seed = 11;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5;
+  const mk = good => categorize(["a", "b", "c"].flatMap(id => cuts.map(t => {
+    const r = rnd() * 0.1, noise = rnd();
+    // gutes Modell: Gesamtwert enthält die spätere Rendite; schlechtes: nur Rauschen
+    return { id, kind: "equity", t, score: good ? 20 * r + noise : noise, vol: 0.15, r1: r };
+  })));
+  const g = randomTest(mk(true), "m1"), z = randomTest(mk(false), "m1");
+  assert.ok(g.pIc < 0.01 && g.ic > 0.3, `gutes Modell: p ${g.pIc}, IC ${g.ic}`);
+  assert.ok(Math.abs(g.icRand) < 0.1, "Zufall nahe null");
+  assert.ok(z.pIc > 0.05, `Rauschen: p ${z.pIc}`);
+  // Urteil: Zufallstest muss bestehen; p ≥ 0,5 heißt nicht belegt
+  const a = { ic: 0.2, icLo: 0.1, nEff: 50 }, sub = { ic: 0.1, nEff: 20 };
+  assert.equal(verdict(a, [sub, sub, sub], { pIc: 0.01 }), "ok");
+  assert.equal(verdict(a, [sub, sub, sub], { pIc: 0.2 }), "weak");
+  assert.equal(verdict(a, [sub, sub, sub], { pIc: 0.6 }), "fail");
+});
+
+test("Echtzeit-Datenstände: Frühindikator zum Stichtag aus der damals jüngsten Ausgabe", () => {
+  // heutige (revidierte) Reihe: konstant 100; Ausgabe Februar 2005 meldete für Dezember 2004 noch 104
+  const months = []; for (let y = 1999; y <= 2006; y++) for (let m = 1; m <= 12; m++) months.push(`${y}-${String(m).padStart(2, "0")}`);
+  const raw = { cli_us: { freq: "M", points: months.map(ym => [ym + "-01", 100]) } };
+  const vintages = { USA: { "200502": ["2004-05", [100, 100, 100, 100, 100, 101, 102, 104]] } };
+  const L = buildBacktestLive(raw, { vintages });
+  assert.ok(L.vint && L.vint.cli_us, "Ausgaben übernommen");
+  // Frist der revidierten Reihe: 45 Tage nach Monatsende
+  assert.equal(L.s.cli_us.lag, 45);
+  const at = cut => { applyVintages(L, day(cut)); const p = SIG.asOf(L.s.cli_us, day(cut)); return p[p.length - 1]; };
+  // Ende Januar 2005 (vor der Ausgabe): heutige Reihe mit 45 Tagen Frist → November 2004, Wert 100
+  let p = at("2005-01-31");
+  assert.equal(SIG.isoOf(p.t).slice(0, 7), "2004-11");
+  assert.equal(p.v, 100);
+  // Ende Februar 2005: Ausgabe vom Februar mit Dezember 2004 = 104 (später auf 100 revidiert)
+  p = at("2005-02-28");
+  assert.equal(SIG.isoOf(p.t).slice(0, 7), "2004-12");
+  assert.equal(p.v, 104);
+  // nach einem Panel steht wieder die heutige Reihe
+  runPanel(L, { from: "2005-02", to: day("2005-03-31"), horizons: [] });
+  assert.equal(L.s.cli_us, L.vint.cli_us.base);
 });
