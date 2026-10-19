@@ -4,7 +4,10 @@
    GET  /api/signals    Signalverlauf des Anlagebarometers aus D1: ?h=m1|y1|lt (Horizont), ?daily=Tage mit allen
                         Tageswerten (sonst Monatsenden), ?pillars=1 mit Säulenwerten, ?format=csv
    GET  /api/archive    Datenarchiv (D1): alle Reihen mit Zeitraum und Anzahl der Beobachtungen
-   GET  /api/series     Beobachtungen aus dem Archiv: ?id=a,b (höchstens 20), ?from=, ?to=, ?format=csv
+   GET  /api/series     Beobachtungen aus dem Archiv: ?id=a,b (höchstens 20), ?from=, ?to=, ?thin=w (letzter Wert je
+                        Kalenderwoche), ?format=csv
+   GET  /api/backtest   Backtest des Anlagebarometers: ohne Parameter die Kennzahlen aller Horizonte, mit ?h=m1|y1|lt&id=
+                        die Einzelwerte einer Anlage (Monatsende, Gesamtwert, Stufe, Rendite danach), ?format=csv
    GET  /api/events     archivierte Meldungen (GDACS): ?from=
    POST /api/run        Abruf sofort anstoßen (nur mit Secret ADMIN_TOKEN; ?jobs=a,b für bestimmte Jobs)
    Alles andere liefert die statische Seite aus public/. Der Cron-Trigger ruft scheduled() auf. */
@@ -12,6 +15,7 @@ import { runDueJobs, META_KEY, SNAP_KEY } from "./runner.js";
 import { JOBS } from "./jobs.js";
 import { readHistory, ensureSchema } from "./jobs-signals.js";
 import { archiveSummary, readSeries, ensureArchive } from "./archive.js";
+import { readBacktest } from "./jobs-backtest.js";
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -111,12 +115,27 @@ async function series(request, env, ctx) {
   if (!ids.length) return json({ error: "Parameter id fehlt (Kennungen der Reihen, durch Komma getrennt; Liste unter /api/archive)" }, 400);
   const from = /^\d{4}(-\d{2}(-\d{2})?)?$/.test(url.searchParams.get("from") || "") ? url.searchParams.get("from") : null;
   const to = /^\d{4}(-\d{2}(-\d{2})?)?$/.test(url.searchParams.get("to") || "") ? url.searchParams.get("to") + "~" : null;
+  const weekly = url.searchParams.get("thin") === "w";
   return cached(request, ctx, async () => {
-    const data = await readSeries(env.DB, ids, { from, to });
+    const data = await readSeries(env.DB, ids, { from, to, weekly });
     if (url.searchParams.get("format") !== "csv") return json(data, 200, { "cache-control": "public, max-age=600" });
     const out = [["reihe", "datum", "wert", "einheit", "bezeichnung"]];
     for (const [id, s] of Object.entries(data)) for (const [d, v] of s.points) out.push([id, d, v, s.unit, s.label]);
     return csv(out, ids.length === 1 ? `${ids[0]}.csv` : "reihen.csv");
+  });
+}
+
+async function backtest(request, env, ctx) {
+  if (!env.DB) return json({ error: "Keine D1-Datenbank gebunden" }, 404);
+  const url = new URL(request.url);
+  const h = ["m1", "y1", "lt"].includes(url.searchParams.get("h")) ? url.searchParams.get("h") : "y1";
+  const id = /^[\w-]{1,40}$/.test(url.searchParams.get("id") || "") ? url.searchParams.get("id") : null;
+  return cached(request, ctx, async () => {
+    const data = await readBacktest(env.DB, { h, id });
+    // noch ohne Ergebnis (erster Lauf steht aus): nicht zwischenspeichern
+    const empty = id ? !data.points.length : !Object.keys(data).length;
+    if (!id || url.searchParams.get("format") !== "csv") return json(data, 200, empty ? {} : { "cache-control": "public, max-age=3600" });
+    return csv([["monatsende", "gesamtwert", "stufe", "rendite_danach"], ...data.points], `backtest_${h}_${id}.csv`);
   });
 }
 
@@ -151,6 +170,7 @@ export default {
     if (url.pathname === "/api/archive" && request.method === "GET") return archive(request, env, ctx);
     if (url.pathname === "/api/series" && request.method === "GET") return series(request, env, ctx);
     if (url.pathname === "/api/events" && request.method === "GET") return events(request, env, ctx);
+    if (url.pathname === "/api/backtest" && request.method === "GET") return backtest(request, env, ctx);
     if (url.pathname === "/api/run" && request.method === "POST") return manualRun(request, env, ctx);
     if (url.pathname.startsWith("/api/")) return json({ error: "unbekannter Endpunkt" }, 404);
     return env.ASSETS.fetch(request);

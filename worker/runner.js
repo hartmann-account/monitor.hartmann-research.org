@@ -16,7 +16,11 @@ function backoff(fails) { return [1, 2, 4, 8, 12, 24][Math.min(fails - 1, 5)] * 
 /* Noch nicht archiviert (D1 gebunden, aber keine Archivausgabe bzw. bei "deep" noch nicht die ganze Historie):
    solche Jobs laufen vorgezogen, auch wenn ihr Takt noch nicht abgelaufen ist */
 export function archivePending(j, s, env) {
-  return !!(env && env.DB && !j.noArchive && (!s.arch || !s.arch.at || (j.deep && !s.deepAt)));
+  return !!(env && env.DB && !j.noArchive && (!s.arch || !s.arch.at || deepPending(j, s)));
+}
+// volle Historie noch nicht (oder mit einem späteren Startdatum als heute vorgesehen) geladen
+function deepPending(j, s) {
+  return !!j.deep && s.deepFrom !== j.deep;
 }
 const ARCHIVE_CATCHUP_PER_RUN = 4;
 
@@ -52,6 +56,17 @@ export function trimOutput(out, ctx) {
     const from = p && p.s != null ? isoDate(p.s) : fallback;
     series[k] = trimFrom(s, from);
   }
+  return { ...out, series };
+}
+
+/* Ausgabe für den Snapshot: Reihen, die nur ins Archiv gehören (Job archiveOnly oder Reihe mit ao), fallen heraus;
+   ohne Datenbank bleibt alles stehen */
+export function kvOutput(job, out, archived) {
+  if (!archived || !out || !out.series) return out;
+  if (job.archiveOnly) return { series: {}, items: [{ archived: Object.keys(out.series).length, latest: summarize(out).latest }] };
+  if (!Object.values(out.series).some(s => s && s.ao)) return out;
+  const series = {};
+  for (const [k, s] of Object.entries(out.series)) if (!s.ao) series[k] = s;
   return { ...out, series };
 }
 
@@ -99,6 +114,8 @@ export async function runDueJobs(env, opts = {}) {
   const ran = [];
   for (const job of queue) {
     if (ran.length >= maxJobs) break;
+    // rechenintensive Jobs (Backtests) laufen allein: nur als erster Job eines Aufrufs, danach keiner mehr
+    if (job.solo && ran.length) continue;
     if (fetcher.used + job.cost > budget) continue;
     // Quellen mit enger Drosselung (OECD) nur einmal je Lauf
     if (job.onePerRun && ran.some(id => { const j = JOBS.find(x => x.id === id); return j.onePerRun && j.source === job.source; })) continue;
@@ -107,7 +124,7 @@ export async function runDueJobs(env, opts = {}) {
     // Datenarchiv (D1): jede Ausgabe wird archiviert, häufige Jobs (GDELT) höchstens alle drei Stunden; beim ersten
     // Archivlauf eines Jobs mit "deep" wird die ganze Historie der Quelle geladen
     const archive = !!env.DB && !job.noArchive && (!job.frequent || !s.arch || !s.arch.at || now - Date.parse(s.arch.at) > 3 * HOUR);
-    const deep = archive && !!job.deep && !s.deepAt;
+    const deep = archive && deepPending(job, s);
     try {
       const prev = job.keep ? await env.DATA.get("job:" + job.id, "json") : null;
       const ctx = workerCtx(env, now, prev, opts.base || "https://assets.invalid");
@@ -118,19 +135,21 @@ export async function runDueJobs(env, opts = {}) {
         try {
           const a = await archiveOutput(env.DB, job, out, ctx, new Date(now).toISOString());
           s.arch = { at: new Date(now).toISOString(), ...a, err: null };
-          if (deep) s.deepAt = new Date(now).toISOString();
+          if (deep) { s.deepAt = new Date(now).toISOString(); s.deepFrom = job.deep; s.deepFails = 0; }
         } catch (e) {
           s.arch = { ...(s.arch || {}), err: String((e && e.message) || e).slice(0, 300), errAt: new Date(now).toISOString() };
         }
       }
       if (deep) out = trimOutput(out, ctx);
+      const sum = summarize(out);
+      out = kvOutput(job, out, !!env.DB);
       const body = JSON.stringify(out);
       await env.DATA.put("job:" + job.id, body);
-      Object.assign(s, summarize(out), { ok: true, okAt: new Date(now).toISOString(), error: null, fails: 0, retryAt: null, bytes: body.length, ms: Date.now() - t0 });
+      Object.assign(s, sum, { ok: true, okAt: new Date(now).toISOString(), error: null, fails: 0, retryAt: null, bytes: body.length, ms: Date.now() - t0 });
       if (job.version) s.version = job.version;
     } catch (e) {
       // scheitert der Abruf der ganzen Historie zweimal, läuft der Job danach mit dem üblichen Zeitraum weiter
-      if (deep) { s.deepFails = (s.deepFails || 0) + 1; if (s.deepFails >= 2) s.deepAt = "übersprungen"; }
+      if (deep) { s.deepFails = (s.deepFails || 0) + 1; if (s.deepFails >= 2) { s.deepAt = "übersprungen"; s.deepFrom = job.deep; } }
       s.ok = false;
       s.fails = (s.fails || 0) + 1;
       s.error = String((e && e.message) || e).slice(0, 300);
@@ -139,6 +158,7 @@ export async function runDueJobs(env, opts = {}) {
     }
     meta.jobs[job.id] = s;
     ran.push(job.id);
+    if (job.solo) break;
   }
   if (!ran.length) return { ran, used: fetcher.used };
   meta.updatedAt = new Date(now).toISOString();

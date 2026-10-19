@@ -30,6 +30,12 @@ const LSRC = {
   gpr: { name: "Geopolitical Risk Index (Caldara, Iacoviello)", url: "https://www.matteoiacoviello.com/gpr.htm" },
   nbp: { name: "Narodowy Bank Polski (Goldpreis und Wechselkurs)", url: "https://api.nbp.pl/" },
   boj: { name: "Bank of Japan, Statistik-API", url: "https://www.stat-search.boj.or.jp/" },
+  cboe: { name: "Cboe Global Markets, Volatilitätsindizes", url: "https://www.cboe.com/tradable_products/vix/vix_historical_data/" },
+  cftc: { name: "CFTC, Commitments of Traders", url: "https://publicreporting.cftc.gov/" },
+  fed: { name: "Federal Reserve Board, Excess Bond Premium (Gilchrist-Zakrajšek)", url: "https://www.federalreserve.gov/econres/notes/feds-notes/updating-the-recession-risk-and-the-excess-bond-premium-20161006.html" },
+  ofr: { name: "Office of Financial Research, Financial Stress Index", url: "https://www.financialresearch.gov/financial-stress-index/" },
+  eurostat: { name: "Eurostat, Economic Sentiment Indicator", url: "https://ec.europa.eu/eurostat/web/euro-indicators/business-and-consumer-surveys" },
+  shiller: { name: "Robert Shiller, Online Data", url: "https://shillerdata.com/" },
   pictet: { name: "Pictet Research Institute: Demographics and Technology (Oktober 2025)", url: "https://am.pictet.com/content/dam/am-pictet/media/global/investment-research/demographics-and-technology/PictetResearchInstitute_Demographics-and-Technology.pdf" },
 };
 
@@ -165,25 +171,26 @@ const VINTAGE = "IWF-Prognosen und Bevölkerungsprojektionen gibt es nur im jün
 const G_PARTS = ["Je Land: IWF-Prognose des realen Wachstums, Mittel der nächsten fünf Jahre: (Wachstum − 2 %) ÷ 1,5 Pp.", "Bevölkerung von 15 bis 64 Jahren (Projektion der Weltbank), Veränderung pro Jahr über die nächsten zehn Jahre ÷ 0,5 %.", "BIP je Erwerbstätigem, Wachstum pro Jahr über die letzten zehn Jahre: (Wachstum − 1 %) ÷ 1 Pp.", "Länderwert = Mittel der Teile; Körbe und Welt: gewichtetes Mittel der Länder."];
 const D_PARTS = ["Schuldenlast je Land: Staatsschulden (Quote − 60 %) ÷ 40 Pp.; Veränderung der Quote bis in fünf Jahren laut IWF ÷ 10 Pp.; Haushaltssaldo −(Saldo + 3 %) ÷ 3 Pp.; Zins minus nominales Wachstum (Rendite 10 Jahre minus IWF-Prognose für Wachstum und Inflation) ÷ 1,5 Pp.", "Schuldenlast = Mittel der Teile (positiv = hohe Last)."];
 const P_PARTS = ["Je Land: Veränderung des Anteils an der Weltwirtschaft (Kaufkraftparitäten, IWF) pro Jahr über zehn Jahre (fünf zurück, fünf Projektion) ÷ 1 %.", "Leistungsbilanz, Mittel der nächsten fünf Jahre (IWF) ÷ 3 % des BIP.", "Länderwert = Mittel; Körbe: gewichtetes Mittel."];
+const AIAE_F = "Aktienanteil am Anlegervermögen der USA (Fed-Finanzierungsrechnung Z.1) = Marktwert aller US-Aktien ÷ (Aktien + Schulden von Haushalten, Unternehmen, Staat und Ausland). Der jüngste Quartalswert x wird mit dem S&P 500 bis heute fortgeschrieben: x′ = k·x ÷ (k·x + 1 − x), k = Kursveränderung seit Quartalsende; z = (x′ − Mittel aller Quartale seit 1945) ÷ Standardabweichung.";
 const C12 = ["Teilsäule Frühindikator: wie beim Ausblick 1 Monat.", "Teilsäule IWF-Prognose: Wachstum der nächsten zwölf Monate = (1 − a) × Prognose laufendes Jahr + a × Prognose nächstes Jahr (a = abgelaufener Teil des Jahres), ebenso für die letzten zwölf Monate; Wert = (künftig − bisher) ÷ 0,7 Pp.", "Säule = Mittel beider Teilsäulen."];
 const PILLAR_RULES = {
   trend: { all: ["Rendite über 3, 6 und 12 Monate ÷ (annualisierte Volatilität × √(Monate ÷ 12)) ergibt je Zeitraum einen z-Wert.", "Abstand zum 200-Tage-Schnitt (bei Monatsreihen: 10-Monats-Schnitt) ÷ (Volatilität × 0,45).", "Säule = 0,6 × Mittel der Renditewerte + 0,4 × Abstandswert."] },
   cycle: {
-    equity: ["OECD-Frühindikator der Region: Wert = 1,4 × Veränderung über 3 Monate + 0,3 × (Niveau − 100); bei mehreren Regionen das Mittel."],
-    commodity: ["OECD-Frühindikator der Region bzw. der Welt (Mittel aus USA, Eurozone, China, Japan, Großbritannien, Indien): 1,4 × Veränderung über 3 Monate + 0,3 × (Niveau − 100)."],
+    equity: ["OECD-Frühindikator der Region: Wert = 1,4 × Veränderung über 3 Monate − 0,3 × (Niveau − 100); bei mehreren Regionen das Mittel.", "Das Niveau zählt antizyklisch: ein Frühindikator weit über 100 zeigt ein spätes Zyklusstadium, nach dem Aktien und Unternehmensanleihen im Backtest seit 1970 eher schwächer liefen."],
+    commodity: ["OECD-Frühindikator der Region bzw. der Welt (Mittel aus USA, Eurozone, China, Japan, Großbritannien, Indien): 1,4 × Veränderung über 3 Monate − 0,3 × (Niveau − 100) (Niveau antizyklisch)."],
     bond: ["Wachstum: −0,7 × Frühindikator-Wert der Region (gute Konjunktur belastet Anleihen).", "Inflation: −(Veränderung der Inflationsrate über 6 Monate ÷ 0,8 Pp.).", "Säule = Mittel beider Werte."],
     fx: ["Wachstumsvorsprung = Frühindikator-Wert der Region − Wert der USA (beim Dollar: USA − Welt; bei EUR/CHF: Eurozone − Schweiz)."],
     gold: ["Weltkonjunktur: −0,5 × Frühindikator-Wert der Welt.", "US-Inflation: Veränderung der Inflationsrate über 6 Monate ÷ 0,8 Pp.", "Säule = Mittel beider Werte."],
     relative: ["Wachstumsvorsprung der ersten gegenüber der zweiten Region; Aktien vs. Anleihen: US-Frühindikator; Gold vs. Aktien: −0,6 × US-Frühindikator; Gold vs. Anleihen: Veränderung der US-Inflation über 6 Monate ÷ 0,8 Pp."],
   },
   value: {
-    equity: ["Gerade durch die logarithmierten Monatskurse der letzten 10 Jahre; z = Abstand des heutigen Kurses zur Geraden ÷ Standardabweichung der Abstände.", "Wert = −z ÷ 1,2 (deutlich über dem Trend = teuer = negativ).", "USA zusätzlich Shiller-KGV: 4 × (0,5 − Perzentil seit 1881); Säule = Mittel beider."],
+    equity: ["USA und Welt: " + AIAE_F + " Wert = −z ÷ 1,2 (hoher Anteil = teuer = negativ). Ohne Z.1-Daten: Mittel aus Shiller-KGV, 4 × (0,5 − Perzentil seit 1881), und Trendabstand.", "Übrige Märkte: Mittel aus dem eigenen Abstand zum log-linearen 10-Jahres-Trend (z = Abstand ÷ Standardabweichung der Abstände, Wert = −z ÷ 1,2) und dem US-Aktienanteil als globaler Bewertung (−z ÷ 1,2)."],
     commodity: ["Gerade durch die logarithmierten Monatskurse der letzten 10 Jahre; z = Abstand des heutigen Kurses ÷ Standardabweichung der Abstände.", "Wert = −z ÷ 1,2."],
-    bond: ["Realrendite = Rendite 10 Jahre − Inflationsrate.", "z = (Realrendite − Mittel der letzten 10 Jahre) ÷ Standardabweichung; Wert = 0,9 × z (hohe Realrendite = günstig = positiv). Ohne Historie: Realrendite ÷ 1,2."],
-    credit: ["z = (Risikoprämie − Mittel der letzten 10 Jahre) ÷ Standardabweichung; hohe Prämie = günstig = positiv."],
+    bond: ["Realrendite = Rendite 10 Jahre − Inflationsrate.", "z = (Realrendite − Mittel der letzten 10 Jahre) ÷ Standardabweichung; Wert = 0,9 × z (hohe Realrendite = günstig = positiv). Ohne Historie: Realrendite ÷ 1,2.", "Zinskurve = Rendite 10 Jahre − Leitzins; Wert = (Kurve − 1 Pp.) ÷ 1,2 Pp. (steile Kurve = höhere Laufzeitprämie).", "Säule = Mittel beider Teile."],
+    credit: ["z = (Risikoprämie − Mittel der vorliegenden Jahre, höchstens 10) ÷ Standardabweichung, ab 100 Werten.", "Prämie Moody's Baa gegenüber 10-jährigen Treasuries als z über zehn Jahre (Historie seit 1986, im Backtest seit 1953).", "Säule = Mittel; hohe Prämie = günstig = positiv."],
     fx: ["Abweichung des realen effektiven Wechselkurses (BIZ) von seinem 10-Jahres-Mittel in %.", "Wert = −Abweichung ÷ 7 %. Gegenüber dem Dollar zählt der Unterschied: −(Abweichung der Währung − Abweichung des Dollars) ÷ 10 %."],
-    gold: ["Realer Goldpreis = Goldpreis ÷ US-Verbraucherpreisindex; z = Abstand zum 10-Jahres-Trend (wie bei Aktien).", "Wert = −z ÷ 1,2."],
-    relative: ["z = Abstand des Verhältnisses zu seinem log-linearen 10-Jahres-Trend ÷ Standardabweichung der Abstände.", "Wert = −z ÷ 1,2 (weit vorn = Rückschlagrisiko)."],
+    gold: ["Gold gegenüber Aktien: " + AIAE_F, "Wert = +z ÷ 1,2: ein hoher Aktienanteil (teure Aktien, wenig Absicherung) ging im Backtest seit 1972 in allen Teilperioden stärkeren Goldjahren voraus.", "Ohne Z.1-Daten: realer Goldpreis (Goldpreis ÷ US-Verbraucherpreisindex) gegenüber seinem 10-Jahres-Trend, −z ÷ 1,2."],
+    relative: ["Gold vs. Aktien und Gold vs. Anleihen: Aktienanteil am Anlegervermögen wie bei Gold (+z ÷ 1,2).", "Übrige Paare: z = Abstand des Verhältnisses zu seinem log-linearen 10-Jahres-Trend ÷ Standardabweichung der Abstände; Wert = −z ÷ 1,2 (weit vorn = Rückschlagrisiko)."],
   },
   liquidity: {
     equity: ["Leitzinsänderung über 12 Monate: −Änderung ÷ 0,6 Pp. (Senkungen stützen).", "Zinskurve = Rendite 10 Jahre − Leitzins, geteilt durch 1 Pp.", "USA: Fed-Bilanz über 6 Monate ÷ 3 %.", "Schwellenländer und Rohstoffe: −Veränderung des Dollarindex über 6 Monate ÷ 4 %.", "Säule = Mittel der vorhandenen Teile."],
@@ -193,21 +200,27 @@ const PILLAR_RULES = {
   },
   risk: { all: ["Risikoappetit = Mittel aus: VIX gegenüber seinem Jahresmedian (−Abweichung ÷ 5), Hochzins-Risikoprämie über 3 Monate (−Änderung ÷ 0,6 Pp.), Finanzstressindex (−Wert ÷ 1,2) und geopolitischem Risiko (−Abweichung ÷ 1,5 σ).", "Säule = Risikoappetit × Risikobeta der Anlage (Aktien +1, Schwellenländer +1,2, Rohstoffe +0,7, Gold −0,7, Franken und Yen −0,9 …) + Gewicht × Spannungsabweichung der betroffenen Konfliktlinien, begrenzt auf ±2."] },
   cycle12: {
-    equity: [...C12, "Körbe und Welt: gewichtetes Mittel der Länder.", VINTAGE],
+    equity: [...C12, "USA und Welt: in der Teilsäule Prognose zusätzlich die Baugenehmigungen der USA, Veränderung über sechs Monate ÷ 15 % (Mittel mit der IWF-Prognose); der Bau läuft der Konjunktur voraus.", "Körbe und Welt: gewichtetes Mittel der Länder.", VINTAGE],
     bond: [...C12, "Anleihen: Wachstumsprognose invers (× −0,7) und IWF-Inflationsprognose: −(künftig − bisher) ÷ 0,6 Pp.", VINTAGE],
     fx: [...C12, "Währungen: Vorsprung der Region vor den USA (Dollar: USA vor Welt; EUR/CHF: Eurozone vor Schweiz).", VINTAGE],
     gold: [...C12, "Gold: Weltwachstum invers (× −0,5).", VINTAGE],
     relative: [...C12, "Vorsprung der ersten Region; Aktien vs. Anleihen: US-Wachstum; Gold vs. Aktien: −0,6 × US-Wachstum; Gold vs. Anleihen: US-Inflation (künftig − bisher) ÷ 0,6 Pp.", VINTAGE],
   },
+  risk12: { all: [
+    "Aktien, Anleihen, Währungen und Rohstoffe: Risikoappetit und Spannungen wie beim Ausblick 1 Monat (mit dem Risikobeta der Anlage).",
+    "Aktien zusätzlich, jeweils antizyklisch: Verbraucherstimmung (USA: University of Michigan; Deutschland, Eurozone: Wirtschaftsstimmung der EU-Kommission) als z über zehn Jahre, Wert = −z ÷ 1,2; Kreditlücke der BIZ (Kredit/BIP-Quote über ihrem Trend), Wert = −Lücke ÷ 8 Pp.; USA und Welt: Netto-Position der Spekulanten im S&P-500-Future (CFTC) in % des offenen Interesses, z über drei Jahre, Wert = −z ÷ 1,2.",
+    "Staats- und Unternehmensanleihen: Excess Bond Premium der Fed ÷ 0,5 Pp. (hohe Prämie = Verunsicherung = günstiger Einstieg); US-Staatsanleihen zusätzlich die Positionierung im Future auf 10-jährige Treasuries, antizyklisch.",
+    "Gold und Silber: geopolitischer Risikoindex (Caldara/Iacoviello) als z über zehn Jahre ÷ 1,5; Positionierung der Spekulanten im Gold- bzw. Silberfuture, z über drei Jahre ÷ 1,2 (prozyklisch).",
+    "Säule = Mittel der vorhandenen Teile."] },
   mom12: { all: ["Rendite der letzten zwölf Monate ohne den jüngsten Monat ÷ annualisierte Volatilität (Zeitreihen-Momentum; der letzte Monat bleibt außen vor, weil kurzfristige Ausschläge oft umkehren).", "Abstand zum Zwölfmonatsmittel ÷ (Volatilität × 0,5).", "Säule = 0,7 × Momentum + 0,3 × Abstand."] },
   valueLT: {
-    equity: ["Gerade durch die logarithmierten Monatskurse der letzten bis zu 20 Jahre; z = Abstand des heutigen Kurses ÷ Standardabweichung der Abstände; Wert = −z ÷ 1,2.", "USA: Shiller-KGV, 4 × (0,5 − Perzentil seit 1881); Säule = 0,4 × Trendwert + 0,6 × KGV-Wert (das KGV sagt die Rendite der nächsten zehn Jahre am besten voraus)."],
+    equity: ["USA und Welt: Mittel aus Aktienanteil am Anlegervermögen (wie Säule Bewertung, −z ÷ 1,2), Shiller-KGV, 4 × (0,5 − Perzentil seit 1881), und Verbraucherstimmung, −z ÷ 1,2. Der Trendabstand fehlt hier bewusst: lange Haussen der USA liefen im Backtest weiter.", "Übrige Märkte: Mittel aus dem Abstand zum log-linearen Trend der letzten bis zu 20 Jahre (−z ÷ 1,2), dem US-Aktienanteil als globaler Bewertung und der Wirtschaftsstimmung (Deutschland, Eurozone)."],
     commodity: ["Realer Preis (Preis ÷ US-Verbraucherpreisindex) gegenüber seinem log-linearen Trend der letzten bis zu 20 Jahre; Wert = −z ÷ 1,2."],
     bond: ["Erwartete Realrendite = Rendite 10 Jahre − mittlere IWF-Inflationsprognose der nächsten fünf Jahre.", "Wert = (Realrendite − 1 %) ÷ 1 Pp.; über 1 % gilt als attraktiv. Körbe: gewichtetes Mittel der Länder.", VINTAGE],
-    credit: ["Risikoprämie − langjähriger Median (ICE BofA seit 1997: Hochzins USA 4,5, Investment Grade 1,3, Hochzins Euro 4,3 Pp.), geteilt durch 1,5 Pp.; hohe Prämie = günstig = positiv."],
+    credit: ["Risikoprämie − langjähriger Median (ICE BofA seit 1997: Hochzins USA 4,5, Investment Grade 1,3, Hochzins Euro 4,3 Pp.), geteilt durch 1,5 Pp.", "Prämie Moody's Baa als z über zehn Jahre; Excess Bond Premium der Fed ÷ 0,5 Pp.", "Säule = Mittel; hohe Prämien = günstig = positiv."],
     fx: ["Abweichung des realen effektiven Wechselkurses (BIZ) vom Mittel seit Beginn der Reihe (meist 2000) in %; gegenüber dem Dollar zählt der Unterschied zur Abweichung des Dollars.", "Wert = −Unterschied ÷ 12 %."],
-    gold: ["Realer Goldpreis = Goldpreis ÷ US-Verbraucherpreisindex, Monatswerte seit August 1971 (Ende der Goldbindung des Dollars).", "Perzentil des heutigen Werts: 3 × (0,5 − Perzentil); dazu z-Abstand zum log-linearen Trend seit 1971: −z ÷ 1,2; Säule = Mittel.", "Gold in Franken und Euro nutzt den Dollarpreis (Gold hat weltweit einen Preis); Silber: realer Preis seit 2005."],
-    relative: ["z = Abstand des Verhältnisses zu seinem log-linearen Trend der letzten bis zu 20 Jahre; Wert = −z ÷ 1,2."],
+    gold: ["Realer Goldpreis = Goldpreis ÷ US-Verbraucherpreisindex, Monatswerte seit August 1971 (Ende der Goldbindung des Dollars); Wert = 3 × (0,5 − Perzentil des heutigen Werts).", "Gold gegenüber Aktien: Aktienanteil am Anlegervermögen der USA, +z ÷ 1,2 (hoch = Gold gefragt).", "Opportunitätskosten: reale US-Rendite = Rendite 10 Jahre − Inflationsrate; Wert = −(Realrendite − 2 %) ÷ 2 Pp. (hohe Realzinsen belasten Gold).", "Säule = Mittel der drei Teile. Gold in Franken und Euro nutzt den Dollarpreis (Gold hat weltweit einen Preis); Silber: realer Silberpreis."],
+    relative: ["Gold vs. Aktien und Gold vs. Anleihen: Mittel aus Aktienanteil am Anlegervermögen (+z ÷ 1,2) und realer US-Rendite (−(Realrendite − 2 %) ÷ 2 Pp.).", "Regionen und Aktien vs. Anleihen (Rückkehr zur Mitte): Abstand des Verhältnisses zu seinem log-linearen Trend der letzten bis zu 20 Jahre, −z ÷ 1,2, und Entwicklung über drei Jahre, −Rendite ÷ (Volatilität × √3); Säule = Mittel."],
   },
   growth: {
     equity: [...G_PARTS, VINTAGE],
@@ -229,7 +242,7 @@ const PILLAR_RULES = {
     gold: [...P_PARTS, "Zusätzlich der Dollaranteil an den Weltdevisenreserven, Veränderung über fünf Jahre ÷ 2 Pp.", "Gold: −0,8 × Machtposition der USA (nachlassende Dominanz des Dollars stützt Gold).", VINTAGE],
     relative: [...P_PARTS, "Vorsprung der ersten Region; Gold-Verhältnisse wie Gold.", VINTAGE],
   },
-  trendLT: { all: ["Steigung des log-linearen Zehnjahrestrends (pro Jahr) ÷ (Volatilität × 0,5).", "Rendite über drei Jahre ÷ (Volatilität × √3).", "Säule = Mittel beider Werte."] },
+  trendLT: { all: ["Steigung des log-linearen Zehnjahrestrends (pro Jahr) ÷ (Volatilität × 0,5).", "Rendite über drei Jahre ÷ (Volatilität × √3).", "Säule = Mittel beider Werte.", "Unternehmensanleihen, Rohstoffe sowie Regionen-Paare und Aktien vs. Anleihen mit umgekehrtem Vorzeichen (antizyklisch): lange Aufwärtsphasen endeten dort im Backtest eher in Rückschlägen."] },
 };
 function pillarRules(pid, kind) {
   const R = PILLAR_RULES[pid];
@@ -285,6 +298,7 @@ function detailPanel(r) {
   return h("div", { class: "pg-detail", hidden: true },
     h("div", { class: "pillars" }, ...cards),
     strip,
+    backtestLine(r),
     h("p", { class: "small", style: "margin-top:8px" },
       `${r.row.label}${r.row.sub ? " (" + r.row.sub + ")" : ""}, ${BARO.horizon.title}: Gesamtwert ${signed(r.now.score, 2)} auf der Skala −2 bis +2, Datenstand ${deShort(SIG.isoOf(r.now.date))}; abgedeckt sind ${fmt(100 * r.now.coverage, 0)} % der Säulengewichte.`,
       r.prev && r.prev.cat ? ` Vor einem Monat: ${signed(r.prev.score, 2)} (${r.prev.cat.label}).` : "",
@@ -336,7 +350,9 @@ function renderBarometer() {
     document.getElementById("baro-tag").textContent = `${BARO.horizon.label} · Stand ${deShort(SIG.isoOf(BARO.tNow))}`;
     host.replaceChildren();
     if (view === "scale") {
-      const sh = sheet(host, { title: `Monatsübersicht der Signale · ${BARO.horizon.title}`, sub: `Einstufung zum ${deShort(SIG.isoOf(BARO.tNow))}; Zeile antippen für die Säulen im Einzelnen. Gold, Silber und Gold im Vergleich: eigene Übersicht unten`, info: baroInfo });
+      const bt = backtestFor(BARO.hz);
+      const btNote = bt ? `; im Backtest seit ${yr(bt.from)} ${pc0(bt.stats.all.hit)} Richtungstreffer (Mehrheitsregel ${pc0(bt.stats.all.base)})` : "";
+      const sh = sheet(host, { title: `Monatsübersicht der Signale · ${BARO.horizon.title}`, sub: `Einstufung zum ${deShort(SIG.isoOf(BARO.tNow))}${btNote}; Zeile antippen für Säulen, Wahrscheinlichkeit und Treffsicherheit. Gold, Silber und Gold im Vergleich: eigene Übersicht unten`, info: baroInfo });
       const grid = h("div", { class: "pgrid" }, gridHead(true));
       for (const g of BARO.groups) {
         if (g.id === "gold") continue;
@@ -381,12 +397,13 @@ function renderBarometer() {
     markHz();
     renderHorizonDesc();
     draw();
-    for (const f of [renderGold, renderBaroSummary, renderBaroMethod, renderMovers]) { try { f(); } catch (e) { console.error(f.name, e); } }
+    for (const f of [renderGold, renderAccuracy, renderBaroSummary, renderBaroMethod, renderMovers]) { try { f(); } catch (e) { console.error(f.name, e); } }
   }));
   markHz();
   renderHorizonDesc();
   draw();
   renderGold();
+  renderAccuracy();
   renderBaroSummary();
   renderBaroMethod();
 }
@@ -505,6 +522,128 @@ function renderGold() {
   sh.el.append(f);
 }
 
+/* ------------------------------------------------------------------ Treffsicherheit (Backtest) */
+// Kennzahlen je Horizont aus dem Snapshot (Jobs backtest_m1, backtest_y1, backtest_lt), sonst aus data/backtest.json
+let BT_SEED = null;
+function backtestFor(hz = HZ) {
+  const it = LIVE && LIVE.items && LIVE.items["backtest_" + hz];
+  if (it && it[0] && it[0].stats && it[0].stats.all) return it[0];
+  return BT_SEED && BT_SEED[hz] && BT_SEED[hz].stats ? BT_SEED[hz] : null;
+}
+// Wahrscheinlichkeit steigender Kurse zum Gesamtwert: logistische Kalibrierung der Anlageart auf allen Monatsenden seit 1970
+function probUp(hz, kind, score) {
+  const B = backtestFor(hz);
+  const c = B && B.calib && (B.calib[kind] || B.calib.all);
+  if (!c || score == null) return null;
+  return { p: 1 / (1 + Math.exp(-(c.a + c.b * score))), base: c.base, a: c.a, b: c.b, n: c.n, own: !!B.calib[kind] };
+}
+const KIND_DE = { all: "Alle Anlagen", equity: "Aktien", bond: "Staatsanleihen", credit: "Unternehmensanleihen", fx: "Währungen", gold: "Gold, Silber", commodity: "Rohstoffe", relative: "Relative Stärke" };
+const VERDICT_DE = { ok: { t: "belegt", sym: "✓", cls: "ok" }, weak: { t: "schwach", sym: "~", cls: "weak" }, fail: { t: "nicht belegt", sym: "✗", cls: "fail" } };
+const pc0 = v => (v == null ? "–" : fmt(100 * v, 0) + " %");
+const ci0 = (lo, hi) => (lo == null ? "–" : `${fmt(100 * lo, 0)}–${fmt(100 * hi, 0)} %`);
+const yr = iso => (iso ? iso.slice(0, 4) : "–");
+function backtestLine(r) {
+  const B = backtestFor(BARO.hz);
+  if (!B) return null;
+  const pu = probUp(BARO.hz, r.row.kind, r.now.score), rs = B.rows && B.rows[r.row.id], ks = B.stats[r.row.kind];
+  const H = BARO.horizon, v = ks && VERDICT_DE[ks.verdict];
+  const spec = () => ({
+    t: `${r.row.label}: Wahrscheinlichkeit und Treffsicherheit (${H.label})`,
+    d: "Wie oft das Modell in der Vergangenheit mit der Richtung recht hatte und wie wahrscheinlich steigende Kurse beim heutigen Gesamtwert sind. Grundlage: Backtest mit monatlichen Stichtagen seit 1970, jeweils nur mit den damals veröffentlichten Daten.",
+    f: ["Wahrscheinlichkeit = 1 ÷ (1 + e^−(a + b × Gesamtwert)); a und b aus einer logistischen Regression über alle Monatsenden der Anlageart (Ergebnis: Kurs nach Ablauf des Horizonts höher oder nicht).",
+      "Üblich = Anteil der Monatsenden, nach denen die Kurse der Anlageart stiegen (Grundhäufigkeit).",
+      "Trefferquote = Anteil der positiven bzw. negativen Stufen, deren Richtung eintraf; neutrale Stufen zählen nicht. 95-%-Intervall nach Wilson auf der effektiven Stichprobe (überlappende Zeiträume zählen anteilig).",
+      "Mehrheitsregel = Trefferquote, wenn man bei denselben Fällen immer die häufigere Richtung getippt hätte."],
+    r: [pu ? `a = ${fmt(pu.a, 3)}, b = ${fmt(pu.b, 3)}${pu.own ? "" : " (alle Anlagen)"}; Gesamtwert ${signed(r.now.score, 2)} → ${fmt(100 * pu.p, 1)} %` : null,
+      rs ? `${r.row.label}: ${rs.nDir} Richtungssignale seit ${yr(rs.from)}, ${pc0(rs.hit)} richtig (95 %-KI ${ci0(rs.lo, rs.hi)}), Mehrheitsregel ${pc0(rs.base)}, Rangkorrelation ${rs.ic == null ? "–" : fmt(rs.ic, 2)}` : null,
+      ks ? `${KIND_DE[r.row.kind]}: Trefferquote ${pc0(ks.hit)} gegenüber ${pc0(ks.base)}, Rangkorrelation ${fmt(ks.ic, 2)} (95 %-KI ${fmt(ks.icLo, 2)} bis ${fmt(ks.icHi, 2)}) → ${v.t}` : null],
+    s: "Vergangene Treffer sind keine Garantie für künftige. Keine Anlageberatung.",
+  });
+  return h("p", { class: "small bt-line" },
+    pu ? h("span", { class: "bt-prob" }, `Wahrscheinlichkeit steigender Kurse (${H.label}): `, h("b", { text: fmt(100 * pu.p, 0) + " %" }), ` · üblich ${fmt(100 * pu.base, 0)} %. `) : null,
+    rs ? `Backtest seit ${yr(rs.from)}: ${rs.nDir} Richtungssignale, ${pc0(rs.hit)} richtig (Mehrheitsregel ${pc0(rs.base)}). ` : "",
+    v ? h("span", { class: `bt-verdict ${v.cls}`, text: `${v.sym} Prognosekraft ${KIND_DE[r.row.kind]}: ${v.t}` }) : null,
+    info(spec, `Treffsicherheit ${r.row.label}`));
+}
+function accTile(label, value, unit, meta, spec) {
+  return h("div", { class: "tile" }, h("div", { class: "label" }, label, spec ? info(spec, label) : null),
+    h("div", { class: "value" }, value, unit ? h("small", { text: unit }) : null),
+    h("div", { class: "meta" }, ...meta.filter(Boolean).map(m => h("span", { text: m }))));
+}
+function renderAccuracy() {
+  const host = document.getElementById("treffsicherheit");
+  if (!host) return;
+  host.replaceChildren();
+  if (!BARO) return;
+  const B = backtestFor(BARO.hz), H = BARO.horizon;
+  if (!B) {
+    host.append(h("p", { class: "note-box", text: `Die Treffsicherheit für „${H.title}“ erscheint, sobald der Worker den Backtest gerechnet hat (wöchentlich, Jobs „backtest_${BARO.hz}“).` }));
+    return;
+  }
+  const A = B.stats.all, O = B.oos && B.oos.all, BS = B.brier && B.brier.all, LV = B.live;
+  const months = { m1: 1, y1: 12, lt: 60 }[BARO.hz];
+  const sh = sheet(host, {
+    title: `Treffsicherheit im Backtest · ${H.title}`,
+    sub: `${B.months} Monatsenden von ${deMonth(B.from)} bis ${deMonth(B.to)}: jede Anlage mit dem damals veröffentlichten Datenstand eingestuft und mit der Kursentwicklung der folgenden ${months === 1 ? "Monats" : months === 12 ? "zwölf Monate" : "fünf Jahre"} verglichen`,
+    info: () => ({
+      d: ["Rückrechnung des unveränderten Modells zu jedem Monatsende seit 1970 mit der Historie aus der D1-Datenbank: für jede Anlage die Einstufung, die das Modell damals gezeigt hätte, und die tatsächliche Rendite danach.",
+        "Nur Daten, die zum Stichtag veröffentlicht waren (übliche Fristen je Reihe); IWF-Prognosen werden durch einfache Fortschreibungen ersetzt, weil alte Prognosestände nicht vorliegen."],
+      f: ["Trefferquote: Anteil der positiven und negativen Stufen, deren Richtung eintraf (neutral = keine Aussage).",
+        `Effektive Stichprobe: überlappende Zeiträume zählen anteilig, je Anlage ein unabhängiger Fall je ${months === 1 ? "Monat" : months === 12 ? "zwölf Monate" : "fünf Jahre"}; daraus das 95-%-Intervall (Wilson).`,
+        "Mehrheitsregel („steigt immer“): bei denselben Fällen immer die häufigere Richtung tippen – der Maßstab, den ein Modell schlagen muss.",
+        "Rangkorrelation (IC): Spearman-Korrelation zwischen Gesamtwert und späterer, um die Schwankung bereinigter Rendite; 0 = keine Prognosekraft, 95-%-Intervall über Fisher-z.",
+        "Ohne Vorgriff: Gewichte der Säulen Jahr für Jahr nur aus der bis dahin bekannten Geschichte geschätzt (ausgehend von gleichen Gewichten), ab 1990.",
+        "Brier-Skill: Güte der Wahrscheinlichkeiten ohne Vorgriff im Vergleich zur bloßen Grundhäufigkeit (0 = nicht besser, 1 = perfekt).",
+        "Urteil „belegt“: Rangkorrelation mit 95 % Sicherheit über null und in jeder der drei Teilperioden (1970–89, 1990–2007, ab 2008) positiv; „schwach“: insgesamt positiv; sonst „nicht belegt“."],
+      r: [`${A.n} Einstufungen, davon ${A.nDir} mit Richtung (${pc0(A.cov)}), effektiv ${A.nEff} unabhängige Fälle`, `Trefferquote ${fmt(100 * A.hit, 1)} % (95 %-KI ${ci0(A.lo, A.hi)}), Mehrheitsregel ${fmt(100 * A.base, 1)} %`],
+      s: `Rohdaten: /api/backtest (Kennzahlen) und /api/backtest?h=${BARO.hz}&id=eq_us (Einzelwerte, auch &format=csv). Stand der Rechnung: ${B.at ? deShort(B.at) : "mitgelieferte Datei"}.`,
+    }),
+  });
+  const tiles = h("div", { class: "gold-facts acc-tiles" },
+    accTile("Richtungstreffer", fmt(100 * A.hit, 0), "%", [`95 %-KI ${ci0(A.lo, A.hi)}`, `„steigt immer“ ${pc0(A.base)}`],
+      { t: "Trefferquote der Richtung", f: ["Anteil der Einstufungen „positiv“/„klar positiv“, nach denen die Kurse stiegen, und „negativ“/„klar negativ“, nach denen sie fielen.", "Vergleich: Mehrheitsregel auf denselben Fällen."], r: `${A.nDir} Richtungssignale, effektiv ${A.nEff} unabhängige Fälle` }),
+    accTile("Rangkorrelation", fmt(A.ic, 2), "", [`95 %-KI ${fmt(A.icLo, 2)} bis ${fmt(A.icHi, 2)}`, "0 = Zufall"],
+      { t: "Rangkorrelation (Informationskoeffizient)", d: "Misst, ob höhere Gesamtwerte mit höheren späteren Renditen einhergehen – auch innerhalb der Stufen.", f: "Spearman-Korrelation zwischen Gesamtwert und Rendite danach ÷ Schwankungsbreite der Anlage, über alle Anlagen und Monatsenden; Werte um 0,1 gelten bei Monatsprognosen bereits als nützlich." }),
+    O ? accTile("Ohne Vorgriff", fmt(O.ic, 2), "IC", [`Treffer ${pc0(O.hit)}`, `ab ${yr(O.from)}`],
+      { t: "Ohne Vorgriff geschätzt", d: "Strengere Prüfung: Das Modell lernt die Gewichte seiner Säulen Jahr für Jahr nur aus der bis dahin bekannten Geschichte.", f: "Gewicht je Säule ∝ positive Rangkorrelation mit der späteren Rendite auf den Daten vor dem Jahr, zur Hälfte mit gleichen Gewichten gemischt; angewandt auf die Monatsenden des Jahres.", r: `Rangkorrelation ${fmt(O.ic, 3)}, Trefferquote ${fmt(100 * O.hit, 1)} % (Mehrheitsregel ${fmt(100 * O.base, 1)} %)` }) : null,
+    BS ? accTile("Wahrscheinlichkeiten", signed(100 * BS.skill, 1), "%", ["Brier-Skill ohne Vorgriff", BS.skill > 0 ? "besser als Grundhäufigkeit" : "nicht besser als Grundhäufigkeit"],
+      { t: "Güte der Wahrscheinlichkeiten (Brier-Skill)", f: ["Brier-Score = mittleres Quadrat aus (Wahrscheinlichkeit − Ergebnis), Ergebnis 1 = gestiegen, 0 = nicht.", "Skill = 1 − Brier-Score ÷ Brier-Score der Grundhäufigkeit; beide jedes Jahr nur mit damals bekannten Ergebnissen geschätzt."], r: `Brier-Score ${fmt(BS.bs, 4)} gegenüber ${fmt(BS.ref, 4)} → Skill ${signed(100 * BS.skill, 1)} %` }) : null,
+    accTile("Echtzeit-Bilanz", LV && LV.stats ? fmt(100 * LV.stats.hit, 0) : String(LV ? LV.matured : 0), LV && LV.stats ? "%" : "ausgewertet", [LV && LV.first ? `gespeichert seit ${deShort(LV.first)}` : "Aufzeichnung läuft", LV ? `${LV.signals} Monatswerte, ${LV.matured} abgeschlossen` : ""],
+      { t: "Echtzeit-Bilanz", d: "Die eigentliche Bewährungsprobe: Einstufungen, die die Seite tatsächlich angezeigt hat (täglich in D1 gespeichert), werden ausgewertet, sobald ihr Horizont abgelaufen ist.", f: "Je Anlage und Monat zählt die zuletzt angezeigte Einstufung; Bewertung wie im Backtest." }));
+  // Anteil steigender Kurse je Stufe
+  const cats = A.cats.filter(c => c[1] > 0);
+  const bars = h("div", { class: "acc-cats", role: "list", "aria-label": "Anteil steigender Kurse je Stufe" },
+    ...cats.map(([c, n, up, m]) => {
+      const cat = SIG.cfg.cats.find(x => x.n === c);
+      const label = `${cat.sym} ${cat.label}: in ${fmt(100 * up, 0)} % von ${n} Fällen stiegen die Kurse, Rendite danach im Mittel ${signed(100 * m, 1)} %`;
+      return h("div", { class: "acc-cat", role: "listitem", title: label, "aria-label": label },
+        h("span", { class: `sig-badge o${c}`, text: cat.sym }),
+        h("span", { class: "acc-track" }, h("span", { class: "acc-fill", style: `width:${100 * up}%;background:var(--o${c})` }), h("span", { class: "acc-base", style: `left:${100 * A.up}%` })),
+        h("span", { class: "acc-val", text: `${fmt(100 * up, 0)} %` }),
+        h("span", { class: "acc-n small", text: `Ø ${signed(100 * m, 1)} % · n ${n}` }));
+    }));
+  sh.body.append(tiles,
+    h("h4", { class: "gold-sub" }, "Anteil steigender Kurse nach Stufe", info({ t: "Anteil steigender Kurse nach Stufe", d: "Wie oft die Kurse nach einer Einstufung stiegen, über alle Anlagen. Steigt der Anteil von „klar negativ“ bis „klar positiv“ an, trennt das Modell gute von schlechten Aussichten.", f: ["Balken = Anteil der Fälle mit höherem Kurs nach Ablauf des Horizonts; Strich = Anteil über alle Fälle (Grundhäufigkeit).", "Ø = mittlere Rendite danach (nicht annualisiert); n = Anzahl der Fälle."], r: `Grundhäufigkeit ${fmt(100 * A.up, 1)} %` }, "Anteil steigender Kurse nach Stufe")),
+    bars);
+  // Tabelle je Anlageart
+  const kinds = Object.keys(B.stats).filter(k => k !== "all");
+  const tbl = h("table", { class: "acc-table" },
+    h("thead", null, h("tr", null, ...["Anlageart", "Signale (effektiv)", "Treffer", "95 %-KI", "Mehrheit", "Rangkorr.", "1970–89 · 1990–2007 · ab 2008", "Ohne Vorgriff", "Urteil"].map(t => h("th", { text: t })))),
+    h("tbody", null, ...["all", ...kinds].map(k => {
+      const a = B.stats[k], o = B.oos && B.oos[k], vv = VERDICT_DE[a.verdict];
+      return h("tr", { class: k === "all" ? "acc-all" : null },
+        h("td", { text: KIND_DE[k] || k }), h("td", { text: `${a.nDir} (${a.nEff})` }), h("td", { text: pc0(a.hit) }), h("td", { text: ci0(a.lo, a.hi) }), h("td", { text: pc0(a.base) }),
+        h("td", { text: fmt(a.ic, 2) }), h("td", { text: a.sub.map(x => (x && x.ic != null ? fmt(x.ic, 2) : "–")).join(" · ") }),
+        h("td", { text: o ? `${fmt(o.ic, 2)} / ${pc0(o.hit)}` : "–" }), h("td", null, h("span", { class: `bt-verdict ${vv.cls}`, text: `${vv.sym} ${vv.t}` })));
+    })));
+  sh.body.append(h("h4", { class: "gold-sub" }, "Je Anlageart"), h("div", { style: "overflow-x:auto" }, stackTable(tbl)));
+  const eq = B.stats.equity;
+  sh.body.append(h("div", { class: "acc-notes small" },
+    h("p", null, h("b", { text: "Was die Zahlen heißen. " }), "Das Modell trifft die Richtung häufiger als der Zufall und – über alle Anlagen – häufiger als die Mehrheitsregel. Nahezu sichere Prognosen sind an Märkten nicht möglich: Auch nach „klar positiv“ fielen die Kurse in einem Teil der Fälle. Aussagekräftiger als die Stufe allein ist deshalb die Wahrscheinlichkeit steigender Kurse in den Zeilen des Barometers."),
+    eq && eq.base > eq.hit ? h("p", null, h("b", { text: "Aktien. " }), `Aktien steigen meistens (${pc0(eq.base)} der Fälle in diesem Horizont). „Negativ“ bedeutet hier unterdurchschnittliche Aussichten, nicht zwingend fallende Kurse – deshalb liegt die Trefferquote der Richtung unter der Mehrheitsregel, obwohl die Rangkorrelation positiv ist.`) : null,
+    h("p", null, h("b", { text: "Grenzen. " }), "Die Bausteine des Modells wurden mit Kenntnis dieser Geschichte ausgewählt; ein Rest an Rückschaufehler bleibt. Die Spalte „ohne Vorgriff“ ist die strengere Prüfung, die Echtzeit-Bilanz die eigentliche. Frühindikatoren und Konjunkturdaten liegen nur im heutigen, revidierten Stand vor. Beim Horizont 5–10 Jahre gibt es seit 1970 nur wenige unabhängige Zeiträume; die Intervalle sind entsprechend breit.")));
+}
+
 /* ------------------------------------------------------------------ Signalverlauf (D1) */
 // Verlauf je Horizont aus dem Snapshot (Job signal_history); ältere Snapshots haben nur einen Eintrag (1 Monat)
 function signalHistory(hz = HZ) {
@@ -566,7 +705,7 @@ function renderHistory(host) {
 }
 
 /* Indikatoren für die Risikoausrichtung: die Säulen des Weltaktien-Signals als eigene Zeilen */
-const RISK_LABELS = { cycle: "Konjunkturzyklus", liquidity: "Liquidität", value: "Bewertung", trend: "Technik und Trend", risk: "Risiko und Geopolitik", cycle12: "Konjunktur und Wachstumsprognose", mom12: "Momentum 12 Monate", valueLT: "Bewertung (langfristig)", growth: "Wachstum und Demografie", debt: "Schulden", power: "Machtposition", trendLT: "Langfristtrend" };
+const RISK_LABELS = { cycle: "Konjunkturzyklus", liquidity: "Liquidität", value: "Bewertung", trend: "Technik und Trend", risk: "Risiko und Geopolitik", cycle12: "Konjunktur und Wachstumsprognose", mom12: "Momentum 12 Monate", risk12: "Stimmung, Positionierung und Risiko", valueLT: "Bewertung (langfristig)", growth: "Wachstum und Demografie", debt: "Schulden", power: "Machtposition", trendLT: "Langfristtrend" };
 function riskScorecard(host) {
   const w = BARO.rows.find(r => r.row.id === "eq_world" && r.now);
   if (!w) return;
@@ -650,7 +789,8 @@ function renderBaroMethod() {
       ...others.flatMap(x => [h("ul", { style: "margin:8px 0 0;padding-left:18px;display:grid;gap:4px" }, ...x.pillars.map(SIG.pillarDef).map(p => h("li", null, h("b", { text: `${x.label}, ${p.label}: ` }), p.desc))), weightTable(x)])),
     h("p", { text: `Einstufung nach Gesamtwert: ${SIG.cfg.cats.map((c, i) => `${c.sym} ${c.label} ${c.max === Infinity ? `über ${fmt(SIG.cfg.cats[i - 1].max, 1)}` : `bis ${fmt(c.max, 1)}`}`).join(" · ")}. Gegenüber der Vormonatsstufe gilt ein Toleranzband von ${fmt(SIG.cfg.hyst, 1)}: Die Stufe wechselt erst, wenn der Gesamtwert die Schwelle um mehr als diesen Betrag überschreitet. Das verhindert, dass Werte nahe einer Schwelle jeden Monat hin- und herspringen.` }),
     h("p", { text: "Anleihekurse werden aus der Rendite zehnjähriger Staatsanleihen geschätzt (Duration 8,5, Konvexität 85, laufender Kupon). Währungen sind als Preis der Währung in US-Dollar notiert; ein positives Signal bedeutet erwartete Aufwertung gegenüber dem Dollar. Die geopolitische Komponente nutzt den Spannungsmonitor: Steigt die Berichterstattung über eine Konfliktlinie deutlich über ihr Viermonatsmittel, belastet das die betroffenen Märkte (etwa China bei Spannungen mit den USA oder um Taiwan) und stützt Öl bei Spannungen im Nahen Osten. Die langfristigen Säulen nutzen IWF-Projektionen (World Economic Outlook), Bevölkerungsprojektionen der Weltbank und die Reservewährungsstatistik COFER." }),
-    h("p", { class: "small", text: "Darstellung und Säulen lehnen sich an die monatliche Asset-Allocation-Übersicht von Pictet Asset Management an (Konjunkturzyklus, Liquidität, Bewertung, Technik und Stimmung); die langfristigen Säulen folgen Dalios großem Zyklus. Der Monitor verwendet keine Daten oder Einschätzungen von Pictet; Regeln, Schwellen und Gewichte sind Setzungen dieses Monitors. Keine Anlageberatung." }));
+    h("p", { text: "Die Gewichte wurden anhand von Rückrechnungen seit 1970 gesetzt: Für jede Säule wurde geprüft, ob sie die spätere Rendite in allen drei Teilperioden (1970–89, 1990–2007, ab 2008) vorhergesagt hätte. Säulen ohne belegte Prognosekraft erhalten wenig oder kein Gewicht, etwa die Schuldensäule bei Gold und Anleihen im Horizont 5–10 Jahre. Neu aufgenommen wurde der Aktienanteil am Anlegervermögen der USA (Fed-Finanzierungsrechnung Z.1 seit 1945), der die Renditen von Aktien und Gold über ein bis fünf Jahre deutlich besser vorhersagte als das Shiller-KGV. Die Treffsicherheit jedes Horizonts steht in der Übersicht „Treffsicherheit im Backtest“." }),
+    h("p", { class: "small", text: "Darstellung und Säulen lehnen sich an die monatliche Asset-Allocation-Übersicht von Pictet Asset Management an (Konjunkturzyklus, Liquidität, Bewertung, Technik und Stimmung); die langfristigen Säulen folgen Dalios großem Zyklus. Der Monitor verwendet keine Daten oder Einschätzungen von Pictet; Regeln, Schwellen und Gewichte sind Setzungen dieses Monitors, geprüft an der Geschichte. Keine Anlageberatung." }));
 }
 
 /* ------------------------------------------------------------------ Konjunkturuhr */

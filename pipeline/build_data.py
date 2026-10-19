@@ -857,7 +857,7 @@ def build_series(cache):
     sh_idx = pd.to_datetime([f"{int(d)}-{int(round((d - int(d)) * 100)):02d}-01" for d in sh["Date"].astype(float)])
     sp_m = pd.Series(pd.to_numeric(sh["P"], errors="coerce").values, index=sh_idx).dropna()
     sp_m = sp_m[~sp_m.index.duplicated(keep="last")].asfreq("MS")
-    put("sp500_m", "S&P 500 (Monatsmittel, Shiller)", "Punkte", ["shiller"], monthly=sp_m[sp_m.index >= "1950-01-01"])
+    put("sp500_m", "S&P 500 (Monatsmittel, Shiller)", "Punkte", ["shiller"], monthly=sp_m)
     cape_m = pd.Series(pd.to_numeric(sh["CAPE"], errors="coerce").values, index=sh_idx).dropna()
     cape_m = cape_m[~cape_m.index.duplicated(keep="last")].asfreq("MS")
     put("cape_m", "Shiller-KGV (CAPE) S&P 500", "", ["shiller"], monthly=cape_m)

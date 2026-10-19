@@ -28,7 +28,7 @@ async function loadLive() {
 function enrichLive() {
   if (!LIVE) return;
   const m = id => { const x = D && D.series[id]; return x ? { f: "M", s: x.start, v: x.values } : null; };
-  SIG.prepareLive(LIVE, { gold_usd_m: m("gold_usd_m"), sp500_m: m("sp500_m"), cape_m: m("cape_m"), cape: D && D.latest && D.latest.cape });
+  SIG.prepareLive(LIVE, { gold_usd_m: m("gold_usd_m"), sp500_m: m("sp500_m"), cape_m: m("cape_m"), gpr_m: m("gpr_hist_m"), cape: D && D.latest && D.latest.cape });
 }
 function liveStamp() {
   if (!LIVE) return "";
@@ -37,7 +37,9 @@ function liveStamp() {
 }
 async function boot() {
   setupNav();
-  const [hist, snap] = await Promise.all([fetchJson("data/bigcycle.json").catch(e => ({ __error: e })), loadLive()]);
+  // Backtest-Kennzahlen: Rückfall, solange der Worker sie noch nicht im Snapshot liefert
+  const [hist, snap, bt] = await Promise.all([fetchJson("data/bigcycle.json").catch(e => ({ __error: e })), loadLive(), fetchJson("data/backtest.json").catch(() => null)]);
+  BT_SEED = bt;
   if (hist.__error) {
     document.getElementById("verdict").replaceChildren(h("span", { class: "err", text: `Die Datendatei data/bigcycle.json konnte nicht geladen werden (${hist.__error.message}). Lokal die Seite über einen Webserver öffnen, etwa mit npx wrangler dev.` }));
     return;

@@ -96,7 +96,7 @@ function wbJob(id, label, inds, every = 24 * 7) {
 
 export const MACRO_JOBS = [
   {
-    id: "oecd_cli", label: "OECD-Frühindikatoren und Geschäftsklima (Schweiz, Euroraum)", source: "oecd", every: 24, cost: 2, onePerRun: true, deep: "1990-01-01",
+    id: "oecd_cli", label: "OECD-Frühindikatoren und Geschäftsklima (Schweiz, Euroraum)", source: "oecd", every: 24, cost: 2, onePerRun: true, deep: "1955-01-01",
     async run(F, ctx) {
       const [cli, conf] = await oecdSeq(F, [
         ["OECD.SDD.STES,DSD_STES@DF_CLI,4.1", "USA+CHN+DEU+JPN+GBR+IND+G7+G20+G4E+A5M.M.LI.IX._Z.AA.IX._Z.H", { start: start(ctx, "2010-01") }],
@@ -110,7 +110,7 @@ export const MACRO_JOBS = [
     },
   },
   {
-    id: "oecd_prices", label: "Inflation (OECD, Verbraucherpreise)", source: "oecd", every: 24, cost: 2, onePerRun: true, deep: "1990-01-01",
+    id: "oecd_prices", label: "Inflation (OECD, Verbraucherpreise)", source: "oecd", every: 24, cost: 2, onePerRun: true, deep: "1955-01-01",
     async run(F, ctx) {
       const [g20, ch] = await oecdSeq(F, [
         ["OECD.SDD.TPS,DSD_G20_PRICES@DF_G20_PRICES,1.0", "USA+CHN+DEU+JPN+GBR+IND+EA+G20.M..CPI.PA._T.N.GY", { start: start(ctx, "2010-01") }],
@@ -147,7 +147,7 @@ export const MACRO_JOBS = [
     },
   },
   {
-    id: "oecd_finmark", label: "Aktienindizes und Langfristzinsen (OECD, Monatswerte)", source: "oecd", every: 24, cost: 1, onePerRun: true, deep: "1980-01-01",
+    id: "oecd_finmark", label: "Aktienindizes und Langfristzinsen (OECD, Monatswerte)", source: "oecd", every: 24, cost: 1, onePerRun: true, deep: "1955-01-01",
     async run(F, ctx) {
       const txt = await F.text(`https://sdmx.oecd.org/public/rest/data/OECD.SDD.STES,DSD_STES@DF_FINMARK,4.0/USA+JPN+DEU+CHE+GBR+CHN+IND+EA20.M.SHARE+IRLT.......?startPeriod=${start(ctx, "2004-01")}&dimensionAtObservation=AllDimensions`,
         { headers: { accept: "application/vnd.sdmx.data+csv; charset=utf-8" }, timeout: 40000 });

@@ -13,6 +13,8 @@ import { ecbData, snbCube, snbRssRates, sixDaily, bundesbank, boe, mofJgb, bis, 
 import { MACRO_JOBS } from "./jobs-macro.js";
 import { GEO_JOBS } from "./jobs-geo.js";
 import { SIGNAL_JOBS } from "./jobs-signals.js";
+import { EXTRA_JOBS } from "./jobs-extra.js";
+import { BACKTEST_JOBS } from "./jobs-backtest.js";
 
 /* ------------------------------------------------------------------ Märkte */
 const MARKET_JOBS = [
@@ -293,4 +295,5 @@ const MARKET_JOBS = [
   },
 ];
 
-export const JOBS = [...MARKET_JOBS, ...MACRO_JOBS, ...GEO_JOBS, ...SIGNAL_JOBS];
+// Reihenfolge zählt bei gleich dringlichen Jobs: die Backtests zuletzt, damit neue Quellen vorher im Archiv liegen
+export const JOBS = [...MARKET_JOBS, ...MACRO_JOBS, ...EXTRA_JOBS, ...GEO_JOBS, ...SIGNAL_JOBS, ...BACKTEST_JOBS];

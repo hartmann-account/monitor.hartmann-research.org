@@ -67,7 +67,7 @@ const SIG = (() => {
     const L = { generated: snap.generated, origin: snap.origin, status: snap.status || {}, s: {}, items: {}, jobOf: {} };
     for (const [job, out] of Object.entries(snap.data || {})) {
       for (const [id, s] of Object.entries(out.series || {})) {
-        L.s[id] = { id, f: s.f, l: s.l, u: s.u, src: s.src, note: s.note, pts: decodeSeries(s) };
+        L.s[id] = { id, f: s.f, l: s.l, u: s.u, src: s.src, note: s.note, lag: s.lag, pts: decodeSeries(s) };
         L.jobOf[id] = job;
       }
       if (out.items) L.items[job] = out.items;
@@ -78,14 +78,20 @@ const SIG = (() => {
   /* ------------------------------------------------------------ Zeitreihen-Hilfen */
   const LAG = { D: 0, W: 3, M: 15, Q: 45, A: 120 };
   // Punkte, die zum Stichtag "cut" (Tag) bereits veröffentlicht gewesen wären; cut = null: alle
+  // Ergebnis je Reihe für den letzten Stichtag zwischengespeichert (Rückrechnung und Backtest fragen dieselbe Reihe
+  // für viele Zeilen zum selben Stichtag ab); Periodenenden e sind aufsteigend
   function asOf(ser, cut) {
     if (!ser) return [];
     if (cut == null) return ser.pts;
-    const lag = LAG[ser.f] ?? 0;
+    if (ser._cut === cut) return ser._slice;
+    const lag = ser.lag ?? LAG[ser.f] ?? 0;
     const p = ser.pts;
-    let i = p.length;
-    while (i > 0 && p[i - 1].e + lag > cut) i--;
-    return i === p.length ? p : p.slice(0, i);
+    let lo = 0, hi = p.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (p[m].e + lag <= cut) lo = m + 1; else hi = m; }
+    const out = lo === p.length ? p : p.slice(0, lo);
+    ser._cut = cut;
+    ser._slice = out;
+    return out;
   }
   const last = p => (p.length ? p[p.length - 1] : null);
   function valueAt(p, day) { // letzter Wert mit t <= day
@@ -144,10 +150,16 @@ const SIG = (() => {
     return out;
   }
   // Reihen verknüpfen: Quotient/Produkt zweier Reihen auf gemeinsamen Daten
+  // Zwei Reihen Punkt für Punkt verknüpfen; Periodenwerte (Monatsmittel) der zweiten Reihe gelten bis zum Periodenende
   function combine(pa, pb, fn, tol = 7) {
     if (!pa.length || !pb.length) return [];
     const out = [];
-    for (const q of pa) { const b = valueAt(pb, q.t); if (b && q.t - b.t <= tol) { const v = fn(q.v, b.v); if (v != null && isFinite(v)) out.push({ t: q.t, e: q.e, x: q.x, v }); } }
+    for (const q of pa) {
+      const b = valueAt(pb, q.t);
+      if (!b || q.t - Math.max(b.t, Math.min(b.e ?? b.t, q.t)) > tol) continue;
+      const v = fn(q.v, b.v);
+      if (v != null && isFinite(v)) out.push({ t: q.t, e: q.e, x: q.x, v });
+    }
     return out;
   }
   // Total-Return-Index aus einer Rendite (10-jährige Staatsanleihe, Duration ~8,5, Konvexität ~85)
@@ -165,59 +177,66 @@ const SIG = (() => {
   }
 
   /* ------------------------------------------------------------ Konfiguration */
-  // Gewichte des Ausblicks 1 Monat (auch als cfg.weights erreichbar)
+  /* Gewichte der Säulen je Horizont und Anlageart. Ausgangspunkt waren Literatur und Plausibilität; angepasst nach den
+     Rückrechnungen seit 1970 (Rangkorrelation jeder Säule mit der späteren Rendite, in allen Teilperioden geprüft).
+     Trendfolge wirkt über Wochen, Bewertung, Konjunktur und Stimmung (antizyklisch) über ein bis fünf Jahre. Säulen ohne
+     belegte Prognosekraft für einen Horizont erhalten wenig oder kein Gewicht. Die Treffsicherheit „ohne Vorgriff“ misst
+     der Backtest mit jährlich neu geschätzten Gewichten (worker/backtest.js). */
+  // Ausblick 1 Monat (auch als cfg.weights erreichbar)
   const W_M1 = {
-    equity: { trend: 0.35, cycle: 0.25, value: 0.15, liquidity: 0.15, risk: 0.10 },
-    bond: { trend: 0.30, cycle: 0.25, value: 0.20, liquidity: 0.20, risk: 0.05 },
-    credit: { trend: 0.30, cycle: 0.25, value: 0.20, liquidity: 0.10, risk: 0.15 },
-    fx: { trend: 0.40, cycle: 0.15, value: 0.20, liquidity: 0.15, risk: 0.10 },
-    gold: { trend: 0.40, cycle: 0.10, value: 0.15, liquidity: 0.20, risk: 0.15 },
-    commodity: { trend: 0.40, cycle: 0.30, value: 0.10, liquidity: 0.10, risk: 0.10 },
-    relative: { trend: 0.70, cycle: 0.30, value: 0, liquidity: 0, risk: 0 },
+    equity: { trend: 0.40, cycle: 0.35, value: 0.05, liquidity: 0.10, risk: 0.10 },
+    bond: { trend: 0.35, cycle: 0.20, value: 0.30, liquidity: 0.05, risk: 0.10 },
+    credit: { trend: 0.15, cycle: 0.40, value: 0.35, liquidity: 0.10, risk: 0 },
+    fx: { trend: 0.60, cycle: 0.05, value: 0, liquidity: 0.25, risk: 0.10 },
+    gold: { trend: 0.55, cycle: 0.10, value: 0, liquidity: 0.25, risk: 0.10 },
+    commodity: { trend: 0.30, cycle: 0.35, value: 0.05, liquidity: 0.10, risk: 0.20 },
+    relative: { trend: 0.80, cycle: 0.20, value: 0, liquidity: 0, risk: 0 },
   };
-  // 12 Monate: Bewertung, Konjunkturprognose und Geldpolitik zählen mehr, das kurzfristige Kursmomentum weniger
+  // 12 Monate: Bewertung, Konjunktur (antizyklisch), Stimmung und Positionierung zählen mehr, das kurzfristige Kursmomentum weniger
   const W_Y1 = {
-    equity: { cycle12: 0.25, value: 0.30, liquidity: 0.20, mom12: 0.15, risk: 0.10 },
-    bond: { cycle12: 0.25, value: 0.35, liquidity: 0.25, mom12: 0.10, risk: 0.05 },
-    credit: { cycle12: 0.25, value: 0.35, liquidity: 0.15, mom12: 0.10, risk: 0.15 },
-    fx: { cycle12: 0.15, value: 0.35, liquidity: 0.25, mom12: 0.15, risk: 0.10 },
-    gold: { cycle12: 0.10, value: 0.25, liquidity: 0.30, mom12: 0.20, risk: 0.15 },
-    commodity: { cycle12: 0.35, value: 0.20, liquidity: 0.15, mom12: 0.20, risk: 0.10 },
-    relative: { cycle12: 0.35, value: 0.25, liquidity: 0, mom12: 0.40, risk: 0 },
+    equity: { cycle12: 0.25, value: 0.40, liquidity: 0.15, mom12: 0.10, risk12: 0.10 },
+    bond: { cycle12: 0.15, value: 0.45, liquidity: 0.10, mom12: 0.10, risk12: 0.20 },
+    credit: { cycle12: 0.20, value: 0.45, liquidity: 0.20, mom12: 0, risk12: 0.15 },
+    fx: { cycle12: 0, value: 0.30, liquidity: 0.15, mom12: 0.50, risk12: 0.05 },
+    gold: { cycle12: 0.10, value: 0.25, liquidity: 0.15, mom12: 0.30, risk12: 0.20 },
+    commodity: { cycle12: 0.45, value: 0.05, liquidity: 0.15, mom12: 0.05, risk12: 0.30 },
+    relative: { cycle12: 0.10, value: 0.45, liquidity: 0, mom12: 0.45, risk12: 0 },
   };
-  // 5–10 Jahre: Bewertung und die Kräfte des großen Zyklus (Wachstum, Schulden, Machtposition)
+  // 5–10 Jahre: Bewertung dominiert; Wachstum, Schulden und Machtposition (großer Zyklus) zeigen im Backtest wenig Prognosekraft
   const W_LT = {
-    equity: { valueLT: 0.35, growth: 0.20, debt: 0.15, power: 0.15, trendLT: 0.15 },
-    bond: { valueLT: 0.50, growth: 0.10, debt: 0.30, power: 0, trendLT: 0.10 },
-    credit: { valueLT: 0.50, growth: 0.20, debt: 0.15, power: 0, trendLT: 0.15 },
-    fx: { valueLT: 0.35, growth: 0.10, debt: 0.20, power: 0.25, trendLT: 0.10 },
-    gold: { valueLT: 0.30, growth: 0, debt: 0.30, power: 0.20, trendLT: 0.20 },
-    commodity: { valueLT: 0.40, growth: 0.35, debt: 0, power: 0, trendLT: 0.25 },
-    relative: { valueLT: 0.30, growth: 0.25, debt: 0.15, power: 0.15, trendLT: 0.15 },
+    equity: { valueLT: 0.55, growth: 0.20, debt: 0.05, power: 0.05, trendLT: 0.15 },
+    bond: { valueLT: 0.75, growth: 0, debt: 0, power: 0, trendLT: 0.25 },
+    credit: { valueLT: 0.65, growth: 0.05, debt: 0, power: 0, trendLT: 0.30 },
+    fx: { valueLT: 0.55, growth: 0.05, debt: 0.05, power: 0.05, trendLT: 0.30 },
+    gold: { valueLT: 0.70, growth: 0, debt: 0, power: 0.15, trendLT: 0.15 },
+    commodity: { valueLT: 0.20, growth: 0.30, debt: 0, power: 0, trendLT: 0.50 },
+    relative: { valueLT: 0.60, growth: 0.10, debt: 0.05, power: 0.05, trendLT: 0.20 },
   };
   const cfg = {
     // Stand des Modells; ändert sich die Rechnung, rechnet der Worker die gespeicherte Rückrechnung neu
-    version: "2026-10-19",
+    version: "2026-10-19b",
     pillars: [
       { id: "trend", label: "Trend", short: "T", desc: "Kursmomentum über 3, 6 und 12 Monate, risikobereinigt, und Abstand zum gleitenden 200-Tage-Durchschnitt (Monatsreihen: 10 Monate)." },
-      { id: "cycle", label: "Konjunktur", short: "K", desc: "OECD-Frühindikator der Region: Dynamik über drei Monate und Niveau gegenüber dem langfristigen Mittel (100). Anleihen profitieren von schwächerem Wachstum und sinkender Inflation." },
-      { id: "value", label: "Bewertung", short: "B", desc: "Aktien und Rohstoffe: Abstand zum log-linearen 10-Jahres-Trend. Anleihen: reale Rendite gegenüber ihrer 10-Jahres-Spanne. Währungen: realer effektiver Wechselkurs (BIS) gegenüber dem 10-Jahres-Mittel. Gold: realer Goldpreis." },
+      { id: "cycle", label: "Konjunktur", short: "K", desc: "OECD-Frühindikator der Region: Dynamik über drei Monate und Niveau gegenüber dem langfristigen Mittel (100). Bei Aktien, Unternehmensanleihen und Rohstoffen zählt ein hohes Niveau antizyklisch (Boom = spätes Zyklusstadium). Anleihen profitieren von schwächerem Wachstum und sinkender Inflation." },
+      { id: "value", label: "Bewertung", short: "B", desc: "Aktien: Aktienanteil am Anlegervermögen der USA (Fed-Finanzierungsrechnung Z.1, antizyklisch), bei den übrigen Märkten zusammen mit dem Abstand zum log-linearen 10-Jahres-Trend. Anleihen: reale Rendite gegenüber ihrer 10-Jahres-Spanne und Steilheit der Zinskurve (Laufzeitprämie). Unternehmensanleihen: Risikoaufschlag gegenüber seiner Historie (Hochzins bzw. Baa-Anleihen seit 1919). Währungen: realer effektiver Wechselkurs (BIS) gegenüber dem 10-Jahres-Mittel. Gold: realer Goldpreis." },
       { id: "liquidity", label: "Liquidität", short: "L", desc: "Richtung der Geldpolitik (Leitzinsänderung über 12 Monate), Steilheit der Zinskurve, Zentralbankbilanz und Dollartrend." },
       { id: "risk", label: "Risiko & Geopolitik", short: "R", desc: "Risikoappetit aus Volatilität (VIX), Hochzins-Risikoprämien, Finanzstress und geopolitischem Risiko. Sichere Häfen (Franken, Yen, Gold, Staatsanleihen) gewinnen bei Risikoaversion." },
-      { id: "cycle12", label: "Konjunktur", short: "K", desc: "OECD-Frühindikator (wie beim Ausblick 1 Monat) und die IWF-Wachstumsprognose: erwartetes Wachstum der nächsten zwölf Monate gegenüber den letzten zwölf Monaten. Anleihen zusätzlich die erwartete Inflationsentwicklung." },
+      { id: "cycle12", label: "Konjunktur", short: "K", desc: "OECD-Frühindikator (Niveau antizyklisch: ein Boom kündigt schwächere Folgejahre an), IWF-Wachstumsprognose für die nächsten zwölf Monate und in den USA die Baugenehmigungen als früher Zyklusindikator. Anleihen zusätzlich die erwartete Inflationsentwicklung." },
       { id: "mom12", label: "Momentum 12 M.", short: "M", desc: "Kursentwicklung der letzten zwölf Monate ohne den jüngsten Monat, risikobereinigt (Zeitreihen-Momentum), und Abstand zum Zwölfmonatsmittel." },
-      { id: "valueLT", label: "Bewertung", short: "B", desc: "Aktien und Rohstoffe: Abstand zum langfristigen Trend (bis 20 Jahre), USA zusätzlich das Shiller-KGV. Anleihen: erwartete Realrendite (Rendite minus IWF-Inflationsprognose für fünf Jahre). Währungen: realer effektiver Wechselkurs gegenüber dem langjährigen Mittel. Gold: realer Goldpreis seit 1971." },
+      { id: "risk12", label: "Stimmung & Risiko", short: "R", desc: "Antizyklische Stimmungs- und Positionierungsdaten: Verbraucherstimmung (Michigan, EU-Kommission), Kreditlücke (BIS), Positionierung der Spekulanten an den Terminmärkten (CFTC), Anleihe-Risikoprämie (Gilchrist-Zakrajšek) und geopolitisches Risiko (für Gold). Euphorie und hohe Verschuldung warnen, Pessimismus ist eine Chance." },
+      { id: "valueLT", label: "Bewertung", short: "B", desc: "Aktien USA und Welt: Aktienanteil am Anlegervermögen (Fed Z.1), Shiller-KGV und Verbraucherstimmung, jeweils antizyklisch; übrige Märkte: Abstand zum langfristigen Trend (bis 20 Jahre), der US-Aktienanteil als globale Bewertung und die Wirtschaftsstimmung. Rohstoffe: realer Preis gegenüber dem langfristigen Trend. Anleihen: erwartete Realrendite (Rendite minus IWF-Inflationsprognose für fünf Jahre). Unternehmensanleihen: Risikoaufschlag und Anleihe-Risikoprämie. Währungen: realer effektiver Wechselkurs gegenüber dem langjährigen Mittel. Gold: realer Goldpreis seit 1971." },
       { id: "growth", label: "Wachstum & Demografie", short: "W", desc: "IWF-Prognose des realen Wachstums für die nächsten fünf Jahre, Entwicklung der Bevölkerung im erwerbsfähigen Alter in den nächsten zehn Jahren (Projektion der Weltbank) und Produktivitätswachstum der letzten zehn Jahre." },
       { id: "debt", label: "Schulden", short: "S", desc: "Langer Schuldenzyklus: Staatsschulden in % des BIP, ihre Entwicklung bis in fünf Jahren laut IWF, Haushaltssaldo und Zins minus nominales Wachstum. Hohe und steigende Schulden belasten Anleihen und Währung und stützen Gold." },
       { id: "power", label: "Machtposition", short: "P", desc: "Großer Zyklus nach Dalio: Veränderung des Anteils an der Weltwirtschaft (Kaufkraftparitäten, IWF) über zehn Jahre, Leistungsbilanz und bei Währungen der Anteil an den Weltdevisenreserven (IWF COFER)." },
-      { id: "trendLT", label: "Langfristtrend", short: "T", desc: "Steigung des log-linearen Zehnjahrestrends und Kursentwicklung über drei Jahre, jeweils im Verhältnis zur Schwankungsbreite." },
+      { id: "trendLT", label: "Langfristtrend", short: "T", desc: "Steigung des log-linearen Zehnjahrestrends und Kursentwicklung über drei Jahre, jeweils im Verhältnis zur Schwankungsbreite. Bei Unternehmensanleihen und Rohstoffen antizyklisch: lange Haussen enden eher in Rückschlägen." },
     ],
     horizons: [
       { id: "m1", label: "1 Monat", title: "Ausblick 1 Monat", short: "1 M.", desc: "Taktische Sicht für die nächsten Wochen: Trend, Konjunkturdynamik, Liquidität und Risikoappetit stehen im Vordergrund.", pillars: ["trend", "cycle", "value", "liquidity", "risk"], weights: W_M1 },
-      { id: "y1", label: "12 Monate", title: "Ausblick 12 Monate", short: "12 M.", desc: "Zyklische Sicht für das nächste Jahr: Bewertung, Wachstumsprognose und Geldpolitik zählen mehr, kurzfristige Kursbewegungen weniger.", pillars: ["cycle12", "value", "liquidity", "mom12", "risk"], weights: W_Y1 },
+      { id: "y1", label: "12 Monate", title: "Ausblick 12 Monate", short: "12 M.", desc: "Zyklische Sicht für das nächste Jahr: Bewertung, Wachstumsprognose und Geldpolitik zählen mehr, kurzfristige Kursbewegungen weniger.", pillars: ["cycle12", "value", "liquidity", "mom12", "risk12"], weights: W_Y1 },
       { id: "lt", label: "5–10 Jahre", title: "Langfristiger Trend (5–10 Jahre)", short: "5–10 J.", desc: "Strukturelle Sicht im Sinne von Dalios großem Zyklus: Bewertung, Wachstum und Demografie, Schuldenlast und Machtposition der Länder.", pillars: ["valueLT", "growth", "debt", "power", "trendLT"], weights: W_LT },
     ],
     weights: W_M1,
+    priors: { m1: W_M1, y1: W_Y1, lt: W_LT },
     cats: [
       { n: -2, sym: "−−", label: "klar negativ", max: -0.9 },
       { n: -1, sym: "−", label: "negativ", max: -0.3 },
@@ -372,9 +391,19 @@ const SIG = (() => {
   }
 
   /* ------------------------------------------------------------ Preisreihen bilden */
+  // abgeleitete Preisreihen je Stichtag zwischenspeichern (die letzten Stichtage; prepareLive leert den Speicher)
   function priceSeries(L, spec, cut) {
     if (spec == null) return [];
     if (typeof spec === "string") return asOf(L.s[spec], cut);
+    const memo = L._pm || (L._pm = new Map());
+    let m = memo.get(cut);
+    if (!m) { m = new Map(); memo.set(cut, m); if (memo.size > 3) memo.delete(memo.keys().next().value); }
+    if (m.has(spec)) return m.get(spec);
+    const out = priceSeriesCalc(L, spec, cut);
+    m.set(spec, out);
+    return out;
+  }
+  function priceSeriesCalc(L, spec, cut) {
     if (spec.bond) return bondIndex(asOf(L.s[spec.bond], cut));
     if (spec.inv) return priceSeries(L, spec.inv, cut).map(q => ({ ...q, v: 1 / q.v }));
     if (spec.spread) { // Kurs einer Unternehmensanleihe ~ −Duration × Risikoprämie (Hochzins ~4, Investment Grade ~7)
@@ -412,18 +441,22 @@ const SIG = (() => {
     return { s, parts };
   }
 
-  function growthScore(L, ids, cut) {
+  /* Frühindikator: Dynamik über drei Monate und Niveau gegenüber 100. mode "contra" wertet das Niveau antizyklisch:
+     Märkte nehmen die Erholung vorweg, ein hohes Niveau geht im Backtest schwächeren Aktien- und Kreditjahren voraus. */
+  function growthScore(L, ids, cut, mode = "mom") {
     const sc = [], parts = [];
+    const lw = mode === "contra" ? -0.3 : 0.3;
     for (const id of ids) {
       const p = asOf(L.s[id], cut);
       if (p.length < 6) continue;
       const a = last(p), b = valueAt(p, a.t - 85);
       if (!b) continue;
       const mom = a.v - b.v, lvl = a.v - 100;
-      sc.push(clip2(1.4 * mom + 0.3 * lvl));
+      sc.push(clip2(1.4 * mom + lw * lvl));
       if (ids.length === 1) {
         parts.push({ k: "Frühindikator (OECD)", v: a.v, u: "Punkte", s: null, d: isoOf(a.t).slice(0, 7) });
         parts.push({ k: "Veränderung über 3 Monate", v: mom, u: "Punkte", s: clip2(1.4 * mom) });
+        parts.push({ k: mode === "contra" ? "Niveau gegenüber 100 (antizyklisch)" : "Niveau gegenüber 100", v: lvl, u: "Punkte", s: clip2(lw * lvl) });
       }
     }
     if (!sc.length) return null;
@@ -455,9 +488,9 @@ const SIG = (() => {
       if (!ga || !gb) return null;
       return { s: clip2(ga.s - gb.s), parts: [{ k: "Wachstumsvorsprung", v: null, s: clip2(ga.s - gb.s) }] };
     }
-    const g = growthScore(L, regionIds(row.region, "cli"), cut);
-    if (row.kind === "equity" || row.kind === "credit") return g;
-    if (row.kind === "commodity") return g;
+    const contra = row.kind === "equity" || row.kind === "credit" || row.kind === "commodity";
+    const g = growthScore(L, regionIds(row.region, "cli"), cut, contra ? "contra" : "mom");
+    if (contra) return g;
     if (row.kind === "bond") {
       const inf = inflTrend(L, row.region, cut);
       const parts = [];
@@ -500,9 +533,108 @@ const SIG = (() => {
     return { value: a.v, pct: pts.filter(q => q.v <= a.v).length / pts.length, date: isoOf(a.t) };
   }
 
+  /* ------------------------------------------------------------ zusätzliche Bausteine (im Backtest geprüft) */
+  const usLike = r => r === "US" || r === "WORLD";
+  // z-Wert des jüngsten Werts gegenüber den letzten `years` Jahren
+  function zAt(L, id, cut, years = 10, minN = 36) {
+    const p = asOf(L.s[id], cut);
+    if (p.length < minN) return null;
+    const z = zScore(p, years);
+    return z == null ? null : { z, v: last(p).v, d: isoOf(last(p).t) };
+  }
+  // Baugenehmigungen USA über sechs Monate: der Bauzyklus läuft der Konjunktur voraus
+  function permitsPart(L, cut) {
+    const p = asOf(L.s.permit_us, cut);
+    if (p.length < 12) return null;
+    const c = change(p, 182, "log");
+    return c == null ? null : { k: "Baugenehmigungen USA, Veränderung 6 Monate", v: 100 * c, u: "%", s: clip2(c / 0.15), d: isoOf(last(p).t).slice(0, 7) };
+  }
+  // Stimmung antizyklisch: Verbraucherstimmung USA (Michigan) bzw. Wirtschaftsstimmung (EU-Kommission)
+  function sentimentPart(L, region, cut) {
+    const id = usLike(region) ? "umcsent" : region === "DE" ? "esi_de" : region === "EA" ? "esi_ea" : null;
+    const z = id ? zAt(L, id, cut, 10, 60) : null;
+    if (!z) return null;
+    const name = id === "umcsent" ? "Verbraucherstimmung USA" : `Wirtschaftsstimmung ${region === "DE" ? "Deutschland" : "Euroraum"}`;
+    return { k: `${name} (antizyklisch)`, v: z.v, u: "Punkte", s: clip2(-z.z / 1.2), d: z.d.slice(0, 7) };
+  }
+  // Kreditlücke der BIZ (Kredit/BIP-Quote über ihrem Trend), antizyklisch: übermäßiges Kreditwachstum belastet
+  const CGAP = { US: "us", EA: "de", DE: "de", CH: "ch", JP: "jp", GB: "gb", CN: "cn", IN: "in", WORLD: "us", EM: "cn" };
+  function creditGapPart(L, region, cut) {
+    const c = CGAP[region], p = c ? asOf(L.s["cgap_" + c], cut) : [];
+    if (!p.length) return null;
+    const a = last(p);
+    return { k: `Kreditlücke ${regName(c.toUpperCase() === "DE" ? "DE" : c.toUpperCase())} (BIZ, antizyklisch)`, v: a.v, u: "Pp.", s: clip2(-a.v / 8), d: isoOf(a.t).slice(0, 7) };
+  }
+  // Positionierung der Spekulanten an den Terminmärkten (CFTC), z über drei Jahre; contra: antizyklisch gewertet
+  function cotPart(L, key, cut, contra, label) {
+    const z = zAt(L, "cot_" + key, cut, 3, 100);
+    if (!z) return null;
+    return { k: `Positionierung der Spekulanten ${label}${contra ? " (antizyklisch)" : ""}`, v: z.v, u: "% OI", s: clip2((contra ? -z.z : z.z) / 1.2), d: z.d };
+  }
+  // Geopolitisches Risiko (Caldara-Iacoviello, Monatswerte) gegenüber zehn Jahren: hoch stützt Gold
+  function gprPart(L, cut) {
+    const z = zAt(L, "gpr_m", cut, 10, 60);
+    return z ? { k: "Geopolitischer Risikoindex (GPR) gegenüber 10 Jahren", v: z.z, u: "σ", s: clip2(z.z / 1.5), d: z.d.slice(0, 7) } : null;
+  }
+  // Excess Bond Premium (Federal Reserve): Risikoaufschlag über das Ausfallrisiko hinaus; hoch = Anleger verunsichert
+  function ebpPart(L, cut) {
+    const p = asOf(L.s.ebp, cut);
+    if (!p.length) return null;
+    const a = last(p);
+    return { k: "Excess Bond Premium (Fed)", v: a.v, u: "Pp.", s: clip2(a.v / 0.5), d: isoOf(a.t).slice(0, 7) };
+  }
+  // Zinskurve: Rendite 10 Jahre minus Leitzins; eine steile Kurve bringt Anleihen eine höhere Laufzeitprämie
+  function termPart(L, region, cut) {
+    const y = asOf(L.s[regionIds(region, "y10")[0]], cut), r = asOf(L.s[regionIds(region, "pr")[0]], cut);
+    if (!y.length || !r.length) return null;
+    const sl = last(y).v - last(r).v;
+    return { k: "Zinskurve (10 Jahre minus Leitzins)", v: sl, u: "Pp.", s: clip2((sl - 1) / 1.2) };
+  }
+  // Prämie Moody's Baa gegenüber 10-jährigen Treasuries, z über zehn Jahre (lange Historie seit 1986)
+  function baaPart(L, cut) {
+    const z = zAt(L, "baa10y", cut, 10, 200);
+    return z ? { k: "Prämie Moody's Baa gegenüber dem 10-Jahres-Mittel", v: z.v, u: "Pp.", s: clip2(z.z), d: z.d } : null;
+  }
+  // Shiller-KGV: Perzentil des Monatswerts unter allen Monaten seit 1881 (hoch = teuer)
+  const capePart = (L, cut) => { const c = capeAt(L, cut); return c ? { k: "Shiller-KGV (Perzentil seit 1881)", v: c.value, u: "", s: clip2(4 * (0.5 - c.pct)), d: c.date } : null; };
+  const meanParts = parts => { const ok = parts.filter(q => q && q.s != null && isFinite(q.s)); return ok.length ? { s: mean(ok.map(q => q.s)), parts: ok } : null; };
+  /* Aktienanteil am Anlegervermögen USA (Fed Z.1): Marktwert aller US-Aktien ÷ (Aktien + Schulden der Realwirtschaft).
+     Der jüngste veröffentlichte Quartalswert wird mit dem S&P 500 bis zum Stichtag fortgeschrieben (der Schuldenstand
+     ändert sich langsam): x' = k·x ÷ (k·x + 1 − x) mit k = Kursveränderung seit Quartalsende. Gewertet antizyklisch als
+     z-Wert gegenüber allen Quartalen seit 1945. */
+  function aiaeAt(L, cut) {
+    const p = asOf(L.s.aiae_us, cut);
+    if (p.length < 40) return null;
+    const a = last(p), x = a.v / 100;
+    const sp = priceSeries(L, "eq_us", cut);
+    const s0 = valueAt(sp, a.e), s1 = last(sp);
+    const k = s0 && s1 && s1.t > a.e && s0.v > 0 ? s1.v / s0.v : 1;
+    const now = (k * x) / (k * x + 1 - x);
+    const hist = p.map(q => q.v / 100), m = mean(hist), sdv = sd(hist), iso = isoOf(a.t);
+    return { v: 100 * now, q: a.v, date: `${iso.slice(0, 4)}-Q${Math.floor((+iso.slice(5, 7) - 1) / 3) + 1}`, m: 100 * m, z: sdv ? (now - m) / sdv : null };
+  }
+  // mode "us": US-Aktien antizyklisch; "global": dito als globale Bewertung der übrigen Märkte; "gold": Gold gegenüber Aktien
+  // (ein hoher Aktienanteil ging stärkeren Goldjahren voraus, im Backtest in allen Teilperioden seit 1972)
+  const aiaePart = (L, cut, mode = "us") => {
+    const a = aiaeAt(L, cut);
+    if (!a || a.z == null) return null;
+    const gold = mode === "gold";
+    const k = gold ? "Aktienanteil am Anlegervermögen USA (hoch = Gold als Absicherung gefragt)" : `${mode === "global" ? "Globale Bewertung: " : ""}Aktienanteil am Anlegervermögen USA (antizyklisch)`;
+    return { k: `${k}, Fed Z.1; Mittel seit 1945 ${fmtN(a.m)} %`, v: a.v, u: "% Anteil", s: clip2(((gold ? 1 : -1) * a.z) / 1.2), d: a.date };
+  };
+  // Reale Rendite 10-jähriger Treasuries (Rendite minus Inflation der letzten zwölf Monate): Opportunitätskosten von Gold,
+  // langjähriges Mittel rund 2 %
+  function realYieldGoldPart(L, cut) {
+    const y = asOf(L.s.y10_us, cut), c = asOf(L.s.cpi_us, cut);
+    if (!y.length || !c.length) return null;
+    const v = last(y).v - last(c).v;
+    return { k: "Reale US-Rendite 10 Jahre (Rendite minus Inflation; hoch belastet Gold)", v, u: "%", s: clip2(-(v - 2) / 2), d: isoOf(last(y).t) };
+  }
+
   function pillarValue(L, row, cut, price) {
     if (row.noValue) return null;
     if (row.kind === "relative") { // Verhältnis zweier Anlagen: Abstand zum eigenen 10-Jahres-Trend (Rückkehr zur Mitte)
+      if (row.gold) return meanParts([aiaePart(L, cut, "gold")]);
       const td = trendDeviation(price, 10);
       if (!td) return null;
       const s = clip2(-td.z / 1.2);
@@ -511,15 +643,15 @@ const SIG = (() => {
     if (row.kind === "equity" || row.kind === "commodity") {
       const td = trendDeviation(price, 10);
       if (!td) return null;
-      const parts = [{ k: "Abstand zum 10-Jahres-Trend", v: 100 * (Math.exp(td.dev) - 1), u: "%", s: clip2(-td.z / 1.2) }];
-      let s = parts[0].s;
-      const cape = row.id === "eq_us" ? capeAt(L, cut) : null;
-      if (cape) {
-        const cs = clip2(4 * (0.5 - cape.pct));
-        parts.push({ k: "Shiller-KGV (Perzentil seit 1881)", v: cape.value, u: "", s: cs, d: cape.date });
-        s = mean([s, cs]);
+      const tdp = { k: "Abstand zum 10-Jahres-Trend", v: 100 * (Math.exp(td.dev) - 1), u: "%", s: clip2(-td.z / 1.2) };
+      if (row.kind === "equity") {
+        // USA und Welt: Aktienanteil am Anlegervermögen (Fed Z.1; im Backtest seit 1970 treffsicherer als KGV und Trendabstand),
+        // ohne Z.1-Daten Shiller-KGV und Trendabstand. Übrige Märkte: eigener Trendabstand und der US-Wert als globale Bewertung.
+        const us = row.id === "eq_us" || row.id === "eq_world";
+        const ai = aiaePart(L, cut, !us);
+        return us ? meanParts([ai]) || meanParts([tdp, capePart(L, cut)]) : meanParts([tdp, ai]);
       }
-      return { s, parts };
+      return { s: tdp.s, parts: [tdp] };
     }
     if (row.kind === "bond") {
       const yp = asOf(L.s[row.yieldId], cut);
@@ -532,13 +664,16 @@ const SIG = (() => {
       for (const q of cpiP) { const yy = valueAt(yp, q.e); if (yy && q.e - yy.t < 40) realHist.push({ t: q.t, e: q.e, x: q.x, v: yy.v - q.v }); }
       const z = realHist.length > 24 ? zScore(realHist, 10, real) : null;
       const parts = [{ k: "Realrendite (Rendite minus Inflation)", v: real, u: "%", s: z == null ? clip2(real / 1.2) : clip2(z * 0.9) }];
-      return { s: parts[0].s, parts };
+      const term = termPart(L, row.mix ? Object.keys(row.mix)[0] === "DE" ? "DE" : row.region : row.region, cut);
+      if (term) parts.push(term);
+      return meanParts(parts);
     }
     if (row.kind === "credit") {
       const p = asOf(L.s[row.spreadId || "hy_oas"], cut);
-      if (p.length < 100) return null;
-      const z = zScore(p, 10);
-      return { s: clip2(z), parts: [{ k: "Risikoprämie gegenüber 10-Jahres-Mittel", v: last(p).v, u: "Pp.", s: clip2(z) }] };
+      const parts = [];
+      if (p.length >= 100) { const z = zScore(p, 10); parts.push({ k: "Risikoprämie gegenüber dem Mittel der vorliegenden Jahre (bis 10)", v: last(p).v, u: "Pp.", s: clip2(z) }); }
+      parts.push(baaPart(L, cut));
+      return meanParts(parts);
     }
     if (row.kind === "fx") {
       if (row.cross) return null;
@@ -556,6 +691,8 @@ const SIG = (() => {
       return { s, parts: [{ k: "Realer effektiver Wechselkurs gegenüber 10-Jahres-Mittel", v: 100 * dev, u: "%", s, d: isoOf(a.t).slice(0, 7) }] };
     }
     if (row.kind === "gold") {
+      const ai = aiaePart(L, cut, "gold");
+      if (ai) return { s: ai.s, parts: [ai] };
       const cpi = asOf(L.s["cpi_us_index"], cut);
       if (!cpi.length || price.length < 200) return null;
       const real = combine(price, cpi.map(q => ({ ...q, t: q.e })), (g, c) => g / c, 75);
@@ -666,6 +803,7 @@ const SIG = (() => {
   // Wert eines Jahres aus Jahresreihen mit Projektionen (IWF WEO, Bevölkerungsprojektionen der Weltbank). Es gibt nur
   // den jüngsten Datenstand; Vormonat und Rückrechnung nutzen ihn ebenfalls (in den Erklärungen vermerkt).
   function yv(L, id, y) {
+    if (L.pitYear != null && y > L.pitYear) return yProj(L, id, y);
     const s = L.s[id];
     if (!s || !s.pts.length) return null;
     const p = s.pts, i = y - Math.round(p[0].x);
@@ -673,6 +811,27 @@ const SIG = (() => {
     const q = p.find(q => Math.round(q.x) === y);
     return q ? q.v : null;
   }
+  /* Backtest ohne Vorgriff (L.pit): Werte nach dem letzten damals veröffentlichten Jahr (L.pitYear) werden nicht aus
+     den heutigen IWF- und Weltbank-Projektionen genommen, sondern naiv fortgeschrieben: Raten (Wachstum, Inflation,
+     Salden) mit dem Mittel der letzten fünf Jahre, Bestände (Schulden, Anteile, Bevölkerung) mit dem Trend der letzten
+     fünf Jahre. Das unterschätzt eher, was die echten Prognosen damals leisteten. */
+  function yProj(L, id, y) {
+    const p = L.pitYear, pre = id.slice(0, id.indexOf("_") + 1);
+    const real = k => { const s = L.s[id]; if (!s) return null; const q = s.pts.find(q => Math.round(q.x) === k); return q ? q.v : null; };
+    if (["growth_", "infl_", "ca_", "bal_"].includes(pre)) {
+      const v = []; for (let k = p - 4; k <= p; k++) { const a = real(k); if (a != null) v.push(a); }
+      return v.length >= 3 ? mean(v) : null;
+    }
+    if (["debt_", "ppp_", "pop_", "wa_", "prod_"].includes(pre)) {
+      const a = real(p), b = real(p - 5);
+      if (a == null || b == null) return null;
+      if (pre === "debt_") return a + (y - p) * (a - b) / 5;
+      return b > 0 ? a * Math.pow(a / b, (y - p) / 5) : null;
+    }
+    return null;
+  }
+  // zuletzt veröffentlichtes Jahr der Jahresstatistiken zum Stichtag (IWF-Frühjahrsprognose im April)
+  const pitYearOf = cut => { const d = new Date(cut * DAY); return d.getUTCMonth() >= 3 ? d.getUTCFullYear() - 1 : d.getUTCFullYear() - 2; };
   // Mittel über Jahre y0 bis y1, sofern mindestens die Hälfte der Jahre vorliegt
   function ym(L, id, y0, y1) {
     const v = [];
@@ -742,8 +901,11 @@ const SIG = (() => {
     const ga = r => growthAccel(L, r, Y, f);
     let fc = null;
     const k = row.kind;
-    if (k === "equity" || k === "credit" || k === "commodity") fc = mixed(row, row.region, ga, "Wachstumsbeschleunigung");
-    else if (k === "bond") {
+    if (k === "equity" || k === "credit" || k === "commodity") {
+      fc = mixed(row, row.region, ga, "Wachstumsbeschleunigung");
+      const pm = k === "equity" && usLike(row.region) ? permitsPart(L, cut) : null;
+      if (pm) fc = fc ? { s: mean([fc.s, pm.s]), parts: [...fc.parts, pm] } : { s: pm.s, parts: [pm] };
+    } else if (k === "bond") {
       const g = mixed(row, row.region, ga, "Wachstumsbeschleunigung");
       const reg = row.mix ? Object.keys(row.mix)[0] : row.region;
       const inf = weoAccel(L, "infl_", reg, Y, f);
@@ -815,18 +977,31 @@ const SIG = (() => {
     const { L, row, cut, price, Y } = c;
     const k = row.kind;
     if (row.noValue) return null;
-    if (k === "equity" || k === "commodity" || k === "relative") {
+    if (k === "relative") {
+      // Gold gegenüber Aktien und Anleihen: Aktienanteil am Anlegervermögen und reale US-Rendite
+      if (row.gold) return meanParts([aiaePart(L, cut, "gold"), realYieldGoldPart(L, cut)]);
+      // Regionen und Aktien gegenüber Anleihen: Rückkehr zur Mitte über drei bis fünf Jahre
+      const td = trendDeviation(c.long, 20), r36 = change(c.long, 1096, "log"), vol = Math.max(0.03, annVol(price) || 0.15);
+      return meanParts([
+        td && { k: "Verhältnis gegenüber seinem langfristigen Trend (bis 20 Jahre)", v: 100 * (Math.exp(td.dev) - 1), u: "%", s: clip2(-td.z / 1.2) },
+        r36 != null && { k: "Entwicklung des Verhältnisses über drei Jahre (antizyklisch)", v: 100 * (Math.exp(r36) - 1), u: "%", s: clip2(-r36 / (vol * Math.sqrt(3))) },
+      ]);
+    }
+    if (k === "equity" || k === "commodity") {
       const base = k === "commodity" ? realMonthly(L, c.long, cut) : c.long;
       const td = trendDeviation(base.length ? base : c.long, 20);
       const parts = [];
       if (td) parts.push({ k: k === "commodity" ? "Realer Preis gegenüber dem langfristigen Trend (bis 20 Jahre)" : "Abstand zum langfristigen Trend (bis 20 Jahre)", v: 100 * (Math.exp(td.dev) - 1), u: "%", s: clip2(-td.z / 1.2) });
-      let s = td ? parts[0].s : null;
-      const cape = row.id === "eq_us" ? capeAt(L, cut) : null;
-      if (cape) {
-        const cs = clip2(4 * (0.5 - cape.pct));
-        parts.push({ k: "Shiller-KGV (Perzentil seit 1881)", v: cape.value, u: "", s: cs, d: cape.date });
-        s = s == null ? cs : 0.4 * s + 0.6 * cs;
+      if (k === "equity") {
+        // USA und Welt (US-Markt = gut 60 % der Weltbörse): Aktienanteil am Anlegervermögen, Shiller-KGV und Stimmung,
+        // ohne den Trendabstand (lange Haussen der USA liefen im Backtest weiter). Übrige Märkte: eigener Trendabstand,
+        // der US-Wert als globale Bewertung und die Stimmung im eigenen Wirtschaftsraum (soweit vorhanden).
+        const tdp = td ? parts[0] : null;
+        return row.id === "eq_us" || row.id === "eq_world"
+          ? meanParts([aiaePart(L, cut), capePart(L, cut), sentimentPart(L, "US", cut)]) || meanParts([tdp])
+          : meanParts([tdp, aiaePart(L, cut, true), sentimentPart(L, row.region, cut)]);
       }
+      const s = td ? parts[0].s : null;
       return s == null ? null : { s, parts };
     }
     if (k === "bond") return mixed(row.mix ? row : null, row.region, r => bondRealLT(L, r, cut, Y));
@@ -834,8 +1009,8 @@ const SIG = (() => {
       const p = asOf(L.s[row.spreadId], cut);
       const ref = cfg.spreadRef[row.spreadId];
       if (!p.length || ref == null) return null;
-      const v = last(p).v, s = clip2((v - ref) / 1.5);
-      return { s, parts: [{ k: `Risikoprämie gegenüber dem langjährigen Median (${fmtN(ref)} Pp.)`, v: v - ref, u: "Pp.", s }] };
+      const v = last(p).v;
+      return meanParts([{ k: `Risikoprämie gegenüber dem langjährigen Median (${fmtN(ref)} Pp.)`, v: v - ref, u: "Pp.", s: clip2((v - ref) / 1.5) }, baaPart(L, cut), ebpPart(L, cut)]);
     }
     if (k === "fx") {
       const one = r => reerDev(L, regionIds(r, "reer")[0], cut);
@@ -847,19 +1022,21 @@ const SIG = (() => {
       return { s, parts };
     }
     if (k === "gold") {
+      // realer Preis gegenüber seiner Geschichte seit 1971, dazu Gold gegenüber Aktien (Aktienanteil am Anlegervermögen)
+      // und die Opportunitätskosten (reale US-Rendite)
       const isGold = row.price !== "silver_usd";
       const base = isGold ? longSeries(L, { price: "gold_usd" }, cut, priceSeries(L, "gold_usd", cut)) : c.long;
       const real = realMonthly(L, base, cut);
-      if (real.length < 120) return null;
       const hist = real.filter(q => q.x >= 1971.6);
-      const a = last(real);
-      const pct = hist.filter(q => q.v <= a.v).length / hist.length;
-      const s1 = clip2(3 * (0.5 - pct));
-      const parts = [{ k: `Realer ${isGold ? "Goldpreis" : "Silberpreis"}: Perzentil seit ${isoOf(hist[0].t).slice(0, 4)}`, v: 100 * pct, u: "Perzentil", s: s1 }];
-      const td = trendDeviation(hist, 60);
-      if (td) parts.push({ k: "Realer Preis gegenüber dem Trend seit " + isoOf(hist[0].t).slice(0, 4), v: 100 * (Math.exp(td.dev) - 1), u: "%", s: clip2(-td.z / 1.2) });
-      if (isGold && row.id !== "gold_usd") parts.push({ k: "Bewertung über den Dollarpreis (weltweit einheitlicher Goldpreis)", v: null, s: null });
-      return { s: mean(parts.map(q => q.s)), parts };
+      let own = null;
+      if (hist.length >= 120) {
+        const a = last(real), pct = hist.filter(q => q.v <= a.v).length / hist.length;
+        own = { k: `Realer ${isGold ? "Goldpreis" : "Silberpreis"}: Perzentil seit ${isoOf(hist[0].t).slice(0, 4)}`, v: 100 * pct, u: "Perzentil", s: clip2(3 * (0.5 - pct)) };
+      }
+      const m = meanParts([own, aiaePart(L, cut, "gold"), realYieldGoldPart(L, cut)]);
+      if (!m) return null;
+      if (isGold && row.id !== "gold_usd") m.parts.push({ k: "Bewertung über den Dollarpreis (weltweit einheitlicher Goldpreis)", v: null, s: null });
+      return m;
     }
     return null;
   }
@@ -877,7 +1054,7 @@ const SIG = (() => {
       if (a && b) { const g = 100 * (Math.pow(b / a, 0.1) - 1); parts.push({ k: `${n}erwerbsfähige Bevölkerung ${Y}–${Y + 10} (Projektion)`, v: g, u: "% p. a.", s: clip2(g / 0.5) }); }
       const pr = L.s["prod_" + wb];
       if (pr) {
-        const pts = pr.pts.filter(q => q.x <= Y - 1);
+        const pts = pr.pts.filter(q => q.x <= (L.pitYear != null ? L.pitYear : Y - 1));
         const z = last(pts), o = z ? pts.find(q => Math.round(q.x) === Math.round(z.x) - 10) : null;
         if (z && o && o.v > 0) { const g = 100 * (Math.pow(z.v / o.v, 0.1) - 1); parts.push({ k: `${n}Produktivität je Erwerbstätigem ${Math.round(o.x)}–${Math.round(z.x)}`, v: g, u: "% p. a.", s: clip2((g - 1) / 1) }); }
       }
@@ -968,12 +1145,40 @@ const SIG = (() => {
     const p = c.long;
     if (p.length < 60) return null;
     const vol = Math.max(0.03, annVol(c.price) || 0.15);
+    // Unternehmensanleihen, Rohstoffe und relative Stärke von Regionen kehren über fünf Jahre zur Mitte zurück: dort zählt
+    // der Langfristtrend umgekehrt (Goldpaare folgen dagegen ihrem Trend)
+    const k = c.row.kind, f = k === "credit" || k === "commodity" || (k === "relative" && !c.row.gold) ? -1 : 1, tag = f < 0 ? " (antizyklisch)" : "";
     const parts = [];
     const td = trendDeviation(p, 10);
-    if (td) parts.push({ k: "Steigung des Zehnjahrestrends", v: 100 * (Math.exp(td.slope) - 1), u: "% p. a.", s: clip2(td.slope / (vol * 0.5)) });
+    if (td) parts.push({ k: "Steigung des Zehnjahrestrends" + tag, v: 100 * (Math.exp(td.slope) - 1), u: "% p. a.", s: clip2(f * td.slope / (vol * 0.5)) });
     const r36 = change(p, 1096, "log");
-    if (r36 != null) parts.push({ k: "Rendite 3 Jahre", v: 100 * (Math.exp(r36) - 1), u: "%", s: clip2(r36 / (vol * Math.sqrt(3))) });
+    if (r36 != null) parts.push({ k: "Rendite 3 Jahre" + tag, v: 100 * (Math.exp(r36) - 1), u: "%", s: clip2(f * r36 / (vol * Math.sqrt(3))) });
     return parts.length ? { s: mean(parts.map(q => q.s)), parts } : null;
+  }
+
+  /* Stimmung & Risiko (12 Monate): Risikoappetit und Spannungen wie beim Ausblick 1 Monat, dazu je Anlageart die im
+     Backtest tragenden Bausteine: Stimmung, Kreditlücke und Positionierung antizyklisch (Aktien), Excess Bond Premium
+     (Staats- und Unternehmensanleihen), geopolitisches Risiko und Positionierung (Gold) */
+  function pillarRisk12(c) {
+    const { L, row, cut, ra } = c;
+    const k = row.kind, reg = row.region;
+    const parts = [];
+    const add = p => { if (p && p.s != null && isFinite(p.s)) parts.push(p); };
+    const base = k === "gold" || k === "relative" ? null : pillarRisk(L, row, cut, ra);
+    if (base) add({ k: "Risikoappetit und Spannungen (wie 1 Monat)", v: null, s: base.s });
+    if (k === "equity") {
+      add(sentimentPart(L, reg, cut));
+      add(creditGapPart(L, reg, cut));
+      if (usLike(reg)) add(cotPart(L, "spx", cut, true, "S&P 500"));
+    } else if (k === "bond" || k === "credit") {
+      add(ebpPart(L, cut));
+      if (k === "bond" && reg === "US") add(cotPart(L, "tnote", cut, true, "10-jährige Treasuries"));
+    } else if (k === "gold") {
+      add(gprPart(L, cut));
+      const silver = row.price === "silver_usd";
+      add(cotPart(L, silver ? "silver" : "gold", cut, false, silver ? "Silber" : "Gold"));
+    }
+    return meanParts(parts);
   }
 
   /* Säulen je Kennung: c = { L, row, cut, price, long, ra, Y, f } */
@@ -990,6 +1195,7 @@ const SIG = (() => {
     debt: pillarDebt,
     power: pillarPower,
     trendLT: pillarTrendLT,
+    risk12: pillarRisk12,
   };
   const horizon = id => cfg.horizons.find(h => h.id === id) || cfg.horizons[0];
   const pillarDef = id => cfg.pillars.find(p => p.id === id);
@@ -1020,23 +1226,25 @@ const SIG = (() => {
     if (p.length < 30 && row.fallback) p = priceSeries(L, row.fallback, cut);
     return p;
   }
-  function evaluate(L, row, cut, ra, hz = "m1") {
+  /* opts.all: alle Säulen des Horizonts rechnen, auch ohne Gewicht (Backtest); opts.weights: Gewichte je Anlageart */
+  function evaluate(L, row, cut, ra, hz = "m1", opts = {}) {
     const H = horizon(hz);
     if (row.horizons && !row.horizons.includes(H.id)) return null;
     const price = rowPrice(L, row, cut);
     if (price.length < 30) return null;
-    const w = H.weights[row.kind];
+    const w = (opts.weights && opts.weights[row.kind]) || H.weights[row.kind];
     const tEval = cut ?? last(price).t;
+    L.pitYear = L.pit && cut != null ? pitYearOf(cut) : null;
     let longP = null;
     const c = { L, row, cut, price, ra, Y: yearOf(tEval), f: yearPart(tEval), get long() { return longP || (longP = longSeries(L, row, cut, price)); } };
     const P = {};
     let num = 0, den = 0;
     for (const pid of H.pillars) {
-      const p = w[pid] ? PILLAR_FN[pid](c) : null;
+      const p = w[pid] || opts.all ? PILLAR_FN[pid](c) : null;
       P[pid] = p && p.s != null && isFinite(p.s) ? p : null;
-      if (P[pid]) { num += w[pid] * P[pid].s; den += w[pid]; }
+      if (P[pid] && w[pid]) { num += w[pid] * P[pid].s; den += w[pid]; }
     }
-    if (den < 0.3) return null;
+    if (den < 0.3) return opts.all ? { score: null, cat: null, pillars: P, price, coverage: den, date: last(price).t, hz: H.id } : null;
     const score = num / den;
     return { score, cat: category(score), pillars: P, price, coverage: den, date: last(price).t, hz: H.id };
   }
@@ -1213,8 +1421,11 @@ const SIG = (() => {
     if (!S.copper && S.copper_fred) S.copper = S.copper_fred;
     if (hist.cape) L.cape = hist.cape;
     if (hist.cape_m) L.capeM = decodeSeries(hist.cape_m);
+    // Index des geopolitischen Risikos (Caldara/Iacoviello) als Monatsreihe seit 1985
+    if (hist.gpr_m && !S.gpr_m) S.gpr_m = { id: "gpr_m", f: "M", src: "gpr", pts: decodeSeries(hist.gpr_m) };
     L.tension = tensionFromGdelt(L);
     L._ra = new Map();
+    L._pm = null;
     return L;
   }
 
@@ -1223,6 +1434,7 @@ const SIG = (() => {
     combine, bondIndex, priceSeries, pillarTrend, growthScore, riskAppetite, evaluate, barometer, category, cyclePhase,
     tensionFromGdelt, prepareLive, basketSeries, isoOf, dayOf, yearFrac, mean, median, sd, clip2, backfill,
     horizon, pillarDef, leadDay, yv, ym, realMonthly, monthlyMeans, regionGrowth, regionDebt, regionPower, capeAt,
+    rowPrice, pitYearOf, aiaeAt,
   };
 })();
 

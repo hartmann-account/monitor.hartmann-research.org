@@ -43,7 +43,9 @@ const keepRaw = (ctx, sid, pts) => { if (ctx.raw) ctx.raw[sid] = pts; };
 // Tagesreihen: gespeicherte Historie fortschreiben, Werte älter als gut zwei Jahre auf Wochenwerte ausdünnen
 export const D = (ctx, sid, pts, m, keepFrom) => { keepRaw(ctx, sid, pts); return dailySeries(thinOld(withPrev(ctx, sid, pts, keepFrom)), m); };
 export const M = (ctx, sid, pts, m, keepFrom) => { keepRaw(ctx, sid, pts); return monthlySeries(withPrev(ctx, sid, pts, keepFrom), m); };
-export const Q = (ctx, sid, pts, m) => quarterlySeries(withPrev(ctx, sid, pts), m);
+export const Q = (ctx, sid, pts, m) => { keepRaw(ctx, sid, pts); return quarterlySeries(withPrev(ctx, sid, pts), m); };
+// Wochenreihen (etwa CFTC-Positionierung): ohne Ausdünnung, Frequenz W (Veröffentlichung einige Tage nach dem Stichtag)
+export const W = (ctx, sid, pts, m, keepFrom) => { keepRaw(ctx, sid, pts); return dailySeries(withPrev(ctx, sid, pts, keepFrom), m, "W"); };
 export const Y = (pts, m) => annualSeries(pts, m);
 export const ratio = (a, b, f = 1) => { const mb = new Map(b); return a.map(([d, v]) => [d, mb.has(d) && mb.get(d) ? f * v / mb.get(d) : null]).filter(p => p[1] != null); };
 export const toMonth = pts => pts.map(([d, v]) => [String(d).slice(0, 7), v]);

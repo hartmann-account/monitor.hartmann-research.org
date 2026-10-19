@@ -81,6 +81,7 @@ export function liveFromSnapshot(snap, hist) {
     gold_usd_m: hs.gold_usd_m ? { f: "M", s: hs.gold_usd_m.start, v: hs.gold_usd_m.values } : null,
     sp500_m: hs.sp500_m ? { f: "M", s: hs.sp500_m.start, v: hs.sp500_m.values } : null,
     cape_m: hs.cape_m ? { f: "M", s: hs.cape_m.start, v: hs.cape_m.values } : null,
+    gpr_m: hs.gpr_hist_m ? { f: "M", s: hs.gpr_hist_m.start, v: hs.gpr_hist_m.values } : null,
     cape: hist && hist.latest ? hist.latest.cape : null,
   });
   return L;
