@@ -86,3 +86,33 @@ test("Backtest-Jobs warten, bis ihre Quellen die ganze Historie archiviert haben
   assert.ok(!dueJobs({ jobs: pending }, Date.now(), JOBS, env).some(j => j.id === "backtest_m1"));
   assert.ok(dueJobs({ jobs: done }, Date.now(), JOBS, env).some(j => j.id === "backtest_m1"));
 });
+
+test("FRED-Sammelabruf: mehr als zwölf Reihen in Paketen", async () => {
+  const { fredMulti } = await import("../worker/providers/official.js");
+  const urls = [];
+  const F = { request: async url => { urls.push(url); const ids = new URL(url).searchParams.get("id").split(","); const csv = `observation_date,${ids.join(",")}\n2026-01-01,${ids.map((_, i) => i + 1).join(",")}\n`; return new Response(csv); } };
+  const ids = Array.from({ length: 30 }, (_, i) => `S${i}`);
+  const r = await fredMulti(F, ids, "2026-01-01");
+  assert.equal(urls.length, 3);
+  assert.deepEqual(Object.keys(r).sort(), ids.slice().sort());
+  assert.deepEqual(r.S29, [["2026-01-01", 6]]);
+});
+
+test("Schwellenländerkorb: BIP-gewichtete Renditen in US-Dollar, Zeitfenster der Länder", async () => {
+  const { emBasket } = await import("../worker/jobs-em.js");
+  const months = ["2000-01", "2000-02", "2000-03"];
+  const pts = vals => months.map((m, i) => [m + "-01", vals[i]]);
+  // Indien: +10 % in Landeswährung bei festem Kurs; Südafrika: Kurs fest, Rand wertet 50 % ab (−33 % in Dollar)
+  const r = {
+    SPASTT01INM661N: pts([100, 110, 121]), CCUSMA02INM618N: pts([40, 40, 40]),
+    SPASTT01ZAM661N: pts([100, 100, 100]), CCUSMA02ZAM618N: pts([6, 9, 9]),
+    // Israel nach dem Aufstieg zum Industrieland (Mai 2010) nicht mehr im Korb: hier noch enthalten
+    SPASTT01ILM661N: pts([100, 100, 100]), CCUSMA02ILM618N: pts([4, 4, 4]),
+  };
+  const gdp = { IND: [[1999, 300]], ZAF: [[1999, 100]], ISR: [[1999, 100]] };
+  const { index, usd } = emBasket(r, gdp);
+  assert.deepEqual(index.map(p => p[0]), months);
+  // Februar: (300 × 10 % + 100 × (−33,3 %) + 100 × 0 %) ÷ 500 = −0,67 %
+  assert.ok(Math.abs(index[1][1] - 100 * (1 + (300 * 0.1 + 100 * (6 / 9 - 1)) / 500)) < 1e-9);
+  assert.ok(Math.abs(usd.in.get("2000-02") - 110 / 40) < 1e-12);
+});

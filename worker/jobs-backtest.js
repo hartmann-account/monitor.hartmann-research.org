@@ -66,7 +66,7 @@ const REQUIRED = { h_sp500_m: "1960", h_cape_m: "1960", aiae_us: "1960", eqh_de:
 
 // Jobs, deren lange Historie der Backtest braucht: er wartet, bis sie archiviert ist (Runner: "after")
 const BT_INPUT_JOBS = ["fred_markets", "fred_rates", "fred_risk", "fred_credit", "fred_cycle", "fred_fxhist", "fred_intl", "fred_z1",
-  "oecd_cli", "oecd_prices", "imf_commodities", "bis_reer", "archive_hist"];
+  "oecd_cli", "oecd_prices", "imf_commodities", "bis_reer", "archive_hist", "em_markets", "em_history", "oecd_cli_em", "bis_em", "bis_credit"];
 
 export async function runBacktest(db, hz, nowIso) {
   await ensureBacktestSchema(db);

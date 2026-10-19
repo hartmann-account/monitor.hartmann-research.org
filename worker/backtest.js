@@ -31,6 +31,11 @@ export const BT_MAP = {
   eq_gb: { level: ["eq_gb", "eqh_gb"] },
   eq_cn: { level: ["eq_cn", "eqh_cn"] },
   eq_in: { level: ["eq_in", "eqh_in"] },
+  // Schwellenländer: Nasdaq-EM-Index seit 2001, davor der nach BIP gewichtete Korb aus OECD-Länderindizes in US-Dollar
+  eq_em: { level: ["eq_em", "eqh_em"] },
+  eq_kr_usd: { level: ["eq_kr_usd", "eqh_kr_usd"] },
+  eq_br_usd: { level: ["eq_br_usd", "eqh_br_usd"] },
+  usd_em: { level: ["usd_em", "usd_em_old"] },
   y10_us: { rate: ["y10_us", "gs10_m", "y10h_us"] },
   y10_de: { rate: ["y10_de", "y10m_de", "y10h_de"] },
   y10_gb: { rate: ["y10_gb", "y10m_gb"] },
@@ -54,7 +59,7 @@ export const BT_PREFIX = ["cli_", "cpi_", "pr_", "reer_", "growth_", "infl_", "d
 export const BT_DIRECT = ["y10_ch_d", "y10_jp_hist", "y10_jp", "y2_us", "silver_usd", "copper", "btc", "vix", "vix3m", "stlfsi", "nfci", "cpi_us_index", "dff", "eq_us_nasdaq", "permit_us",
   "baa10y", "curve3m_us", "ebp", "ofr_fsi", "cfnai", "claims_us", "sahm_us", "umcsent", "permit_us", "expinf10_us", "be10_us", "curve_us", "skew", "usrec", "tb3m_m",
   "h_sp500_m", "h_cape_m", "h_gold_usd_m", "h_gpr_hist_m", "r3m_us", "r3m_de", "r3m_gb", "r3m_ch", "r3m_jp", "r3m_ea", "eqh_us",
-  "aiae_us", "hh_equity_us"];
+  "aiae_us", "hh_equity_us", "eq_tw_usd"];
 // Veröffentlichungsfristen in Tagen nach Periodenende, die das Archiv nicht speichert (sonst gelten die üblichen Fristen je Frequenz)
 const ARCHIVE_LAG = [[/^(cgap_|credit_gdp_|dsr_)/, 100], [/^(aiae_us|hh_equity_us|z1_)/, 80]];
 

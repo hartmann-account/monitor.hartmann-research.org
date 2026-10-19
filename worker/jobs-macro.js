@@ -17,7 +17,8 @@ async function oecdSeq(F, reqs) {
 }
 
 const ISO2 = { USA: "us", CHN: "cn", DEU: "de", JPN: "jp", GBR: "gb", IND: "in", CHE: "ch", RUS: "ru", EA: "ea", EA20: "ea", G7: "g7", G20: "g20", G4E: "g4e", A5M: "a5m", OECD: "oecd" };
-const CNAME = { USA: "USA", CHN: "China", DEU: "Deutschland", JPN: "Japan", GBR: "Großbritannien", IND: "Indien", CHE: "Schweiz", RUS: "Russland", EA: "Euroraum", EA20: "Euroraum", G7: "G7", G20: "G20", G4E: "Europa (vier große Länder)", A5M: "Asien (fünf große Länder)", OECD: "OECD", EUU: "Europäische Union", EURO: "Euroraum" };
+const CNAME = { USA: "USA", CHN: "China", DEU: "Deutschland", JPN: "Japan", GBR: "Großbritannien", IND: "Indien", CHE: "Schweiz", RUS: "Russland",
+  KOR: "Korea", BRA: "Brasilien", MEX: "Mexiko", ZAF: "Südafrika", IDN: "Indonesien", TUR: "Türkei", TWN: "Taiwan", EA: "Euroraum", EA20: "Euroraum", G7: "G7", G20: "G20", G4E: "Europa (vier große Länder)", A5M: "Asien (fünf große Länder)", OECD: "OECD", EUU: "Europäische Union", EURO: "Euroraum" };
 const sortPts = pts => pts.filter(p => p[1] != null).sort((a, b) => (a[0] < b[0] ? -1 : 1));
 
 /* IWF SDMX 3.0 (COFER, CPI): CSV mit Accept-Header */
@@ -37,7 +38,8 @@ const WEO = [
   ["PPPSH", "ppp_", "Anteil am Welt-BIP (Kaufkraftparitäten)", "%"],
   ["GGXCNL_NGDP", "bal_", "Finanzierungssaldo des Gesamtstaats", "% des BIP"],
 ];
-const WEO_C = ["USA", "CHN", "DEU", "JPN", "GBR", "IND", "RUS", "CHE", "EURO", "TWN", "IRN", "ISR", "UKR"];
+// dazu die großen Schwellenländer (Korb „Schwellenländer“ des Barometers)
+const WEO_C = ["USA", "CHN", "DEU", "JPN", "GBR", "IND", "RUS", "CHE", "EURO", "TWN", "IRN", "ISR", "UKR", "KOR", "BRA", "MEX", "ZAF", "IDN", "TUR"];
 /* WEO über die SDMX-3.0-Schnittstelle des IWF (eine Abfrage für alle Kennzahlen eines Jobs); fällt sie aus,
    wird je Kennzahl die DataMapper-Schnittstelle gefragt. Der Euroraum heißt dort EURO, in SDMX G163. */
 const WEO_SDMX = { EURO: "G163" };
@@ -79,7 +81,7 @@ function weoJob(n, inds) {
   };
 }
 
-const WB_C = ["USA", "CHN", "EUU", "DEU", "JPN", "GBR", "IND", "RUS", "CHE"];
+const WB_C = ["USA", "CHN", "EUU", "DEU", "JPN", "GBR", "IND", "RUS", "CHE", "KOR", "BRA", "MEX", "ZAF", "IDN", "TUR"];
 function wbJob(id, label, inds, every = 24 * 7) {
   return {
     id, label, source: "wb", every, cost: inds.length,

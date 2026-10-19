@@ -200,11 +200,17 @@ Alle Quellen sind ohne Schlüssel und dauerhaft abrufbar. Fast alle sind amtlich
 | `cftc_cot` | Netto-Positionierung der Spekulanten (und der kommerziellen Händler) in zwölf Terminmärkten seit 1986 | CFTC Commitments of Traders | 1 Tag |
 | `fed_ebp` | Excess Bond Premium, Gilchrist-Zakrajšek-Spread, Rezessionswahrscheinlichkeit | Federal Reserve Board | 3 Tage |
 | `ofr_fsi` | Finanzstressindex mit Teilindizes | Office of Financial Research | 12 Std. |
-| `bis_credit` | Kreditlücke und Schuldendienstquote des Privatsektors (Frühwarnindikatoren) | BIZ | 1 Woche |
+| `bis_credit` | Kreditlücke und Schuldendienstquote des Privatsektors (Frühwarnindikatoren), 14 Wirtschaftsräume, darunter acht Schwellenländer | BIZ | 1 Woche |
+| `em_markets` | Aktien der Schwellenländer in US-Dollar, täglich: Nasdaq Emerging Markets (24 Länder) und Länderindizes für China, Indien, Taiwan, Korea und Brasilien; Dollar gegenüber den Währungen der Schwellenländer | Nasdaq über FRED, Federal Reserve | 6 Std. |
+| `em_history` | Schwellenländer seit 1960 (nur Archiv): Aktienindizes und Wechselkurse von 15 Ländern aus der OECD-Monatsstatistik, in US-Dollar umgerechnet und mit dem BIP des Vorjahres gewichtet (Weltbank); Dollarindex gegenüber Schwellenländern seit 1973 | OECD über FRED, Weltbank, Federal Reserve | 1 Woche |
+| `oecd_cli_em` | Frühindikatoren Brasilien, Mexiko, Korea, Südafrika, Indonesien, Türkei | OECD | 1 Tag |
+| `bis_em` | Leitzinsen und reale effektive Wechselkurse von Brasilien, Mexiko, Korea, Südafrika, Indonesien und der Türkei (Wechselkurs auch Taiwan) | BIZ | 12 Std. |
 | `eurostat_esi` | Wirtschaftsstimmung Euroraum und Deutschland | Eurostat | 1 Tag |
 | `signal_history` | Signalverlauf des Anlagebarometers, drei Horizonte (eigene Berechnung, D1) | – | 6 Std. |
 | `backtest_m1`, `backtest_y1`, `backtest_lt` | Backtest des Barometers seit 1970 je Horizont (eigene Berechnung auf dem Archiv, D1) | – | 1 Woche |
 | `archive_hist` | Langfristreihen des wöchentlichen Datensatzes ins Archiv (D1) | – | 1 Woche |
+
+**Schwellenländer.** Die MSCI-Indizes sind lizenzpflichtig, und die Börse Taiwan sperrt automatische Abfragen. Tagesaktuell kommen die Schwellenländer deshalb über die Nasdaq-Indizes, die FRED seit 2001 in US-Dollar veröffentlicht (© Nasdaq, Inc.). Für die Zeit davor bildet der Monitor einen Korb aus den Aktienindizes von 15 Schwellenländern der OECD-Statistik, umgerechnet in US-Dollar und mit dem BIP des Vorjahres gewichtet (jedes Land nur in den Jahren als Schwellenland, ungefähr wie bei den großen Indexanbietern: Griechenland ohne 2001–2013, Israel bis 2010, Russland bis Februar 2022; Brasilien erst ab dem Real 1995, davor verzerrt die Hyperinflation die Umrechnung). Seit 2001 folgt der Korb dem Nasdaq-Index mit einer Korrelation der Monatsrenditen von 0,92. Frühindikatoren, Leitzinsen, reale Wechselkurse und Kreditlücken liegen für acht Schwellenländer vor; die Säulen der Zeile „Schwellenländer“ mitteln sie (IWF- und Weltbankdaten nach ungefährem Börsenwert gewichtet: China, Taiwan, Indien, Korea, Brasilien, Südafrika, Mexiko, Indonesien, Türkei).
 
 Die wöchentliche Pipeline nutzt zusätzlich Our World in Data, die Weltbank, den IWF (DataMapper, COFER), FRED, U.S. Treasury Fiscal Data und die Shiller-Daten (shillerdata.com). Hinzu kommen der Geopolitical Risk Index und der Trade Policy Uncertainty Index (Caldara, Iacoviello), die Jordà-Schularick-Taylor Macrohistory Database, Correlates of War, die Millennium-Daten der Bank of England, Voteview und die Nobelpreis-API. Die Quellenangaben stehen an jeder Grafik und in `public/data/bigcycle.json` unter `sources`.
 
@@ -242,7 +248,7 @@ Jede Anlage wird auf fünf Säulen von −2 bis +2 bewertet. Welche Säulen zäh
 
 **Aktienanteil am Anlegervermögen (Fed Z.1).** Marktwert aller US-Aktien ÷ (Aktien + Schulden von Haushalten, Unternehmen, Staat und Ausland), quartalsweise seit 1945, mit dem S&P 500 bis zum Stichtag fortgeschrieben. Wer Aktien hält, muss sie jemandem abgenommen haben: Ist der Anteil hoch, fehlen künftige Käufer. Im Backtest erklärt der Wert die 5-Jahres-Renditen von US-Aktien deutlich besser als das Shiller-KGV (Rangkorrelation 0,50 statt 0,29 seit 1960) und ging auch stärkeren Goldjahren voraus.
 
-Live-Rechnung und Backtest nutzen dieselben Reihen: Die nur drei Jahre langen ICE-BofA-Risikoprämien werden für das Modell mit der skalierten Baa-Prämie verlängert, der US-Verbraucherpreisindex (reale Gold- und Rohstoffpreise) liegt seit 1947 vor.
+Live-Rechnung und Backtest nutzen dieselben Reihen: Die nur drei Jahre langen ICE-BofA-Risikoprämien werden für das Modell mit der skalierten Baa-Prämie verlängert, der US-Verbraucherpreisindex (reale Gold- und Rohstoffpreise) liegt seit 1947 vor, und Verhältnisse gegenüber dem S&P 500 (Regionen, Gold, Aktien gegenüber Anleihen) reichen über die Shiller-Monatswerte vor die zehn Jahre der FRED-Tagesreihe zurück.
 
 Rohwerte werden durch ihre typische Schwankung geteilt und weich begrenzt (2·tanh(z/2)). Die Gewichte hängen von Anlageart und Horizont ab (Tabellen auf der Seite unter „So entsteht das Signal“). Sie wurden anhand der Rückrechnungen seit 1970 gesetzt: Säulen ohne belegte Prognosekraft für einen Horizont erhalten wenig oder kein Gewicht (etwa die Schuldensäule bei Gold und Anleihen über 5–10 Jahre). Die Gesamtnote ergibt eine von fünf Stufen (−−, −, =, +, ++; Schwellen ±0,3 und ±0,9). IWF-Prognosen und Bevölkerungsprojektionen gibt es nur im jüngsten Stand; Vormonat und Rückrechnung verwenden ihn ebenfalls. Bitcoin hat keinen fundamentalen Bewertungsanker und bleibt im Horizont 5–10 Jahre ohne Einstufung.
 
@@ -254,7 +260,7 @@ Die Darstellung lehnt sich an die Monatsübersicht von Pictet Asset Management a
 
 ## Backtest und Treffsicherheit
 
-**Vorgehen.** Zu jedem Monatsende seit Januar 1970 rechnet das unveränderte Modell (`src/signals.js`) alle Anlagen und Horizonte, und zwar nur mit Daten, die zum Stichtag veröffentlicht waren (übliche Fristen je Reihe: Monatswerte 15 Tage, Quartale 45 Tage, Kreditdaten der BIZ 100, Fed Z.1 80 Tage). Die Historie stammt aus dem D1-Archiv; lange Reihen werden aus mehreren Quellen verkettet (S&P 500 seit 1871 aus den Shiller-Daten, Wechselkurse seit 1971 aus der Fed-Statistik, Euro vor 1999 über die D-Mark, Aktien von acht Ländern seit 1955 aus der OECD-Statistik, Risikoprämien über die Baa-Prämie seit 1953). IWF- und Weltbank-Projektionen liegen nur im heutigen Stand vor und werden durch einfache Fortschreibungen ersetzt. Verglichen wird mit der Rendite der folgenden 1, 12 bzw. 60 Monate.
+**Vorgehen.** Zu jedem Monatsende seit Januar 1970 rechnet das unveränderte Modell (`src/signals.js`) alle Anlagen und Horizonte, und zwar nur mit Daten, die zum Stichtag veröffentlicht waren (übliche Fristen je Reihe: Monatswerte 15 Tage, Quartale 45 Tage, Kreditdaten der BIZ 100, Fed Z.1 80 Tage). Die Historie stammt aus dem D1-Archiv; lange Reihen werden aus mehreren Quellen verkettet (S&P 500 seit 1871 aus den Shiller-Daten, Wechselkurse seit 1971 aus der Fed-Statistik, Euro vor 1999 über die D-Mark, Aktien von acht Ländern seit 1955 aus der OECD-Statistik, Schwellenländer seit 2001 aus dem Nasdaq-Index und davor aus dem BIP-gewichteten Korb von 15 Ländern, Risikoprämien über die Baa-Prämie seit 1953). IWF- und Weltbank-Projektionen liegen nur im heutigen Stand vor und werden durch einfache Fortschreibungen ersetzt. Verglichen wird mit der Rendite der folgenden 1, 12 bzw. 60 Monate.
 
 **Kennzahlen.**
 - *Trefferquote der Richtung:* Anteil der Stufen „positiv/klar positiv“ mit steigendem und „negativ/klar negativ“ mit fallendem Kurs (neutral = keine Aussage), 95-%-Intervall nach Wilson auf der effektiven Stichprobe (überlappende Zeiträume zählen anteilig).
@@ -269,11 +275,11 @@ Die Darstellung lehnt sich an die Monatsübersicht von Pictet Asset Management a
 
 | Horizont | Treffer | 95-%-Intervall | „steigt immer“ | Rangkorrelation | ohne Vorgriff | Brier-Skill |
 |---|---|---|---|---|---|---|
-| 1 Monat | 56,5 % | 55,8–57,3 % | 54,3 % | 0,12 | 0,09 | +0,4 % |
-| 12 Monate | 63,4 % | 60,4–66,3 % | 58,6 % | 0,22 | 0,14 | +1,6 % |
-| 5–10 Jahre (5-Jahres-Rendite) | 72,5 % | 66,6–77,8 % | 66,4 % | 0,41 | 0,33 | ±0 % |
+| 1 Monat | 56,6 % | 55,9–57,4 % | 54,4 % | 0,12 | 0,09 | +0,5 % |
+| 12 Monate | 63,3 % | 60,3–66,2 % | 58,3 % | 0,22 | 0,15 | +1,6 % |
+| 5–10 Jahre (5-Jahres-Rendite) | 71,9 % | 65,9–77,2 % | 66,0 % | 0,41 | 0,32 | ±0 % |
 
-Am stärksten sind die Signale für Unternehmensanleihen (12 Monate: Rangkorrelation 0,40; 5 Jahre: 0,63), Staatsanleihen und Gold; Aktien liegen auf 12 Monate bei 0,16 und auf 5 Jahre bei 0,37. Nach „klar positiv“ stiegen die Kurse auf 12 Monate in 75 % der Fälle, nach „klar negativ“ in 37 %. Die genauen, wöchentlich neu gerechneten Werte je Anlageart und Anlage stehen auf der Seite und unter `/api/backtest`.
+Am stärksten sind die Signale für Unternehmensanleihen (12 Monate: Rangkorrelation 0,40; 5 Jahre: 0,63), Staatsanleihen und Gold; Aktien liegen auf 12 Monate bei 0,17 und auf 5 Jahre bei 0,36. Nach „klar positiv“ stiegen die Kurse auf 12 Monate in 75 % der Fälle, nach „klar negativ“ in 36 %. Die Schwellenländer-Daten haben die Zeile „Schwellenländer“ deutlich verbessert (Rangkorrelation 1 Monat 0,17 statt 0,09, 12 Monate 0,30 statt 0,14, 5 Jahre 0,61 statt 0,53; vorher ein Korb aus China und Indien). „Schwellenländer gegenüber USA“ bleibt auf 12 Monate ohne belegte Prognosekraft (−0,05), ebenso China allein (−0,10, Daten erst seit 2001). Die genauen, wöchentlich neu gerechneten Werte je Anlageart und Anlage stehen auf der Seite und unter `/api/backtest`.
 
 **Was das heißt.** Das Modell trifft die Richtung häufiger als der Zufall und über alle Anlagen häufiger als „steigt immer“, aber nahezu sichere Prognosen sind an Märkten nicht möglich. Aktien steigen meistens; „negativ“ heißt bei ihnen „unterdurchschnittliche Aussichten“, deshalb liegt ihre Trefferquote der Richtung auf 12 Monate unter der Mehrheitsregel, obwohl die Rangkorrelation positiv ist. Aussagekräftiger ist die Wahrscheinlichkeit steigender Kurse, die jede Zeile des Barometers zeigt.
 
@@ -307,7 +313,8 @@ Für den Big-Cycle-Monitor wurden bewusst nur nachvollziehbare, formelbasierte K
 
 ## Grenzen
 
-- **Monatswerte:** Für Aktien der Eurozone, Deutschlands, Großbritanniens, Chinas und Indiens gibt es keine freie amtliche Tagesquelle. Sie kommen als Monatswerte von EZB und OECD und tragen im Barometer den Hinweis „Stand …“.
+- **Monatswerte:** Für Aktien der Eurozone, Deutschlands, Großbritanniens, Chinas und Indiens in Landeswährung gibt es keine freie amtliche Tagesquelle. Sie kommen als Monatswerte von EZB und OECD und tragen im Barometer den Hinweis „Stand …“. Die Schwellenländer insgesamt und China, Indien, Taiwan, Korea und Brasilien in US-Dollar liegen über die Nasdaq-Indizes täglich vor.
+- **Schwellenländer vor 2001:** Der Backtest rechnet mit dem BIP-gewichteten OECD-Korb. Er ist kein investierbarer Index und enthält in den 1970er-Jahren nur Indien, Südafrika und Mexiko; in den 1980er-Jahren kommen Israel, Korea, Griechenland und die Türkei hinzu, in den 1990er-Jahren Chile, Ungarn, Polen, Tschechien, Brasilien, Indonesien, Russland und China. Taiwan fehlt (nicht in der OECD-Statistik).
 - **Rendite der Eidgenossen:** Der SNB-RSS-Kanal liefert nur den jüngsten Wert. Die Tageshistorie wächst daher erst mit dem Betrieb des Workers; bis dahin ergänzen Monatswerte die Reihe.
 - **OECD:** drosselt Anfragen. Die OECD-Jobs laufen deshalb einzeln, nacheinander und höchstens einer je Lauf.
 - **Bank of England:** blockiert gelegentlich Cloud-Adressen. Dann bleibt der letzte Stand stehen.

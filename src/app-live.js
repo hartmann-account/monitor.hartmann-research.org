@@ -8,6 +8,7 @@ const LC = { US: "--s1", CN: "--s2", GB: "--s3", CH: "--s4", EA: "--s5", DE: "--
 const RN = { US: "USA", CN: "China", GB: "Großbritannien", CH: "Schweiz", EA: "Eurozone", DE: "Deutschland", JP: "Japan", RU: "Russland", IN: "Indien", WORLD: "Welt", EM: "Schwellenländer" };
 const LSRC = {
   fred: { name: "FRED, Federal Reserve Bank of St. Louis", url: "https://fred.stlouisfed.org/" },
+  nasdaq: { name: "Nasdaq Emerging Markets und Länderindizes (© Nasdaq, Inc.), über FRED", url: "https://fred.stlouisfed.org/series/NASDAQNQEM" },
   ecb: { name: "Europäische Zentralbank, Data Portal", url: "https://data.ecb.europa.eu/" },
   snb: { name: "Schweizerische Nationalbank, Datenportal", url: "https://data.snb.ch/" },
   six: { name: "SIX Swiss Exchange, Indexkurse (15 Minuten verzögert)", url: "https://www.six-group.com/de/market-data/indices.html" },
@@ -25,7 +26,6 @@ const LSRC = {
   gdacs: { name: "GDACS, Global Disaster Alert and Coordination System", url: "https://www.gdacs.org/" },
   nasa: { name: "NASA GISS, GISTEMP v4", url: "https://data.giss.nasa.gov/gistemp/" },
   usgs: { name: "USGS Earthquake Hazards Program", url: "https://earthquake.usgs.gov/" },
-  msci: { name: "MSCI, End-of-Day-Indexwerte", url: "https://www.msci.com/end-of-day-data-search" },
   epu: { name: "Economic Policy Uncertainty (Baker, Bloom, Davis)", url: "https://www.policyuncertainty.com/" },
   gpr: { name: "Geopolitical Risk Index (Caldara, Iacoviello)", url: "https://www.matteoiacoviello.com/gpr.htm" },
   nbp: { name: "Narodowy Bank Polski (Goldpreis und Wechselkurs)", url: "https://api.nbp.pl/" },
@@ -176,7 +176,7 @@ const C12 = ["Teilsäule Frühindikator: wie beim Ausblick 1 Monat.", "Teilsäul
 const PILLAR_RULES = {
   trend: { all: ["Rendite über 3, 6 und 12 Monate ÷ (annualisierte Volatilität × √(Monate ÷ 12)) ergibt je Zeitraum einen z-Wert.", "Abstand zum 200-Tage-Schnitt (bei Monatsreihen: 10-Monats-Schnitt) ÷ (Volatilität × 0,45).", "Säule = 0,6 × Mittel der Renditewerte + 0,4 × Abstandswert."] },
   cycle: {
-    equity: ["OECD-Frühindikator der Region: Wert = 1,4 × Veränderung über 3 Monate − 0,3 × (Niveau − 100); bei mehreren Regionen das Mittel.", "Das Niveau zählt antizyklisch: ein Frühindikator weit über 100 zeigt ein spätes Zyklusstadium, nach dem Aktien und Unternehmensanleihen im Backtest seit 1970 eher schwächer liefen."],
+    equity: ["OECD-Frühindikator der Region: Wert = 1,4 × Veränderung über 3 Monate − 0,3 × (Niveau − 100); bei mehreren Regionen das Mittel (Welt: sechs große Volkswirtschaften; Schwellenländer: China, Indien, Korea, Brasilien, Mexiko, Südafrika, Indonesien, Türkei).", "Das Niveau zählt antizyklisch: ein Frühindikator weit über 100 zeigt ein spätes Zyklusstadium, nach dem Aktien und Unternehmensanleihen im Backtest seit 1970 eher schwächer liefen."],
     commodity: ["OECD-Frühindikator der Region bzw. der Welt (Mittel aus USA, Eurozone, China, Japan, Großbritannien, Indien): 1,4 × Veränderung über 3 Monate − 0,3 × (Niveau − 100) (Niveau antizyklisch)."],
     bond: ["Wachstum: −0,7 × Frühindikator-Wert der Region (gute Konjunktur belastet Anleihen).", "Inflation: −(Veränderung der Inflationsrate über 6 Monate ÷ 0,8 Pp.).", "Säule = Mittel beider Werte."],
     fx: ["Wachstumsvorsprung = Frühindikator-Wert der Region − Wert der USA (beim Dollar: USA − Welt; bei EUR/CHF: Eurozone − Schweiz)."],
@@ -208,7 +208,7 @@ const PILLAR_RULES = {
   },
   risk12: { all: [
     "Aktien, Anleihen, Währungen und Rohstoffe: Risikoappetit wie beim Ausblick 1 Monat (mit dem Risikobeta der Anlage).",
-    "Aktien zusätzlich, jeweils antizyklisch: Verbraucherstimmung (USA: University of Michigan; Deutschland, Eurozone: Wirtschaftsstimmung der EU-Kommission) als z über zehn Jahre, Wert = −z ÷ 1,2; Kreditlücke der BIZ (Kredit/BIP-Quote über ihrem Trend), Wert = −Lücke ÷ 8 Pp.; USA und Welt: Netto-Position der Spekulanten im S&P-500-Future (CFTC) in % des offenen Interesses, z über drei Jahre, Wert = −z ÷ 1,2.",
+    "Aktien zusätzlich, jeweils antizyklisch: Verbraucherstimmung (USA: University of Michigan; Deutschland, Eurozone: Wirtschaftsstimmung der EU-Kommission) als z über zehn Jahre, Wert = −z ÷ 1,2; Kreditlücke der BIZ (Kredit/BIP-Quote über ihrem Trend; Schwellenländer: Mittel aus bis zu acht Ländern), Wert = −Lücke ÷ 8 Pp.; USA und Welt: Netto-Position der Spekulanten im S&P-500-Future (CFTC) in % des offenen Interesses, z über drei Jahre, Wert = −z ÷ 1,2.",
     "Staats- und Unternehmensanleihen: Excess Bond Premium der Fed ÷ 0,5 Pp. (hohe Prämie = Verunsicherung = günstiger Einstieg); US-Staatsanleihen zusätzlich die Positionierung im Future auf 10-jährige Treasuries, antizyklisch.",
     "Gold und Silber: geopolitischer Risikoindex (Caldara/Iacoviello) als z über zehn Jahre ÷ 1,5; Positionierung der Spekulanten im Gold- bzw. Silberfuture, z über drei Jahre ÷ 1,2 (prozyklisch).",
     "Säule = Mittel der vorhandenen Teile."] },
@@ -409,7 +409,7 @@ function renderBarometer() {
 }
 function collectIds(spec) {
   if (spec == null) return [];
-  if (typeof spec === "string") return [spec === "gold_usd_long" ? "gold_usd" : spec];
+  if (typeof spec === "string") return [spec.endsWith("_long") ? spec.slice(0, -5) : spec];
   if (Array.isArray(spec)) return collectIds(spec[0]);
   if (spec.bond) return [spec.bond];
   if (spec.spread) return [spec.spread];
@@ -900,10 +900,14 @@ function renderMarkets() {
       info: () => ({ f: ["Indexstand in Landeswährung (S&P 500, SMI, Euro Stoxx 50, Nikkei 225, FTSE 100).", "Index = Wert ÷ Wert am ersten Tag des Zeitraums (vor zwölf Monaten) × 100. Über 100 = gestiegen.", "Eurozone und Großbritannien nur als Monatswerte (EZB, OECD)."],
         r: eqDev.map(sr => { const a = lastPt(sr.data); return a ? `${sr.label}: ${fmt(a[1], 1)} (${signed(a[1] - 100, 1)} %)` : null; }) }) },
     { series: eqDev, height: 280, freq: "D", refs: [{ y: 100 }], endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 1), ...SHORT_RANGE });
-  const eqEm = [["CN", "eq_cn", "China"], ["IN", "eq_in", "Indien"], ["RU", "eq_em", "Schwellenländer (MSCI EM)"], ["US", "eq_us", "USA (Vergleich)"]].filter(([, id]) => LP(id).length)
-    .map(([r, id, l]) => ({ id: id, label: l, color: r === "RU" ? "--s7" : LC[r], data: indexed(LS(id), x1), dash: r === "US" ? "5 4" : null }));
-  if (eqEm.length > 1) chartSheet(host, { title: "Aktienmärkte der Schwellenländer", sub: "Index, vor zwölf Monaten = 100; gestrichelt: S&P 500 zum Vergleich", src: liveSrcIds("eq_cn", "eq_in", "eq_em"),
-      info: () => ({ f: ["Aktienindizes Chinas und Indiens (Monatswerte der OECD), S&P 500 zum Vergleich.", "Index = Wert ÷ Wert am ersten Tag des Zeitraums (vor zwölf Monaten) × 100. Über 100 = gestiegen."],
+  // Schwellenländer einheitlich in US-Dollar (Nasdaq-Indizes über FRED); ohne Tagesdaten die OECD-Monatswerte in Landeswährung
+  const usdEm = LP("eq_em").length && LP("eq_cn_usd").length;
+  const eqEm = (usdEm
+    ? [["EM", "eq_em", "Schwellenländer gesamt", "--s7"], ["CN", "eq_cn_usd", "China", LC.CN], ["IN", "eq_in_usd", "Indien", LC.IN], ["TW", "eq_tw_usd", "Taiwan", "--s4"], ["KR", "eq_kr_usd", "Korea", "--s6"], ["BR", "eq_br_usd", "Brasilien", "--s3"], ["US", "eq_us", "USA (Vergleich)", LC.US]]
+    : [["CN", "eq_cn", "China", LC.CN], ["IN", "eq_in", "Indien", LC.IN], ["US", "eq_us", "USA (Vergleich)", LC.US]]).filter(([, id]) => LP(id).length)
+    .map(([r, id, l, c]) => ({ id, label: l, color: c, data: indexed(LS(id), x1), dash: r === "US" ? "5 4" : null }));
+  if (eqEm.length > 1) chartSheet(host, { title: "Aktienmärkte der Schwellenländer", sub: `${usdEm ? "In US-Dollar, " : ""}Index, vor zwölf Monaten = 100; gestrichelt: S&P 500 zum Vergleich`, src: usdEm ? ["live:nasdaq", ...liveSrcIds("eq_us")] : liveSrcIds("eq_cn", "eq_in", "eq_us"),
+      info: () => ({ f: [usdEm ? "Nasdaq-Emerging-Markets-Index (24 Länder) und Nasdaq-Länderindizes für China, Indien, Taiwan, Korea und Brasilien, alle in US-Dollar (Tageswerte über FRED); S&P 500 zum Vergleich." : "Aktienindizes Chinas und Indiens (Monatswerte der OECD), S&P 500 zum Vergleich.", "Index = Wert ÷ Wert am ersten Tag des Zeitraums (vor zwölf Monaten) × 100. Über 100 = gestiegen."],
         r: eqEm.map(sr => { const a = lastPt(sr.data); return a ? `${sr.label}: ${fmt(a[1], 1)}` : null; }) }) },
     { series: eqEm, height: 280, freq: "D", refs: [{ y: 100 }], endValFmt: v => fmt(v, 0), tipFmt: v => fmt(v, 1), ...SHORT_RANGE });
   const com = [["gold_usd", "Gold", "--s4"], ["silver_usd", "Silber", "--s7"], ["brent", "Brent", "--s2"], ["copper", "Kupfer", "--s3"]].filter(([id]) => LP(id).length)

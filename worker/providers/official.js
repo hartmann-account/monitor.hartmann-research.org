@@ -28,8 +28,15 @@ export async function fred(F, id, { start, freq, key } = {}) {
 }
 
 /* Mehrere FRED-Reihen in einem Abruf. Gleiche Frequenz: eine CSV-Datei; gemischte Frequenzen: ZIP mit je einer
-   CSV-Datei pro Frequenz. Liefert { id: [[datum, wert], ...] }. */
+   CSV-Datei pro Frequenz. Liefert { id: [[datum, wert], ...] }. FRED liefert je Abruf höchstens zwölf Reihen (weitere
+   fehlen ohne Fehlermeldung), längere Listen gehen deshalb in Paketen nacheinander. */
+const FRED_MAX = 12;
 export async function fredMulti(F, ids, start) {
+  if (ids.length > FRED_MAX) {
+    const out = {};
+    for (let i = 0; i < ids.length; i += FRED_MAX) Object.assign(out, await fredMulti(F, ids.slice(i, i + FRED_MAX), start));
+    return out;
+  }
   let url = `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${ids.map(encodeURIComponent).join(",")}`;
   if (start) url += `&cosd=${ids.map(() => start).join(",")}`;
   const r = await F.request(url, { timeout: 40000 });

@@ -15,6 +15,7 @@ import { GEO_JOBS } from "./jobs-geo.js";
 import { SIGNAL_JOBS } from "./jobs-signals.js";
 import { EXTRA_JOBS } from "./jobs-extra.js";
 import { BACKTEST_JOBS } from "./jobs-backtest.js";
+import { EM_JOBS } from "./jobs-em.js";
 
 /* ------------------------------------------------------------------ Märkte */
 const MARKET_JOBS = [
@@ -298,4 +299,4 @@ const MARKET_JOBS = [
 ];
 
 // Reihenfolge zählt bei gleich dringlichen Jobs: die Backtests zuletzt, damit neue Quellen vorher im Archiv liegen
-export const JOBS = [...MARKET_JOBS, ...MACRO_JOBS, ...EXTRA_JOBS, ...GEO_JOBS, ...SIGNAL_JOBS, ...BACKTEST_JOBS];
+export const JOBS = [...MARKET_JOBS, ...MACRO_JOBS, ...EXTRA_JOBS, ...EM_JOBS, ...GEO_JOBS, ...SIGNAL_JOBS, ...BACKTEST_JOBS];

@@ -243,7 +243,7 @@ export const EXTRA_JOBS = [
   {
     id: "bis_credit", label: "Kreditlücke und Schuldendienstquote des Privatsektors (BIZ, Frühwarnindikatoren)", source: "bis", every: 24 * 7, cost: 2,
     async run(F) {
-      const cs = "US+XM+CH+JP+GB+CN+IN+DE";
+      const cs = "US+XM+CH+JP+GB+CN+IN+DE+BR+MX+KR+ZA+ID+TR";
       const [gap, dsr] = await Promise.all([bis(F, "WS_CREDIT_GAP", `Q.${cs}.P.A.C+A`, "1960"), bis(F, "WS_DSR", `Q.${cs}.P`, "1990")]);
       const iso = c => (c === "XM" ? "ea" : c.toLowerCase());
       const s = {};

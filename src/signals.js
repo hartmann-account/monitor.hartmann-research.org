@@ -218,7 +218,7 @@ const SIG = (() => {
   };
   const cfg = {
     // Stand des Modells; ändert sich die Rechnung, rechnet der Worker die gespeicherte Rückrechnung neu
-    version: "2026-10-19c",
+    version: "2026-10-19d",
     pillars: [
       { id: "trend", label: "Trend", short: "T", desc: "Kursmomentum über 3, 6 und 12 Monate, risikobereinigt, und Abstand zum gleitenden 200-Tage-Durchschnitt (Monatsreihen: 10 Monate)." },
       { id: "cycle", label: "Konjunktur", short: "K", desc: "OECD-Frühindikator der Region: Dynamik über drei Monate und Niveau gegenüber dem langfristigen Mittel (100). Bei Aktien, Unternehmensanleihen und Rohstoffen zählt ein hohes Niveau antizyklisch (Boom = spätes Zyklusstadium). Anleihen profitieren von schwächerem Wachstum und sinkender Inflation." },
@@ -263,9 +263,20 @@ const SIG = (() => {
       IN: { cli: "cli_in", cpi: "cpi_in", pr: "pr_in", y10: "y10_in", reer: "reer_in", imf: "ind", wb: "ind" },
       // zusammengesetzte Regionen: Gewichte nach ungefährem Anteil an der Weltwirtschaft (Kaufkraftparitäten)
       WORLD: { cli: ["cli_us", "cli_ea", "cli_cn", "cli_jp", "cli_gb", "cli_in"], cpi: "cpi_us", pr: "pr_us", mix: { US: 0.25, EA: 0.20, CN: 0.31, JP: 0.06, GB: 0.04, IN: 0.14 } },
-      EM: { cli: ["cli_cn", "cli_in"], cpi: "cpi_cn", pr: "pr_us", mix: { CN: 0.6, IN: 0.4 } },
+      KR: { cli: "cli_kr", pr: "pr_kr", reer: "reer_kr", imf: "kor", wb: "kor" },
+      BR: { cli: "cli_br", pr: "pr_br", reer: "reer_br", imf: "bra", wb: "bra" },
+      MX: { cli: "cli_mx", pr: "pr_mx", reer: "reer_mx", imf: "mex", wb: "mex" },
+      ZA: { cli: "cli_za", pr: "pr_za", reer: "reer_za", imf: "zaf", wb: "zaf" },
+      ID: { cli: "cli_id", pr: "pr_id", reer: "reer_id", imf: "idn", wb: "idn" },
+      TR: { cli: "cli_tr", pr: "pr_tr", reer: "reer_tr", imf: "tur", wb: "tur" },
+      TW: { reer: "reer_tw", imf: "twn" },
+      // Schwellenländer: Frühindikatoren von acht Ländern (gleich gewichtet), IWF- und Weltbankdaten nach ungefährem
+      // Börsenwert gewichtet (wie die großen Schwellenländer-Indizes: China, Taiwan, Indien, Korea, Brasilien …)
+      EM: { cli: ["cli_cn", "cli_in", "cli_kr", "cli_br", "cli_mx", "cli_za", "cli_id", "cli_tr"], cpi: "cpi_cn", pr: "pr_us",
+        mix: { CN: 0.30, TW: 0.19, IN: 0.19, KR: 0.12, BR: 0.06, ZA: 0.04, MX: 0.03, ID: 0.02, TR: 0.01 } },
     },
-    names: { US: "USA", EA: "Eurozone", DE: "Deutschland", CH: "Schweiz", JP: "Japan", GB: "Großbritannien", CN: "China", IN: "Indien", WORLD: "Welt", EM: "Schwellenländer" },
+    names: { US: "USA", EA: "Eurozone", DE: "Deutschland", CH: "Schweiz", JP: "Japan", GB: "Großbritannien", CN: "China", IN: "Indien", WORLD: "Welt", EM: "Schwellenländer",
+      KR: "Korea", BR: "Brasilien", MX: "Mexiko", ZA: "Südafrika", ID: "Indonesien", TR: "Türkei", TW: "Taiwan" },
     // langjährige Mediane der Risikoprämien (ICE BofA, seit 1997) als Maßstab der langfristigen Bewertung
     spreadRef: { hy_oas: 4.5, ig_oas: 1.3, hy_oas_eu: 4.3 },
     // Schuldenlast der Reservewährungsländer für Gold (USA doppelt)
@@ -290,7 +301,7 @@ const SIG = (() => {
     { id: "eq_jp", group: "aktien", label: "Japan", sub: "Nikkei 225", kind: "equity", region: "JP", beta: "equity", price: "eq_jp", geo: [["cn_jp", -0.3]] },
     { id: "eq_cn", group: "aktien", label: "China", sub: "Shanghai Composite", kind: "equity", region: "CN", beta: "em", price: "eq_cn", geo: [["us_cn", -0.5], ["cn_tw", -0.4]] },
     { id: "eq_in", group: "aktien", label: "Indien", sub: "Nifty 50", kind: "equity", region: "IN", beta: "em", price: "eq_in", geo: [["in_pk", -0.3]] },
-    { id: "eq_em", group: "aktien", label: "Schwellenländer", short: "EM", sub: "MSCI Emerging Markets; ohne MSCI-Daten Korb aus China und Indien", kind: "equity", region: "EM", beta: "em", price: "eq_em", fallback: { basket: [["eq_cn", 0.6], ["eq_in", 0.4]] }, geo: [["us_cn", -0.3]] },
+    { id: "eq_em", group: "aktien", label: "Schwellenländer", short: "EM", sub: "Nasdaq Emerging Markets Index in US-Dollar (24 Länder, mit Taiwan und Korea); ohne Tagesdaten Korb aus China und Indien", kind: "equity", region: "EM", beta: "em", price: "eq_em", fallback: { basket: [["eq_cn", 0.6], ["eq_in", 0.4]] }, geo: [["us_cn", -0.3]] },
 
     { id: "bd_us", group: "anleihen", label: "USA", sub: "Treasuries, 10 Jahre", kind: "bond", region: "US", beta: "safeBond", price: { bond: "y10_us" }, yieldId: "y10_us" },
     { id: "bd_de", group: "anleihen", label: "Deutschland", short: "DE", sub: "Bundesanleihen, 10 Jahre", kind: "bond", region: "EA", beta: "safeBond", price: { bond: "y10_de" }, yieldId: "y10_de", mix: { DE: 1 } },
@@ -320,14 +331,14 @@ const SIG = (() => {
     { id: "gold_chf", group: "gold", label: "Gold in Franken", short: "Gold CHF", sub: "CHF je Feinunze", kind: "gold", region: "CH", beta: "gold", price: { ratio: ["gold_usd_long", "fx_chf"] }, gold: true },
     { id: "gold_eur", group: "gold", label: "Gold in Euro", short: "Gold EUR", sub: "EUR je Feinunze", kind: "gold", region: "EA", beta: "gold", price: { ratio: ["gold_usd_long", "fx_eur"] }, gold: true },
     { id: "silver", group: "gold", label: "Silber", sub: "US-Dollar je Feinunze", kind: "gold", region: "US", beta: "commodity", price: "silver_usd", gold: true },
-    { id: "rel_gold_eq", group: "gold", label: "Gold vs. Aktien", short: "Gold/Akt.", sub: "Gold gegenüber S&P 500", kind: "relative", regions: [null, "US"], price: { ratio: ["gold_usd_long", "eq_us"] }, gold: true },
+    { id: "rel_gold_eq", group: "gold", label: "Gold vs. Aktien", short: "Gold/Akt.", sub: "Gold gegenüber S&P 500", kind: "relative", regions: [null, "US"], price: { ratio: ["gold_usd_long", "eq_us_long"] }, gold: true },
     { id: "rel_gold_bd", group: "gold", label: "Gold vs. Anleihen", short: "Gold/Anl.", sub: "Gold gegenüber 10-jährigen Treasuries", kind: "relative", regions: [null, "US"], price: { ratio: ["gold_usd_long", { bond: "y10_us" }] }, gold: true },
 
-    { id: "rel_ch_us", group: "relativ", label: "Schweiz vs. USA", short: "CH vs. US", sub: "SMI gegenüber S&P 500, beide in Franken", kind: "relative", regions: ["CH", "US"], price: { ratio: ["eq_ch", { product: ["eq_us", { inv: "fx_chf" }] }] } },
-    { id: "rel_ea_us", group: "relativ", label: "Eurozone vs. USA", short: "EZ vs. US", sub: "Euro Stoxx 50 gegenüber S&P 500, beide in US-Dollar", kind: "relative", regions: ["EA", "US"], price: { ratio: [{ product: ["eq_ea", "fx_eur"] }, "eq_us"] } },
-    { id: "rel_em_us", group: "relativ", label: "Schwellenl. vs. USA", short: "EM vs. US", sub: "MSCI EM gegenüber S&P 500; ohne MSCI-Daten Korb aus China und Indien in US-Dollar", kind: "relative", regions: ["EM", "US"], price: { ratio: ["eq_em", "eq_us"] },
-      fallback: { ratio: [{ basket: [[{ product: ["eq_cn", "fx_cny"] }, 0.6], [{ product: ["eq_in", "fx_inr"] }, 0.4]] }, "eq_us"] } },
-    { id: "rel_eq_bd", group: "relativ", label: "Aktien vs. Anleihen", short: "Akt./Anl.", sub: "S&P 500 gegenüber 10-jährigen Treasuries", kind: "relative", regions: ["US", null], price: { ratio: ["eq_us", { bond: "y10_us" }] } },
+    { id: "rel_ch_us", group: "relativ", label: "Schweiz vs. USA", short: "CH vs. US", sub: "SMI gegenüber S&P 500, beide in Franken", kind: "relative", regions: ["CH", "US"], price: { ratio: ["eq_ch", { product: ["eq_us_long", { inv: "fx_chf" }] }] } },
+    { id: "rel_ea_us", group: "relativ", label: "Eurozone vs. USA", short: "EZ vs. US", sub: "Euro Stoxx 50 gegenüber S&P 500, beide in US-Dollar", kind: "relative", regions: ["EA", "US"], price: { ratio: [{ product: ["eq_ea", "fx_eur"] }, "eq_us_long"] } },
+    { id: "rel_em_us", group: "relativ", label: "Schwellenl. vs. USA", short: "EM vs. US", sub: "Nasdaq Emerging Markets gegenüber S&P 500, beide in US-Dollar; ohne Tagesdaten Korb aus China und Indien", kind: "relative", regions: ["EM", "US"], price: { ratio: ["eq_em", "eq_us_long"] },
+      fallback: { ratio: [{ basket: [[{ product: ["eq_cn", "fx_cny"] }, 0.6], [{ product: ["eq_in", "fx_inr"] }, 0.4]] }, "eq_us_long"] } },
+    { id: "rel_eq_bd", group: "relativ", label: "Aktien vs. Anleihen", short: "Akt./Anl.", sub: "S&P 500 gegenüber 10-jährigen Treasuries", kind: "relative", regions: ["US", null], price: { ratio: ["eq_us_long", { bond: "y10_us" }] } },
   ];
   const GROUPS = [
     { id: "klassen", label: "Anlageklassen" },
@@ -574,9 +585,16 @@ const SIG = (() => {
     return { k: `${name} (antizyklisch)`, v: z.v, u: "Punkte", s: clip2(-z.z / 1.2), d: z.d.slice(0, 7) };
   }
   // Kreditlücke der BIZ (Kredit/BIP-Quote über ihrem Trend), antizyklisch: übermäßiges Kreditwachstum belastet
-  const CGAP = { US: "us", EA: "de", DE: "de", CH: "ch", JP: "jp", GB: "gb", CN: "cn", IN: "in", WORLD: "us", EM: "cn" };
+  const CGAP = { US: "us", EA: "de", DE: "de", CH: "ch", JP: "jp", GB: "gb", CN: "cn", IN: "in", WORLD: "us", EM: ["cn", "in", "kr", "br", "mx", "za", "id", "tr"] };
   function creditGapPart(L, region, cut) {
-    const c = CGAP[region], p = c ? asOf(L.s["cgap_" + c], cut) : [];
+    const c = CGAP[region];
+    if (Array.isArray(c)) { // Schwellenländer: Mittel der verfügbaren Länder
+      const vals = c.map(x => last(asOf(L.s["cgap_" + x], cut))).filter(Boolean);
+      if (vals.length < 3) return null;
+      const v = mean(vals.map(a => a.v));
+      return { k: `Kreditlücke Schwellenländer (BIZ, Mittel aus ${vals.length} Ländern, antizyklisch)`, v, u: "Pp.", s: clip2(-v / 8), d: isoOf(Math.max(...vals.map(a => a.t))).slice(0, 7) };
+    }
+    const p = c ? asOf(L.s["cgap_" + c], cut) : [];
     if (!p.length) return null;
     const a = last(p);
     return { k: `Kreditlücke ${regName(c.toUpperCase() === "DE" ? "DE" : c.toUpperCase())} (BIZ, antizyklisch)`, v: a.v, u: "Pp.", s: clip2(-a.v / 8), d: isoOf(a.t).slice(0, 7) };
@@ -1435,6 +1453,13 @@ const SIG = (() => {
     }
     // S&P 500 seit 1950 (Monatsmittel nach Shiller) als lange Historie für Bewertung und Langfristtrend
     if (hist.sp500_m && !S.eq_us_m) S.eq_us_m = { id: "eq_us_m", f: "M", src: "shiller", pts: decodeSeries(hist.sp500_m) };
+    // Verhältnisse gegenüber dem S&P 500 (Regionen, Gold, Aktien gegenüber Anleihen): vor den Tageswerten (FRED: zehn Jahre)
+    // die Monatsmittel, damit Trends über 20 Jahre live wie im Backtest rechnen
+    if (S.eq_us) {
+      const d = S.eq_us.pts, t0 = d.length ? d[0].t : Infinity;
+      const m = S.eq_us_m ? S.eq_us_m.pts.filter(q => q.e < t0) : [];
+      S.eq_us_long = { ...S.eq_us, id: "eq_us_long", l: "S&P 500 (Monatsmittel, danach Tageswerte)", pts: m.concat(d) };
+    }
     if (!S.copper && S.copper_fred) S.copper = S.copper_fred;
     // Risikoprämien der Unternehmensanleihen: die ICE-BofA-Reihen gibt FRED nur für drei Jahre frei. Das Modell nutzt wie
     // der Backtest davor die Prämie Moody's Baa gegenüber Treasuries, skaliert mit dem mittleren Verhältnis im
