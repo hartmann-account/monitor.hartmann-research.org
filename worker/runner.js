@@ -13,6 +13,13 @@ const HOUR = 3600000;
 
 function backoff(fails) { return [1, 2, 4, 8, 12, 24][Math.min(fails - 1, 5)] * HOUR; }
 
+/* Noch nicht archiviert (D1 gebunden, aber keine Archivausgabe bzw. bei "deep" noch nicht die ganze Historie):
+   solche Jobs laufen vorgezogen, auch wenn ihr Takt noch nicht abgelaufen ist */
+export function archivePending(j, s, env) {
+  return !!(env && env.DB && !j.noArchive && (!s.arch || !s.arch.at || (j.deep && !s.deepAt)));
+}
+const ARCHIVE_CATCHUP_PER_RUN = 4;
+
 export function dueJobs(meta, now, jobs = JOBS, env = null) {
   const due = [];
   for (const j of jobs) {
@@ -22,10 +29,12 @@ export function dueJobs(meta, now, jobs = JOBS, env = null) {
     const last = s.okAt ? Date.parse(s.okAt) : 0;
     // 10 % Toleranz, damit ein Job nicht wegen weniger Minuten auf den nächsten Lauf rutscht
     if (now - last >= j.every * HOUR * 0.9) due.push({ job: j, age: last ? (now - last) / (j.every * HOUR) : 1e9 });
+    else if (archivePending(j, s, env)) due.push({ job: j, age: 0.5, catchup: true });
   }
-  // nie geladene Jobs zuerst, dann nach relativer Überfälligkeit
+  // nie geladene Jobs zuerst, dann nach relativer Überfälligkeit; nachzuholende Archivläufe zuletzt und begrenzt
   due.sort((a, b) => b.age - a.age);
-  return due.map(d => d.job);
+  let catchup = 0;
+  return due.filter(d => !d.catchup || ++catchup <= ARCHIVE_CATCHUP_PER_RUN).map(d => d.job);
 }
 
 /* Nach dem ersten Archivlauf mit voller Historie: Snapshot-Ausgabe wieder auf den bisherigen Zeitraum kürzen
