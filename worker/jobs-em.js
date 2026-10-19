@@ -1,5 +1,6 @@
 /* Schwellenländer: Aktien, Währungen, Konjunktur und Geldpolitik aus amtlichen bzw. frei lizenzierten Quellen.
-   - Nasdaq-Emerging-Markets-Indizes in US-Dollar (täglich seit 2001, über FRED), einschließlich Taiwan, Korea, Brasilien
+   - Nasdaq-Emerging-Markets-Index und Länderindizes für China, Indien, Taiwan, Korea und Brasilien in US-Dollar (täglich seit
+     2001, über FRED; vor dem Start im Dezember 2012 zurückgerechnet). Korea zählt Nasdaq seit 2015 zu den Industrieländern
    - Dollar gegenüber den Währungen der Schwellenländer (Fed, täglich seit 2006; davor Monatswerte seit 1973)
    - OECD-Aktienindizes und Wechselkurse von 15 Schwellenländern seit 1957: daraus ein nach Wirtschaftsleistung gewichteter
      Korb in US-Dollar für die Zeit vor 2001 (nur Archiv, Grundlage des Backtests)
