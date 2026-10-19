@@ -18,7 +18,8 @@ export function colIndex(letters) {
 /* Excel-Tageszahl (1900er System) → ISO-Datum */
 export const excelDate = n => new Date(Date.UTC(1899, 11, 30) + Math.round(n * 864e5)).toISOString().slice(0, 10);
 
-/* Arbeitsmappe lesen: [{ name, rows: [[wert, …], …] }]; fehlende Zellen sind null */
+/* Arbeitsmappe lesen: [{ name, rows: [[wert, …], …], total }]; fehlende Zellen sind null, total = Zeilen des Blatts
+   (auch wenn maxRows nur den Anfang liest) */
 export async function readXlsx(u8, { maxRows = Infinity } = {}) {
   const files = await unzip(u8, { only: n => n === "xl/workbook.xml" || n === "xl/_rels/workbook.xml.rels" || n === "xl/sharedStrings.xml" || /^xl\/worksheets\/[^/]+\.xml$/.test(n) });
   const shared = [...(files["xl/sharedStrings.xml"] || "").matchAll(/<si>([\s\S]*?)<\/si>/g)].map(m => texts(m[1]));
@@ -31,9 +32,16 @@ export async function readXlsx(u8, { maxRows = Infinity } = {}) {
   for (const m of (files["xl/workbook.xml"] || "").matchAll(/<sheet\b[^>]*>/g)) {
     const name = /\bname="([^"]*)"/.exec(m[0]), rid = /\br:id="([^"]+)"/.exec(m[0]);
     const xml = rid && files[rels[rid[1]]];
-    if (name && xml != null) sheets.push({ name: unesc(name[1]), rows: parseSheet(xml, shared, maxRows) });
+    if (name && xml != null) sheets.push({ name: unesc(name[1]), rows: parseSheet(xml, shared, maxRows), total: lastRow(xml) });
   }
   return sheets;
+}
+
+// Nummer der letzten Zeile (aus dem letzten <row r="…">), ohne das ganze Blatt zu lesen
+function lastRow(xml) {
+  const i = xml.lastIndexOf("<row ");
+  const m = i >= 0 ? /\br="(\d+)"/.exec(xml.slice(i, i + 300)) : null;
+  return m ? +m[1] : 0;
 }
 
 function parseSheet(xml, shared, maxRows) {

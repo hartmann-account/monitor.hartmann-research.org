@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readXlsx, colIndex, excelDate } from "../worker/lib/xlsx.js";
-import { previewFile } from "../worker/inbox.js";
+import { previewFile, previewKey } from "../worker/inbox.js";
 
 /* ZIP ohne Kompression (der Leser prüft keine Prüfsummen) */
 function zipStored(files) {
@@ -65,4 +65,5 @@ test("Vorschau: Excel je Blatt, CSV zeilenweise, andere Formate nur benannt", as
   const c = await previewFile("eingang/x/a.csv", new TextEncoder().encode("a,b\n1,2\n"));
   assert.deepEqual(c.anfang.slice(0, 2), ["a,b", "1,2"]);
   assert.equal((await previewFile("eingang/x/a.pdf", new Uint8Array(3))).art, "unbekannt");
+  assert.equal(previewKey("eingang/wgc/GDT_Tables_Q2'26_EN.xlsx"), "eingang/_vorschau/wgc/GDT_Tables_Q2_26_EN.xlsx.json");
 });

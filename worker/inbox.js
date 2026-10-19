@@ -3,20 +3,23 @@
    Der Job eingang legt zu jeder neuen oder geänderten Datei eine Vorschau an (eingang/_vorschau/…json: Blätter, Größe,
    die ersten Zeilen und Spalten), die /api/rohdaten?vorschau= zeigt; daraus entstehen die Importe der einzelnen Quellen. */
 import { readXlsx } from "./lib/xlsx.js";
-import { putJson } from "./r2.js";
+import { putJson, safeKey } from "./r2.js";
 
 export const INBOX = "eingang/";
 export const PREVIEW = "eingang/_vorschau/";
 const HEAD_ROWS = 30, HEAD_COLS = 24;
 
+/* Schlüssel der Vorschau: eingang/_vorschau/<pfad>.json, Sonderzeichen (etwa Apostroph) je Pfadteil zu _ */
+export const previewKey = key => PREVIEW + key.slice(INBOX.length).split("/").map(safeKey).join("/") + ".json";
+
 /* Vorschau einer Datei: Excel je Blatt die ersten Zeilen und Spalten, CSV und Text die ersten Zeilen */
 export async function previewFile(key, u8) {
   if (/\.xlsx$/i.test(key)) {
-    const sheets = await readXlsx(u8);
+    const sheets = await readXlsx(u8, { maxRows: HEAD_ROWS });
     return {
       art: "xlsx",
-      blaetter: sheets.map(s => ({ name: s.name, zeilen: s.rows.length, spalten: Math.max(0, ...s.rows.map(r => r.length)),
-        anfang: s.rows.slice(0, HEAD_ROWS).map(r => r.slice(0, HEAD_COLS)) })),
+      blaetter: sheets.map(s => ({ name: s.name, zeilen: s.total, spalten: Math.max(0, ...s.rows.map(r => r.length)),
+        anfang: s.rows.map(r => r.slice(0, HEAD_COLS)) })),
     };
   }
   if (/\.(csv|txt|tsv)$/i.test(key)) {
@@ -36,7 +39,8 @@ export const INBOX_JOBS = [{
     let cursor;
     do {
       const r = await b.list({ prefix: INBOX, limit: 1000, cursor });
-      files.push(...r.objects.filter(o => !o.key.startsWith(PREVIEW)));
+      // ohne Vorschauen und ohne leere Ordnereinträge des Dashboards (Schlüssel mit / am Ende)
+      files.push(...r.objects.filter(o => !o.key.startsWith(PREVIEW) && !o.key.endsWith("/")));
       cursor = r.truncated ? r.cursor : undefined;
     } while (cursor);
     const items = [];
@@ -50,7 +54,7 @@ export const INBOX_JOBS = [{
       } catch (e) {
         p = { art: "fehler", fehler: String((e && e.message) || e).slice(0, 300) };
       }
-      await putJson(b, PREVIEW + o.key.slice(INBOX.length) + ".json", { datei: o.key, groesse: o.size, hochgeladen: o.uploaded, ...p });
+      await putJson(b, previewKey(o.key), { datei: o.key, groesse: o.size, hochgeladen: o.uploaded, ...p });
       seen[o.key] = o.etag;
       items.push({ key: o.key, size: o.size, neu: true, art: p.art });
     }
