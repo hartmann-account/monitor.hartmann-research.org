@@ -9,7 +9,7 @@ import { writeFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { btSeriesIds, buildBacktestLive, runPanel, summarizeBacktest } from "../worker/backtest.js";
+import { btSeriesIds, buildBacktestLive, runPanel, summarizeBacktest, THIN_SQL, FULL_SQL } from "../worker/backtest.js";
 import { BT_VERSION } from "../worker/jobs-backtest.js";
 
 const require = createRequire(import.meta.url);
@@ -26,13 +26,8 @@ async function loadLocal() {
   const catalog = db.prepare("SELECT id, freq FROM series").all();
   const freq = Object.fromEntries(catalog.map(r => [r.id, r.freq]));
   const raw = {};
-  // wie im Worker: Tageswerte auf den letzten Wert je Kalenderwoche verdichtet
-  for (const id of btSeriesIds(catalog.map(r => r.id))) {
-    const sql = freq[id] === "D"
-      ? "SELECT MAX(d) AS d, v FROM obs WHERE s = ? AND v IS NOT NULL GROUP BY strftime('%Y-%W', d) ORDER BY d"
-      : "SELECT d, v FROM obs WHERE s = ? AND v IS NOT NULL ORDER BY d";
-    raw[id] = { freq: freq[id], points: db.prepare(sql).all(id).map(r => [r.d, r.v]) };
-  }
+  // wie im Worker: Tageswerte auf den letzten Wert je Kalenderwoche und je Monat verdichtet
+  for (const id of btSeriesIds(catalog.map(r => r.id))) raw[id] = { freq: freq[id], points: db.prepare(freq[id] === "D" ? THIN_SQL : FULL_SQL).all(id).map(r => [r.d, r.v]) };
   return raw;
 }
 async function loadApi(base) {

@@ -76,14 +76,13 @@ function point(iso, f, v) {
   if (f === "A") return { t, e: Date.UTC(y, 11, 31) / DAY, x: y, v };
   return { t, e: t, x: SIG.yearFrac(t), v };
 }
-// Tageswerte auf den letzten Wert je Woche (Montag bis Sonntag) verdichten
+// Tageswerte verdichten: letzter Wert je Woche (Montag bis Sonntag) und je Monat (Monatsschluss für die Stichtage)
+const monthOf = t => { const d = new Date(t * DAY); return d.getUTCFullYear() * 12 + d.getUTCMonth(); };
 function weekly(pts) {
   const out = [];
-  let wk = null;
-  for (const p of pts) {
-    const w = Math.floor((p.t + 3) / 7);
-    if (w === wk) out[out.length - 1] = p; else out.push(p);
-    wk = w;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i], n = pts[i + 1];
+    if (!n || Math.floor((n.t + 3) / 7) !== Math.floor((p.t + 3) / 7) || monthOf(n.t) !== monthOf(p.t)) out.push(p);
   }
   return out;
 }
@@ -97,8 +96,9 @@ function splice(newer, older, mode) {
   const t0 = newer.pts[0].t;
   let k = 1;
   if (mode !== "rate") {
+    // Kurse: die ersten 400 gemeinsamen Werte; Prämien: der ganze Überlappungszeitraum wie im Live-Modell (SIG.prepareLive)
     const ratios = [];
-    for (const q of newer.pts.slice(0, 400)) { const o = SIG.valueAt(older.pts, q.t); if (o && q.t - o.t < 45 && o.v) ratios.push(q.v / o.v); }
+    for (const q of mode === "scale" ? newer.pts : newer.pts.slice(0, 400)) { const o = SIG.valueAt(older.pts, q.t); if (o && q.t - o.t < 45 && o.v) ratios.push(q.v / o.v); }
     if (ratios.length) k = SIG.median(ratios);
     else { const o = SIG.last(older.pts.filter(p => p.t <= t0)); if (o && o.v) k = newer.pts[0].v / o.v; }
   }
@@ -332,8 +332,13 @@ export function walkForward(entries, hz, { firstYear = 1990, shrink = 0.5, equal
 }
 
 /* ------------------------------------------------------------ Daten aus D1 (Worker) */
-/* Reihen des Backtests aus dem Archiv; Tageswerte schon in der Datenbank auf den letzten Wert je Kalenderwoche verdichtet
-   (SQLite: die übrigen Spalten stammen bei MAX() aus der Zeile mit dem größten Datum) */
+/* Tageswerte schon in der Datenbank verdichten: letzter Wert je Kalenderwoche und je Monat (die Stichtage des Backtests
+   sind Monatsenden, so steht dort der Schlusskurs des Monats und nicht der Wert der Vorwoche) */
+export const THIN_SQL = `SELECT d, v FROM obs WHERE s = ?1 AND v IS NOT NULL AND d IN (
+  SELECT MAX(d) FROM obs WHERE s = ?1 AND v IS NOT NULL GROUP BY strftime('%Y-%W', d)
+  UNION SELECT MAX(d) FROM obs WHERE s = ?1 AND v IS NOT NULL GROUP BY strftime('%Y-%m', d)) ORDER BY d`;
+export const FULL_SQL = "SELECT d, v FROM obs WHERE s = ?1 AND v IS NOT NULL ORDER BY d";
+/* Reihen des Backtests aus dem Archiv, Tageswerte verdichtet */
 export async function loadArchive(db, ids = null) {
   const { results: cat } = await db.prepare("SELECT id, freq FROM series").all();
   const freq = Object.fromEntries(cat.map(r => [r.id, r.freq]));
@@ -341,9 +346,7 @@ export async function loadArchive(db, ids = null) {
   const raw = {};
   for (let i = 0; i < want.length; i += 20) {
     const part = want.slice(i, i + 20);
-    const res = await db.batch(part.map(id => db.prepare(freq[id] === "D"
-      ? "SELECT MAX(d) AS d, v FROM obs WHERE s = ? AND v IS NOT NULL GROUP BY strftime('%Y-%W', d) ORDER BY d"
-      : "SELECT d, v FROM obs WHERE s = ? AND v IS NOT NULL ORDER BY d").bind(id)));
+    const res = await db.batch(part.map(id => db.prepare(freq[id] === "D" ? THIN_SQL : FULL_SQL).bind(id)));
     part.forEach((id, k) => { raw[id] = { freq: freq[id], points: (res[k].results || []).map(r => [r.d, r.v]) }; });
   }
   return raw;

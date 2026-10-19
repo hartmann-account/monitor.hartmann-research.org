@@ -58,10 +58,10 @@ const MARKET_JOBS = [
     },
   },
   {
-    id: "fred_risk", label: "Kreditrisikoprämien, Finanzstress, Fed-Bilanz, Geldmenge, US-Preisindex", source: "fred", every: 12, cost: 1, keep: true, deep: "1950-01-01",
+    id: "fred_risk", label: "Kreditrisikoprämien, Finanzstress, Fed-Bilanz, Geldmenge, US-Preisindex", source: "fred", every: 12, cost: 2, keep: true, deep: "1950-01-01",
     async run(F, ctx) {
-      const ids = ["BAMLH0A0HYM2", "BAMLC0A0CM", "BAMLHE00EHYIOAS", "BAMLEMCBPIOAS", "STLFSI4", "NFCI", "WALCL", "M2SL", "CPIAUCSL", "JPNASSETS", "USEPUINDXD"];
-      const r = await fredMulti(F, ids, since(ctx, "hy_oas", "2014-01-01", 40));
+      const ids = ["BAMLH0A0HYM2", "BAMLC0A0CM", "BAMLHE00EHYIOAS", "BAMLEMCBPIOAS", "STLFSI4", "NFCI", "WALCL", "M2SL", "JPNASSETS", "USEPUINDXD"];
+      const [r, cpi] = await Promise.all([fredMulti(F, ids, since(ctx, "hy_oas", "2014-01-01", 40)), fredMulti(F, ["CPIAUCSL"], "1947-01-01")]);
       const s = {};
       const putD = (sid, fid, l, u) => { if (r[fid]) s[sid] = D(ctx, sid, r[fid], meta(l, u, "fred", { fred: fid })); };
       const putM = (sid, fid, l, u) => { if (r[fid]) s[sid] = M(ctx, sid, r[fid].map(([d, v]) => [d.slice(0, 7), v]), meta(l, u, "fred", { fred: fid })); };
@@ -73,7 +73,9 @@ const MARKET_JOBS = [
       putD("nfci", "NFCI", "Finanzierungsbedingungen (Chicago Fed NFCI)", "Index");
       putD("fed_assets", "WALCL", "Bilanzsumme der Federal Reserve", "Mio. US-$");
       putM("m2_us", "M2SL", "Geldmenge M2 USA", "Mrd. US-$");
-      putM("cpi_us_index", "CPIAUCSL", "Verbraucherpreisindex USA (saisonbereinigt)", "Index");
+      // Verbraucherpreisindex immer mit der ganzen Historie seit 1947 (full: nicht kürzen): reale Gold- und Rohstoffpreise
+      // rechnet das Modell live wie im Backtest gegen alle Monate seit 1971
+      if (cpi.CPIAUCSL) s.cpi_us_index = monthlySeries(cpi.CPIAUCSL.map(([d, v]) => [d.slice(0, 7), v]), meta("Verbraucherpreisindex USA (saisonbereinigt)", "Index", "fred", { fred: "CPIAUCSL", full: true }));
       putM("boj_assets_fred", "JPNASSETS", "Bilanzsumme der Bank of Japan", "100 Mio. Yen");
       putD("epu_us", "USEPUINDXD", "Wirtschaftspolitische Unsicherheit USA (täglich)", "Index");
       return { series: s };

@@ -137,9 +137,13 @@ const SIG = (() => {
     const s = sd(res); if (!s) return null;
     return { z: (Math.log(a.v) - (c + b * a.x)) / s, dev: Math.log(a.v) - (c + b * a.x), slope: b };
   }
+  // z-Wert des jüngsten Werts (oder val) gegenüber den letzten `years` Jahren; je Kalenderwoche zählt ein Wert, damit
+  // tägliche und ausgedünnte (wöchentliche) Abschnitte einer Reihe gleich viel Gewicht haben, live wie im Backtest
   function zScore(p, years, val) {
     const a = last(p); if (!a) return null;
-    const win = p.filter(q => q.t > a.t - years * 365.25).map(q => q.v);
+    const wk = new Map();
+    for (const q of p) if (q.t > a.t - years * 365.25) wk.set(Math.floor((q.t + 3) / 7), q.v);
+    const win = [...wk.values()];
     const m = mean(win), s = sd(win);
     if (m == null || !s) return null;
     return ((val ?? a.v) - m) / s;
@@ -214,13 +218,13 @@ const SIG = (() => {
   };
   const cfg = {
     // Stand des Modells; ändert sich die Rechnung, rechnet der Worker die gespeicherte Rückrechnung neu
-    version: "2026-10-19b",
+    version: "2026-10-19c",
     pillars: [
       { id: "trend", label: "Trend", short: "T", desc: "Kursmomentum über 3, 6 und 12 Monate, risikobereinigt, und Abstand zum gleitenden 200-Tage-Durchschnitt (Monatsreihen: 10 Monate)." },
       { id: "cycle", label: "Konjunktur", short: "K", desc: "OECD-Frühindikator der Region: Dynamik über drei Monate und Niveau gegenüber dem langfristigen Mittel (100). Bei Aktien, Unternehmensanleihen und Rohstoffen zählt ein hohes Niveau antizyklisch (Boom = spätes Zyklusstadium). Anleihen profitieren von schwächerem Wachstum und sinkender Inflation." },
       { id: "value", label: "Bewertung", short: "B", desc: "Aktien: Aktienanteil am Anlegervermögen der USA (Fed-Finanzierungsrechnung Z.1, antizyklisch), bei den übrigen Märkten zusammen mit dem Abstand zum log-linearen 10-Jahres-Trend. Anleihen: reale Rendite gegenüber ihrer 10-Jahres-Spanne und Steilheit der Zinskurve (Laufzeitprämie). Unternehmensanleihen: Risikoaufschlag gegenüber seiner Historie (Hochzins bzw. Baa-Anleihen seit 1919). Währungen: realer effektiver Wechselkurs (BIS) gegenüber dem 10-Jahres-Mittel. Gold: realer Goldpreis." },
       { id: "liquidity", label: "Liquidität", short: "L", desc: "Richtung der Geldpolitik (Leitzinsänderung über 12 Monate), Steilheit der Zinskurve, Zentralbankbilanz und Dollartrend." },
-      { id: "risk", label: "Risiko & Geopolitik", short: "R", desc: "Risikoappetit aus Volatilität (VIX), Hochzins-Risikoprämien, Finanzstress und geopolitischem Risiko. Sichere Häfen (Franken, Yen, Gold, Staatsanleihen) gewinnen bei Risikoaversion." },
+      { id: "risk", label: "Risikoappetit", short: "R", desc: "Risikoappetit aus Volatilität (VIX), Hochzins-Risikoprämien und Finanzstress, gewichtet mit dem Risikobeta der Anlage. Sichere Häfen (Franken, Yen, Gold, Staatsanleihen) gewinnen bei Risikoaversion. Geopolitische Spannungen des Spannungsmonitors werden angezeigt, zählen aber nicht: ohne lange Historie lassen sie sich nicht im Backtest prüfen." },
       { id: "cycle12", label: "Konjunktur", short: "K", desc: "OECD-Frühindikator (Niveau antizyklisch: ein Boom kündigt schwächere Folgejahre an), IWF-Wachstumsprognose für die nächsten zwölf Monate und in den USA die Baugenehmigungen als früher Zyklusindikator. Anleihen zusätzlich die erwartete Inflationsentwicklung." },
       { id: "mom12", label: "Momentum 12 M.", short: "M", desc: "Kursentwicklung der letzten zwölf Monate ohne den jüngsten Monat, risikobereinigt (Zeitreihen-Momentum), und Abstand zum Zwölfmonatsmittel." },
       { id: "risk12", label: "Stimmung & Risiko", short: "R", desc: "Antizyklische Stimmungs- und Positionierungsdaten: Verbraucherstimmung (Michigan, EU-Kommission), Kreditlücke (BIS), Positionierung der Spekulanten an den Terminmärkten (CFTC), Anleihe-Risikoprämie (Gilchrist-Zakrajšek) und geopolitisches Risiko (für Gold). Euphorie und hohe Verschuldung warnen, Pessimismus ist eine Chance." },
@@ -392,6 +396,17 @@ const SIG = (() => {
 
   /* ------------------------------------------------------------ Preisreihen bilden */
   // abgeleitete Preisreihen je Stichtag zwischenspeichern (die letzten Stichtage; prepareLive leert den Speicher)
+  // Risikoprämie für das Modell: die verlängerte Reihe (prepareLive), sonst das Original
+  const spreadSer = (L, id) => L.s[id + "_long"] || L.s[id];
+  // Ältere Reihe vor eine neuere setzen, skaliert mit dem Median der Verhältnisse im ganzen Überlappungszeitraum
+  function spliceScaled(newer, older) {
+    if (!newer || !newer.pts.length || !older || !older.pts.length) return null;
+    const t0 = newer.pts[0].t, ratios = [];
+    for (const q of newer.pts) { const o = valueAt(older.pts, q.t); if (o && q.t - o.t < 10 && o.v) ratios.push(q.v / o.v); }
+    if (ratios.length < 20) return null;
+    const k = median(ratios);
+    return { ...newer, pts: older.pts.filter(q => q.t < t0).map(q => ({ ...q, v: q.v * k })).concat(newer.pts) };
+  }
   function priceSeries(L, spec, cut) {
     if (spec == null) return [];
     if (typeof spec === "string") return asOf(L.s[spec], cut);
@@ -407,7 +422,7 @@ const SIG = (() => {
     if (spec.bond) return bondIndex(asOf(L.s[spec.bond], cut));
     if (spec.inv) return priceSeries(L, spec.inv, cut).map(q => ({ ...q, v: 1 / q.v }));
     if (spec.spread) { // Kurs einer Unternehmensanleihe ~ −Duration × Risikoprämie (Hochzins ~4, Investment Grade ~7)
-      const p = asOf(L.s[spec.spread], cut);
+      const p = asOf(spreadSer(L, spec.spread), cut);
       const dur = spec.dur || 4;
       return p.map(q => ({ ...q, v: 100 * Math.exp(-dur / 100 * q.v) }));
     }
@@ -428,7 +443,8 @@ const SIG = (() => {
       if (r == null) continue;
       parts.push({ k: `Rendite ${m} Monate`, v: 100 * (Math.exp(r) - 1), u: "%", s: clip2(r / (vol * Math.sqrt(m / 12))) });
     }
-    const daily = p.length > 60 && (last(p).t - p[p.length - 30].t) < 60;
+    // Tages- und Wochenreihen (Backtest: verdichtete Tageskurse) mit dem 200-Tage-Schnitt, Monatsreihen mit 10 Monaten
+    const daily = p.length > 60 && (last(p).t - p[p.length - 30].t) < 300;
     const ma = smaDays(p, daily ? 290 : 305);
     if (ma) {
       const dist = Math.log(last(p).v / ma);
@@ -669,7 +685,7 @@ const SIG = (() => {
       return meanParts(parts);
     }
     if (row.kind === "credit") {
-      const p = asOf(L.s[row.spreadId || "hy_oas"], cut);
+      const p = asOf(spreadSer(L, row.spreadId || "hy_oas"), cut);
       const parts = [];
       if (p.length >= 100) { const z = zScore(p, 10); parts.push({ k: "Risikoprämie gegenüber dem Mittel der vorliegenden Jahre (bis 10)", v: last(p).v, u: "Pp.", s: clip2(z) }); }
       parts.push(baaPart(L, cut));
@@ -770,15 +786,18 @@ const SIG = (() => {
       const a = last(vix), med = median(vix.filter(q => q.t > a.t - 365).map(q => q.v));
       parts.push({ k: "VIX gegenüber Jahresmedian", v: a.v - med, u: "Punkte", s: clip2(-(a.v - med) / 5) });
     }
-    const hy = asOf(L.s["hy_oas"], cut);
+    const hy = asOf(spreadSer(L, "hy_oas"), cut);
     if (hy.length > 100) { const d = change(hy, 91, "diff"); if (d != null) parts.push({ k: "Hochzins-Risikoprämie, 3 Monate", v: d, u: "Pp.", s: clip2(-d / 0.6) }); }
     const fs = asOf(L.s["stlfsi"], cut);
     if (fs.length > 20) parts.push({ k: "Finanzstressindex (St. Louis Fed)", v: last(fs).v, u: "", s: clip2(-last(fs).v / 1.2) });
+    // Spannungsmonitor (GDELT): nur zur Information. Ohne lange Historie lässt er sich nicht im Backtest prüfen; der
+    // geopolitische Risikoindex (GPR, seit 1985) brachte dort keine bessere Vorhersage
     const T = L.tension;
     const gz = !T ? null : cut == null ? (T.global ? T.global.z : null) : T.zAt ? T.zAt(cut) : (T.globalPrev ? T.globalPrev.z : null);
-    if (gz != null) parts.push({ k: "Geopolitisches Risiko (Abweichung vom Viermonatsmittel)", v: gz, u: "σ", s: clip2(-gz / 1.5) });
     if (!parts.length) return null;
-    return { s: mean(parts.map(q => q.s)), parts };
+    const s = mean(parts.map(q => q.s));
+    if (gz != null) parts.push({ k: "Geopolitische Spannung (GDELT, nur zur Information)", v: gz, u: "σ", s: null });
+    return { s, parts };
   }
 
   function pillarRisk(L, row, cut, ra) {
@@ -787,13 +806,11 @@ const SIG = (() => {
     const parts = [];
     let s = null;
     if (ra) { s = b * ra.s; parts.push({ k: `Risikoappetit × Risikobeta (${b > 0 ? "+" : ""}${b})`, v: ra.s, u: "", s }); }
-    for (const [pair, w] of row.geo || []) {
+    // betroffene Konfliktlinien des Spannungsmonitors: angezeigt, aber ohne Gewicht (im Backtest nicht prüfbar)
+    for (const [pair] of row.geo || []) {
       const t = L.tension && L.tension.pairs && L.tension.pairs[pair];
       const z = t ? (cut == null ? t.z : t.zAt ? t.zAt(cut) : t.zPrev) : null;
-      if (z == null) continue;
-      const g = clip2(w * z);
-      parts.push({ k: `Spannung ${t.label}`, v: z, u: "σ", s: g });
-      s = s == null ? g : s + g;
+      if (z != null) parts.push({ k: `Spannung ${t.label} (nur zur Information)`, v: z, u: "σ", s: null });
     }
     if (s == null) return null;
     return { s: Math.max(-2, Math.min(2, s)), parts };
@@ -1006,7 +1023,7 @@ const SIG = (() => {
     }
     if (k === "bond") return mixed(row.mix ? row : null, row.region, r => bondRealLT(L, r, cut, Y));
     if (k === "credit") {
-      const p = asOf(L.s[row.spreadId], cut);
+      const p = asOf(spreadSer(L, row.spreadId), cut);
       const ref = cfg.spreadRef[row.spreadId];
       if (!p.length || ref == null) return null;
       const v = last(p).v;
@@ -1419,6 +1436,13 @@ const SIG = (() => {
     // S&P 500 seit 1950 (Monatsmittel nach Shiller) als lange Historie für Bewertung und Langfristtrend
     if (hist.sp500_m && !S.eq_us_m) S.eq_us_m = { id: "eq_us_m", f: "M", src: "shiller", pts: decodeSeries(hist.sp500_m) };
     if (!S.copper && S.copper_fred) S.copper = S.copper_fred;
+    // Risikoprämien der Unternehmensanleihen: die ICE-BofA-Reihen gibt FRED nur für drei Jahre frei. Das Modell nutzt wie
+    // der Backtest davor die Prämie Moody's Baa gegenüber Treasuries, skaliert mit dem mittleren Verhältnis im
+    // Überlappungszeitraum; die Originalreihen bleiben für die Anzeige unverändert
+    for (const id of ["hy_oas", "ig_oas", "hy_oas_eu"]) {
+      const long = spliceScaled(S[id], S.baa10y);
+      if (long) S[id + "_long"] = { ...long, id: id + "_long", l: `${S[id].l || id} (vor dem Beginn der Reihe: Baa-Prämie, skaliert)` };
+    }
     if (hist.cape) L.cape = hist.cape;
     if (hist.cape_m) L.capeM = decodeSeries(hist.cape_m);
     // Index des geopolitischen Risikos (Caldara/Iacoviello) als Monatsreihe seit 1985

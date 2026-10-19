@@ -52,6 +52,8 @@ export function trimOutput(out, ctx) {
   const fallback = firsts.map(iso).sort()[0];
   const series = {};
   for (const [k, s] of Object.entries(out.series)) {
+    // full: Reihe, die der Job immer vollständig liefert (etwa der US-Verbraucherpreisindex seit 1947)
+    if (s && s.full) { series[k] = s; continue; }
     const p = ctx.prev && ctx.prev.series && ctx.prev.series[k];
     const from = p && p.s != null ? isoDate(p.s) : fallback;
     series[k] = trimFrom(s, from);

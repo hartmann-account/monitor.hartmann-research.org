@@ -223,7 +223,7 @@ Jede Anlage wird auf fünf Säulen von −2 bis +2 bewertet. Welche Säulen zäh
   - Währungen: realer effektiver Wechselkurs der BIZ.
   - Gold: Gold gegenüber Aktien über den Aktienanteil am Anlegervermögen.
 - **Liquidität:** Leitzinsrichtung, Zinskurve, Zentralbankbilanz, Dollartrend.
-- **Risiko und Geopolitik:** VIX, Risikoprämien, Finanzstress, Spannungsmonitor.
+- **Risikoappetit:** VIX, Risikoprämien, Finanzstress, gewichtet mit dem Risikobeta der Anlage. Die Spannungen des Spannungsmonitors stehen zur Information dabei, zählen aber nicht (siehe unten).
 
 **12 Monate (zyklisch)**
 
@@ -241,6 +241,8 @@ Jede Anlage wird auf fünf Säulen von −2 bis +2 bewertet. Welche Säulen zäh
 - **Langfristtrend:** Steigung des Zehnjahrestrends und Rendite über drei Jahre; bei Unternehmensanleihen, Rohstoffen und Regionen-Paaren antizyklisch.
 
 **Aktienanteil am Anlegervermögen (Fed Z.1).** Marktwert aller US-Aktien ÷ (Aktien + Schulden von Haushalten, Unternehmen, Staat und Ausland), quartalsweise seit 1945, mit dem S&P 500 bis zum Stichtag fortgeschrieben. Wer Aktien hält, muss sie jemandem abgenommen haben: Ist der Anteil hoch, fehlen künftige Käufer. Im Backtest erklärt der Wert die 5-Jahres-Renditen von US-Aktien deutlich besser als das Shiller-KGV (Rangkorrelation 0,50 statt 0,29 seit 1960) und ging auch stärkeren Goldjahren voraus.
+
+Live-Rechnung und Backtest nutzen dieselben Reihen: Die nur drei Jahre langen ICE-BofA-Risikoprämien werden für das Modell mit der skalierten Baa-Prämie verlängert, der US-Verbraucherpreisindex (reale Gold- und Rohstoffpreise) liegt seit 1947 vor.
 
 Rohwerte werden durch ihre typische Schwankung geteilt und weich begrenzt (2·tanh(z/2)). Die Gewichte hängen von Anlageart und Horizont ab (Tabellen auf der Seite unter „So entsteht das Signal“). Sie wurden anhand der Rückrechnungen seit 1970 gesetzt: Säulen ohne belegte Prognosekraft für einen Horizont erhalten wenig oder kein Gewicht (etwa die Schuldensäule bei Gold und Anleihen über 5–10 Jahre). Die Gesamtnote ergibt eine von fünf Stufen (−−, −, =, +, ++; Schwellen ±0,3 und ±0,9). IWF-Prognosen und Bevölkerungsprojektionen gibt es nur im jüngsten Stand; Vormonat und Rückrechnung verwenden ihn ebenfalls. Bitcoin hat keinen fundamentalen Bewertungsanker und bleibt im Horizont 5–10 Jahre ohne Einstufung.
 
@@ -267,21 +269,23 @@ Die Darstellung lehnt sich an die Monatsübersicht von Pictet Asset Management a
 
 | Horizont | Treffer | 95-%-Intervall | „steigt immer“ | Rangkorrelation | ohne Vorgriff | Brier-Skill |
 |---|---|---|---|---|---|---|
-| 1 Monat | 57,1 % | 56,3–57,9 % | 54,8 % | 0,13 | 0,10 | +0,6 % |
-| 12 Monate | 63,4 % | 60,4–66,3 % | 58,7 % | 0,23 | 0,14 | +1,6 % |
-| 5–10 Jahre (5-Jahres-Rendite) | 72,8 % | 66,9–78,0 % | 66,6 % | 0,41 | 0,34 | ±0 % |
+| 1 Monat | 56,5 % | 55,8–57,3 % | 54,3 % | 0,12 | 0,09 | +0,4 % |
+| 12 Monate | 63,4 % | 60,4–66,3 % | 58,6 % | 0,22 | 0,14 | +1,6 % |
+| 5–10 Jahre (5-Jahres-Rendite) | 72,5 % | 66,6–77,8 % | 66,4 % | 0,41 | 0,33 | ±0 % |
 
-Am stärksten sind die Signale für Unternehmensanleihen (12 Monate: Rangkorrelation 0,40; 5 Jahre: 0,63), Staatsanleihen und Gold; Aktien liegen auf 12 Monate bei 0,17 und auf 5 Jahre bei 0,38. Nach „klar positiv“ stiegen die Kurse auf 12 Monate in 76 % der Fälle, nach „klar negativ“ in 38 %. Die genauen, wöchentlich neu gerechneten Werte je Anlageart und Anlage stehen auf der Seite und unter `/api/backtest`.
+Am stärksten sind die Signale für Unternehmensanleihen (12 Monate: Rangkorrelation 0,40; 5 Jahre: 0,63), Staatsanleihen und Gold; Aktien liegen auf 12 Monate bei 0,16 und auf 5 Jahre bei 0,37. Nach „klar positiv“ stiegen die Kurse auf 12 Monate in 75 % der Fälle, nach „klar negativ“ in 37 %. Die genauen, wöchentlich neu gerechneten Werte je Anlageart und Anlage stehen auf der Seite und unter `/api/backtest`.
 
 **Was das heißt.** Das Modell trifft die Richtung häufiger als der Zufall und über alle Anlagen häufiger als „steigt immer“, aber nahezu sichere Prognosen sind an Märkten nicht möglich. Aktien steigen meistens; „negativ“ heißt bei ihnen „unterdurchschnittliche Aussichten“, deshalb liegt ihre Trefferquote der Richtung auf 12 Monate unter der Mehrheitsregel, obwohl die Rangkorrelation positiv ist. Aussagekräftiger ist die Wahrscheinlichkeit steigender Kurse, die jede Zeile des Barometers zeigt.
 
 **Selbstoptimierung mit Bedacht.** Jährlich aus den Daten neu geschätzte Gewichte schnitten im Backtest schlechter ab als feste, begründete Gewichte (bekannt als Rätsel der Prognosekombination). Das Modell hält deshalb die Gewichte fest und kalibriert stattdessen jede Woche Trefferquoten und Wahrscheinlichkeiten mit der wachsenden Historie in D1 neu.
 
+**Live wie im Backtest.** Seite, Worker und Backtest rechnen mit demselben Modell (`src/signals.js`) und denselben Reihen; Tageskurse liegen im Backtest als Wochen- und Monatsschlusswerte vor, z-Werte zählen je Kalenderwoche einen Wert. Zum jüngsten Stichtag stimmen alle Säulenwerte beider Rechnungen bis auf weniger als 0,25 überein; wo die Live-Historie kürzer ist als im Archiv (etwa 20-Jahres-Trends einzelner Märkte), weichen langfristige Bewertungen an früheren Stichtagen etwas ab. Bausteine, die sich nicht prüfen lassen (Spannungsmonitor), zählen nicht.
+
 **Grenzen des Backtests.** Die Bausteine wurden mit Kenntnis dieser Geschichte ausgewählt (Rückschaufehler); die Spalte „ohne Vorgriff“ ist die strengere Prüfung, die Echtzeit-Bilanz die eigentliche. Frühindikatoren und Konjunkturdaten liegen nur im heutigen, revidierten Stand vor. Vor 1990 beruhen manche Reihen auf Monatsmitteln. Beim Horizont 5–10 Jahre gibt es seit 1970 nur wenige unabhängige Zeiträume, die Intervalle sind breit.
 
 ## Spannungsmonitor
 
-Gemessen wird die Konfliktintensität je Länderpaar in der Weltpresse. Die Formel stammt von World Monitor: Σ Erwähnungen × max(0, −Goldstein) über Ereignisse der Klassen 3 und 4 (verbale und materielle Konflikte), je 10.000 Erwähnungen aller Ereignisse. Der Index ist das Perzentil des 7-Tage-Mittels innerhalb von 90 Tagen. Zusätzlich zeigt der Monitor die Abweichung der letzten 14 Tage vom Mittel der 120 Tage davor. Diese Abweichung fließt in die Risikosäule des Barometers ein.
+Gemessen wird die Konfliktintensität je Länderpaar in der Weltpresse. Die Formel stammt von World Monitor: Σ Erwähnungen × max(0, −Goldstein) über Ereignisse der Klassen 3 und 4 (verbale und materielle Konflikte), je 10.000 Erwähnungen aller Ereignisse. Der Index ist das Perzentil des 7-Tage-Mittels innerhalb von 90 Tagen. Zusätzlich zeigt der Monitor die Abweichung der letzten 14 Tage vom Mittel der 120 Tage davor. Diese Abweichung steht in der Säule Risikoappetit des Barometers zur Information. In den Gesamtwert geht sie nicht ein: Ohne lange Historie lässt sie sich nicht im Backtest prüfen, und der geopolitische Risikoindex (GPR, seit 1985), der sich prüfen lässt, verbesserte die Vorhersagen dort nicht.
 
 Beobachtete Paare: USA–China, China–Taiwan, Russland–Ukraine, Russland–Europa, USA–Russland, Israel–Iran, USA–Iran, China–Japan, Indien–Pakistan, Indien–China, Nordkorea, USA–Europa und USA–Schweiz. Liegen in sieben Tagen weniger als 30 Ereignisse vor, ist das Paar als „wenig Daten“ markiert. GDELT misst Aufmerksamkeit und Ton der Berichterstattung, nicht das tatsächliche Geschehen.
 

@@ -138,12 +138,14 @@ export async function archiveSummary(db) {
 }
 
 /* Beobachtungen einer oder mehrerer Reihen */
-// weekly: je Reihe und Kalenderwoche nur der letzte Wert (SQLite nimmt bei MAX() die übrigen Spalten aus dieser Zeile)
+// weekly: je Reihe nur der letzte Wert jeder Kalenderwoche und jedes Monats (wie im Backtest)
 export async function readSeries(db, ids, { from = null, to = null, limit = 200000, weekly = false } = {}) {
   await ensureArchive(db);
   const q = db.prepare(weekly
-    ? `SELECT s, MAX(d) AS d, v FROM obs WHERE s IN (SELECT value FROM json_each(?1)) AND d >= ?2 AND d <= ?3 AND v IS NOT NULL
-       GROUP BY s, strftime('%Y-%W', d) ORDER BY s, d LIMIT ?4`
+    ? `SELECT s, d, v FROM obs WHERE s IN (SELECT value FROM json_each(?1)) AND d >= ?2 AND d <= ?3 AND v IS NOT NULL AND (s, d) IN (
+         SELECT s, MAX(d) FROM obs WHERE s IN (SELECT value FROM json_each(?1)) AND v IS NOT NULL GROUP BY s, strftime('%Y-%W', d)
+         UNION SELECT s, MAX(d) FROM obs WHERE s IN (SELECT value FROM json_each(?1)) AND v IS NOT NULL GROUP BY s, strftime('%Y-%m', d))
+       ORDER BY s, d LIMIT ?4`
     : `SELECT s, d, v FROM obs WHERE s IN (SELECT value FROM json_each(?1)) AND d >= ?2 AND d <= ?3 ORDER BY s, d LIMIT ?4`)
     .bind(JSON.stringify(ids), from || "0000", to || "9999", limit);
   const meta = db.prepare("SELECT id, label, unit, freq, src, job, first, last, n, updated FROM series WHERE id IN (SELECT value FROM json_each(?1))").bind(JSON.stringify(ids));
