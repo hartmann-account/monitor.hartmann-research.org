@@ -92,10 +92,14 @@ function verdictLive(el) {
   const top = ok.filter(r => r.now.cat.n >= 1).sort((a, b) => b.now.score - a.now.score).slice(0, 3).map(moverName);
   const bot = ok.filter(r => r.now.cat.n <= -1).sort((a, b) => a.now.score - b.now.score).slice(0, 3).map(moverName);
   const list = a => a.length > 1 ? a.slice(0, -1).join(", ") + " und " + a[a.length - 1] : a[0];
+  // Stufen gegenüber dem üblichen Ertrag der Anlage, nicht als Richtung der Kurse
   const parts = [];
-  if (top.length) parts.push(`positiv für ${list(top)}`);
-  if (bot.length) parts.push(`negativ für ${list(bot)}`);
-  if (parts.length) el.append(" Das Anlagebarometer fällt auf Sicht eines Monats ", h("b", { text: parts.join(", ") }), " aus.");
+  if (top.length) parts.push([`${list(top)}`, " über ihrem üblichen Ertrag"]);
+  if (bot.length) parts.push([`${list(bot)}`, " darunter"]);
+  if (!parts.length) return;
+  el.append(" Auf Sicht eines Monats sieht das Anlagebarometer ");
+  parts.forEach(([names, where], i) => el.append(i ? ", " : "", h("b", { text: names }), where));
+  el.append(".");
 }
 
 /* ------------------------------------------------------------------ Natur: Live-Reihen und aktuelle Warnungen */

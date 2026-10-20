@@ -10,7 +10,7 @@ import { loadArchive, buildBacktestLive, runPanel, summarizeBacktest, categorize
 
 const { SIG } = sigmod;
 // Stand der Auswertung; ändert er sich (oder das Modell), rechnen die Jobs sofort neu
-export const BT_VERSION = "1";
+export const BT_VERSION = "2"; // 2: WEO-Ausgaben ab 2008, Trefferquote gegen den üblichen Ertrag
 
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS bt_panel (h TEXT NOT NULL, id TEXT NOT NULL, d TEXT NOT NULL, score REAL, cat INTEGER, vol REAL,
@@ -121,7 +121,7 @@ export const ALFRED_JOBS = [{
   },
 }];
 
-export async function runBacktest(db, hz, nowIso, vintages = null) {
+export async function runBacktest(db, hz, nowIso, vintages = null, weo = null) {
   await ensureBacktestSchema(db);
   let raw = await loadArchive(db);
   const missing = Object.entries(REQUIRED).filter(([id, y]) => !raw[id] || !raw[id].points.length || raw[id].points[0][0] > y).map(([id]) => id);
@@ -130,13 +130,15 @@ export async function runBacktest(db, hz, nowIso, vintages = null) {
   if (!vintages) throw new Error("data/cli_vintages.json fehlt: ohne Echtzeit-Datenstände der Frühindikatoren kein Backtest");
   // Baugenehmigungen und Fed Z.1 im damaligen Stand (ALFRED), sofern der Job alfred_vintages gelaufen ist
   const alfred = await loadAlfred(db).catch(() => null);
-  const L = buildBacktestLive(raw, { vintages, alfred });
+  // IWF-Zahlen ab April 2008 im Stand der damaligen WEO-Ausgaben (data/weo_vintages.json); ohne Datei naiv fortgeschrieben
+  const L = buildBacktestLive(raw, { vintages, alfred, weo });
   raw = null; // Rohdaten freigeben (Speichergrenze des Workers: 128 MB)
   const panel = runPanel(L, { from: "1970-01", horizons: [hz] });
   if (panel.length < 1000) throw new Error(`Backtest ${hz}: nur ${panel.length} Einträge – Archiv unvollständig?`);
   const summary = summarizeBacktest(panel, hz);
   await writePanel(db, hz, categorize(panel.filter(e => e.score != null)));
-  summary.realtime = { cli: Object.keys(L.vint || {}).length, from: "2001-01", alfred: Object.fromEntries(Object.entries(L.alfred || {}).map(([id, A]) => [id, SIG.isoOf(A.from)])) };
+  summary.realtime = { cli: Object.keys(L.vint || {}).length, from: "2001-01", alfred: Object.fromEntries(Object.entries(L.alfred || {}).map(([id, A]) => [id, SIG.isoOf(A.from)])),
+    weo: weo ? { editions: Object.keys(weo).length, series: Object.keys(L.weoVint || {}).length, from: Object.keys(weo).sort()[0] } : null };
   summary.live = await liveTrack(db, L, hz);
   summary.at = nowIso;
   summary.version = `${SIG.cfg.version}/${BT_VERSION}`;
@@ -149,8 +151,8 @@ export const BACKTEST_JOBS = SIG.cfg.horizons.map(H => ({
   id: "backtest_" + H.id, label: `Backtest des Anlagebarometers seit 1970: ${H.title} (D1)`, source: "d1", every: 24 * 7, cost: 0,
   requires: ["DB"], noArchive: true, solo: true, version: `${SIG.cfg.version}/${BT_VERSION}`, after: BT_INPUT_JOBS,
   async run(F, ctx) {
-    const vint = await ctx.seed("data/cli_vintages.json");
-    const s = await runBacktest(ctx.env.DB, H.id, new Date(ctx.now).toISOString(), vint && vint.editions);
+    const vint = await ctx.seed("data/cli_vintages.json"), weo = await ctx.seed("data/weo_vintages.json");
+    const s = await runBacktest(ctx.env.DB, H.id, new Date(ctx.now).toISOString(), vint && vint.editions, weo && weo.editions);
     return { series: {}, items: [s] };
   },
 }));

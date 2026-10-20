@@ -246,11 +246,13 @@ const SIG = (() => {
     weights: W_M1,
     priors: { m1: W_M1, y1: W_Y1, lt: W_LT },
     cats: [
-      { n: -2, sym: "−−", label: "klar negativ", max: -0.9 },
-      { n: -1, sym: "−", label: "negativ", max: -0.3 },
-      { n: 0, sym: "=", label: "neutral", max: 0.3 },
-      { n: 1, sym: "+", label: "positiv", max: 0.9 },
-      { n: 2, sym: "++", label: "klar positiv", max: Infinity },
+      // Stufen gegenüber dem üblichen Ertrag der Anlage (Durchschnitt ihrer Geschichte im Horizont): Das sagt die
+      // Stufe aus (Backtest: Treffer gegen den üblichen Ertrag); die Richtung der Kurse zeigt die Wahrscheinlichkeit
+      { n: -2, sym: "−−", label: "klar unter üblich", max: -0.9 },
+      { n: -1, sym: "−", label: "unter üblich", max: -0.3 },
+      { n: 0, sym: "=", label: "wie üblich", max: 0.3 },
+      { n: 1, sym: "+", label: "über üblich", max: 0.9 },
+      { n: 2, sym: "++", label: "klar über üblich", max: Infinity },
     ],
     hyst: 0.1,
     // Frühindikator: Gewicht der Veränderung über drei Monate und des Niveaus gegenüber 100 (je Punkt). Die Veränderung
@@ -355,7 +357,7 @@ const SIG = (() => {
     { id: "kredit", label: "Unternehmensanleihen" },
     { id: "waehrungen", label: "Währungen gegenüber dem US-Dollar" },
     { id: "rohstoffe", label: "Rohstoffe" },
-    { id: "relativ", label: "Relative Stärke", note: "positiv = erste Anlage vorn" },
+    { id: "relativ", label: "Relative Stärke", note: "über = erste Anlage stärker als üblich" },
     { id: "gold", label: "Gold und Silber", note: "eigene Monatsübersicht" },
   ];
 
@@ -844,8 +846,11 @@ const SIG = (() => {
 
   /* ------------------------------------------------------------ Säulen der längeren Horizonte */
   // Wert eines Jahres aus Jahresreihen mit Projektionen (IWF WEO, Bevölkerungsprojektionen der Weltbank). Es gibt nur
-  // den jüngsten Datenstand; Vormonat und Rückrechnung nutzen ihn ebenfalls (in den Erklärungen vermerkt).
+  // den jüngsten Datenstand; Vormonat und Rückrechnung nutzen ihn ebenfalls (in den Erklärungen vermerkt). Im Backtest
+  // ab April 2008 gilt für die IWF-Reihen der Stand der damals jüngsten WEO-Ausgabe (L.weoAt, worker/backtest.js).
   function yv(L, id, y) {
+    const w = L.weoAt && L.weoAt[id];
+    if (w && w[y] != null) return w[y];
     if (L.pitYear != null && y > L.pitYear) return yProj(L, id, y);
     const s = L.s[id];
     if (!s || !s.pts.length) return null;
@@ -857,7 +862,8 @@ const SIG = (() => {
   /* Backtest ohne Vorgriff (L.pit): Werte nach dem letzten damals veröffentlichten Jahr (L.pitYear) werden nicht aus
      den heutigen IWF- und Weltbank-Projektionen genommen, sondern naiv fortgeschrieben: Raten (Wachstum, Inflation,
      Salden) mit dem Mittel der letzten fünf Jahre, Bestände (Schulden, Anteile, Bevölkerung) mit dem Trend der letzten
-     fünf Jahre. Das unterschätzt eher, was die echten Prognosen damals leisteten. */
+     fünf Jahre. Das gilt für die IWF-Reihen nur vor April 2008 (danach die damaligen WEO-Ausgaben, siehe yv) und für
+     die Weltbank-Projektionen. */
   function yProj(L, id, y) {
     const p = L.pitYear, pre = id.slice(0, id.indexOf("_") + 1);
     const real = k => { const s = L.s[id]; if (!s) return null; const q = s.pts.find(q => Math.round(q.x) === k); return q ? q.v : null; };
@@ -1491,7 +1497,7 @@ const SIG = (() => {
     combine, bondIndex, priceSeries, pillarTrend, growthScore, riskAppetite, evaluate, barometer, category, cyclePhase,
     tensionFromGdelt, prepareLive, basketSeries, isoOf, dayOf, yearFrac, mean, median, sd, clip2, backfill,
     horizon, pillarDef, leadDay, yv, ym, realMonthly, monthlyMeans, regionGrowth, regionDebt, regionPower, capeAt,
-    rowPrice, pitYearOf, aiaeAt,
+    rowPrice, pitYearOf, aiaeAt, yv,
   };
 })();
 

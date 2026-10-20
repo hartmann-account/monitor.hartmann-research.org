@@ -37,6 +37,10 @@ jobs:
         # ergänzt die Ausgaben der letzten beiden Jahre; ältere Ausgaben bleiben aus der Datei im Repository
         continue-on-error: true
         run: python -I pipeline/fetch_cli_vintages.py --out public/data/cli_vintages.json
+      - name: Echtzeit-Datenstände der IWF-Prognosen (WEO-Ausgaben, für den Backtest)
+        # lädt nur Ausgaben, die in der Datei noch fehlen (neue erscheinen im April und Oktober)
+        continue-on-error: true
+        run: python -I pipeline/fetch_weo_vintages.py --out public/data/weo_vintages.json
       - name: Langfrist-Bausteine an 18 Ländern prüfen (JST)
         continue-on-error: true
         run: python -I pipeline/jst_check.py --cache .cache --out public/data/jst_check.json
@@ -58,7 +62,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/data/bigcycle.json public/data/live.json public/data/backtest.json public/data/cli_vintages.json public/data/jst_check.json
+          git add public/data/bigcycle.json public/data/live.json public/data/backtest.json public/data/cli_vintages.json public/data/weo_vintages.json public/data/jst_check.json
           if git diff --cached --quiet; then
             echo "Keine Änderungen."
           else

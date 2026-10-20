@@ -3,12 +3,15 @@
       aus den Shiller-Daten vor den FRED-Tageswerten, Franken seit 1971 aus der Fed-Statistik vor den EZB-Kursen).
       Tageswerte werden auf Wochenschlusskurse verdichtet.
    2. Zu jedem Monatsende rechnet das unveränderte Modell (src/signals.js) alle Säulen, nur mit Daten, die damals
-      veröffentlicht waren (Veröffentlichungsfristen wie im Live-Betrieb; IWF- und Weltbank-Projektionen werden durch
-      naive Fortschreibungen ersetzt, das Shiller-KGV mit dem damaligen Monatswert).
+      veröffentlicht waren (Veröffentlichungsfristen wie im Live-Betrieb; IWF-Zahlen ab April 2008 aus der damals
+      jüngsten Ausgabe des World Economic Outlook, davor wie die Weltbank-Projektionen naiv fortgeschrieben, das
+      Shiller-KGV mit dem damaligen Monatswert).
    3. Verglichen wird mit der tatsächlichen Kursentwicklung danach: 1 Monat, 12 Monate, 5 Jahre.
-   4. Kennzahlen: Trefferquote der Richtung (ohne neutrale Stufen) mit 95-%-Intervall auf der effektiven Stichprobe
-      (überlappende Zeiträume zählen anteilig), Vergleich mit der Mehrheitsregel („steigt immer“), Rangkorrelation
-      zwischen Gesamtwert und späterer Rendite, Anteil steigender Fälle je Stufe, drei Teilperioden.
+   4. Kennzahlen: Trefferquote gegen den üblichen Ertrag (Stufe über bzw. unter üblich, Rendite danach über bzw. unter
+      dem Mittel der Anlage, soweit damals bekannt) und der Richtung (steigt oder fällt), jeweils ohne neutrale Stufen
+      und mit 95-%-Intervall auf der effektiven Stichprobe (überlappende Zeiträume zählen anteilig), Vergleich mit der
+      Mehrheitsregel („steigt immer“), Rangkorrelation zwischen Gesamtwert und späterer Rendite, Anteil steigender Fälle
+      je Stufe, drei Teilperioden.
    5. Ohne Vorgriff: Gewichte der Säulen werden Jahr für Jahr nur mit der bis dahin bekannten Historie geschätzt
       (walk-forward, ausgehend von gleichen Gewichten); Wahrscheinlichkeiten steigender Kurse aus einer logistischen
       Regression auf den Gesamtwert, ebenfalls Jahr für Jahr nur mit damals bekannten Ergebnissen geschätzt und mit dem
@@ -145,6 +148,38 @@ function restoreAlfred(L) {
   for (const [id, A] of Object.entries(L.alfred)) L.s[id] = A.base;
 }
 
+/* Echtzeit-Datenstände der IWF-Zahlen (World Economic Outlook, Ausgaben April und Oktober seit 2008; Datei
+   data/weo_vintages.json aus pipeline/fetch_weo_vintages.py): je Ausgabe { "growth_usa": [erstes Jahr, [Werte]] } mit
+   der Vergangenheit im damaligen Stand und den Projektionen. Zum Stichtag gilt die jüngste Ausgabe, die schon
+   erschienen war (Mitte ihres Monats); Jahre oder Kennzahlen, die ihr fehlen (etwa in der verkürzten Ausgabe vom April
+   2020), kommen aus den Ausgaben davor. Das Modell liest die Werte über L.weoAt (src/signals.js, yv); vor April 2008
+   und für Reihen ohne Ausgabe bleibt die naive Fortschreibung. */
+export function prepWeo(editions) {
+  const out = {}, known = {};
+  for (const ed of Object.keys(editions).sort()) {
+    const pub = dayOf(`${ed}-15`);
+    for (const [id, [y0, vals]] of Object.entries(editions[ed])) {
+      const m = { ...(known[id] || {}) };
+      vals.forEach((v, i) => { if (v != null) m[y0 + i] = v; });
+      known[id] = m;
+      (out[id] = out[id] || []).push({ pub, ed, vals: m });
+    }
+  }
+  return out;
+}
+// zum Stichtag: je Reihe die Werte der jüngsten erschienenen Ausgabe (Jahr → Wert), dazu die Ausgabe selbst
+export function applyWeo(L, cut) {
+  const at = {};
+  let ed = null;
+  for (const [id, list] of Object.entries(L.weoVint)) {
+    let lo = 0, hi = list.length - 1, e = null;
+    while (lo <= hi) { const m = (lo + hi) >> 1; if (list[m].pub <= cut) { e = list[m]; lo = m + 1; } else hi = m - 1; }
+    if (e) { at[id] = e.vals; if (!ed || e.ed > ed) ed = e.ed; }
+  }
+  L.weoAt = ed ? at : null;
+  L.weoEd = ed;
+}
+
 /* Archivreihen, die der Backtest lädt (aus dem Reihenverzeichnis des Archivs) */
 export function btSeriesIds(catalog) {
   const want = new Set(BT_DIRECT);
@@ -195,7 +230,7 @@ function splice(newer, older, mode) {
 }
 
 /* Datensatz für den Backtest im Format von SIG.decodeSnapshot. raw: { id: { f, points: [[iso, v], ...] } } */
-export function buildBacktestLive(raw, { vintages = null, alfred = null } = {}) {
+export function buildBacktestLive(raw, { vintages = null, alfred = null, weo = null } = {}) {
   const S = {};
   for (const [id, r] of Object.entries(raw)) {
     if (!r || !r.points || !r.points.length) continue;
@@ -230,6 +265,7 @@ export function buildBacktestLive(raw, { vintages = null, alfred = null } = {}) 
   SIG.prepareLive(L, { gold_usd_m: m("h_gold_usd_m"), sp500_m: m("h_sp500_m"), cape_m: m("h_cape_m"), gpr_m: m("h_gpr_hist_m"), cape: null });
   if (vintages) L.vint = prepVintages(L, vintages);
   if (alfred) L.alfred = prepAlfred(L, alfred);
+  if (weo) L.weoVint = prepWeo(weo);
   return L;
 }
 // lückenlose Monatswerte ab dem ersten Monat (fehlende Monate = null)
@@ -284,6 +320,7 @@ export function runPanel(L, { from = "1970-01", to = null, horizons = ["m1", "y1
   cuts.forEach((cut, k) => {
     if (L.vint) applyVintages(L, cut);
     if (L.alfred) applyAlfred(L, cut);
+    if (L.weoVint) applyWeo(L, cut);
     const ra = SIG.riskAppetite(L, cut);
     if (L._ra) L._ra.delete(cut); // je Stichtag nur einmal gebraucht
     for (const hz of horizons) {
@@ -302,6 +339,7 @@ export function runPanel(L, { from = "1970-01", to = null, horizons = ["m1", "y1
   });
   if (L.vint) restoreVintages(L);
   if (L.alfred) restoreAlfred(L);
+  L.weoAt = L.weoEd = null;
   return out;
 }
 
@@ -337,7 +375,26 @@ export function categorize(entries, scoreKey = "score") {
   return entries;
 }
 
-/* Treffsicherheit einer Menge von Signalen (ein Horizont): Richtung = Vorzeichen der Stufe (= gilt als keine Aussage) */
+/* Üblicher Ertrag je Anlage zum Stichtag (e.mu): Mittel der Renditen derselben Anlage über denselben Horizont, die
+   zum Stichtag schon abgelaufen waren (mindestens zwölf). Daran misst sich die Stufe: über üblich heißt, die Anlage
+   dürfte besser abschneiden als in ihrem Durchschnitt. */
+export function addUsual(entries, hz, minN = 12) {
+  const rk = retKey(hz), n = FWD[hz];
+  const by = new Map();
+  for (const e of entries) { if (!by.has(e.id)) by.set(e.id, []); by.get(e.id).push(e); }
+  for (const list of by.values()) {
+    list.sort((a, b) => a.t - b.t);
+    let j = 0, sum = 0, cnt = 0;
+    for (const e of list) {
+      while (j < list.length && monthOf(list[j].t) + n <= monthOf(e.t)) { const r = list[j][rk]; if (r != null) { sum += r; cnt++; } j++; }
+      e.mu = cnt >= minN ? sum / cnt : null;
+    }
+  }
+  return entries;
+}
+
+/* Treffsicherheit einer Menge von Signalen (ein Horizont): Stufe über bzw. unter üblich (= gilt als keine Aussage),
+   bewertet gegen den üblichen Ertrag (e.mu, addUsual) und gegen die Richtung */
 export function accuracy(entries, hz, scoreKey = "score") {
   const rk = retKey(hz), months = FWD[hz];
   const ok = entries.filter(e => e[rk] != null && e[scoreKey] != null && e.cat != null);
@@ -361,8 +418,14 @@ export function accuracy(entries, hz, scoreKey = "score") {
   const ic = spearman(ok.map(e => e[scoreKey]), ok.map(e => e[rk] / Math.max(0.02, e.vol || 0.15)));
   const pos = ok.filter(e => e.cat > 0), neg = ok.filter(e => e.cat < 0);
   const ann = r => (months >= 12 ? Math.pow(1 + r, 12 / months) - 1 : r * 12);
+  // gegen den üblichen Ertrag: das, was die Stufe aussagt; Vergleich die häufigere Seite derselben Fälle (um 50 %)
+  const rel = dir.filter(e => e.mu != null);
+  const relAbove = rel.filter(e => e[rk] > e.mu).length;
+  const hitRel = rel.length ? rel.filter(e => (e.cat > 0) === (e[rk] > e.mu)).length / rel.length : null;
   return {
     n: ok.length, nDir: dir.length, nEff, coverage: dir.length / ok.length,
+    nRel: rel.length, hitRel, hitRelCI: hitRel == null ? [null, null] : wilson(hitRel, Math.max(1, Math.round(rel.length / months))),
+    baseRel: rel.length ? Math.max(relAbove, rel.length - relAbove) / rel.length : null,
     hit, hitCI: hit == null ? [null, null] : wilson(hit, nEff), base, upShare: up / ok.length,
     ic, byCat,
     meanPos: pos.length ? ann(SIG.mean(pos.map(e => e[rk]))) : null, meanNeg: neg.length ? ann(SIG.mean(neg.map(e => e[rk]))) : null,
@@ -530,6 +593,8 @@ export function compactAccuracy(a) {
   const [icLo, icHi] = icCI(a.ic, a.nEff);
   return {
     n: a.n, nDir: a.nDir, nEff: a.nEff, hit: r3(a.hit), lo: r3(a.hitCI[0]), hi: r3(a.hitCI[1]), base: r3(a.base), up: r3(a.upShare),
+    // gegen den üblichen Ertrag
+    nRel: a.nRel, rel: r3(a.hitRel), relLo: r3(a.hitRelCI[0]), relHi: r3(a.hitRelCI[1]), relBase: r3(a.baseRel),
     ic: r3(a.ic), icLo: r3(icLo), icHi: r3(icHi), cov: r3(a.coverage), mPos: r3(a.meanPos), mNeg: r3(a.meanNeg), from: a.from, to: a.to,
     // je Stufe −2 … +2: Anzahl, Anteil steigender Kurse, mittlere Rendite danach
     cats: a.byCat.map(c => [c.c, c.n, r3(c.up), r3(c.mean)]),
@@ -591,6 +656,8 @@ export function randomTest(E, hz) {
 
 /* Alle Kennzahlen eines Horizonts aus dem Panel (nur Einträge dieses Horizonts) */
 export function summarizeBacktest(panel, hz, { firstYear = 1990 } = {}) {
+  // üblicher Ertrag aus allen Monatsenden der Anlage, bevor Teilmengen (Teilperioden, ohne Vorgriff) gebildet werden
+  addUsual(panel.filter(e => e.hz === hz), hz);
   const E = categorize(panel.filter(e => e.hz === hz && e.score != null).map(e => ({ ...e })));
   const stats = {}, random = {};
   for (const [k, g] of groups(E)) {
@@ -600,19 +667,19 @@ export function summarizeBacktest(panel, hz, { firstYear = 1990 } = {}) {
     // Zufallstest je Anlageart und gesamt
     const r = randomTest(g, hz);
     if (r) random[k] = r;
-    stats[k] = { ...all, sub: subs.map(x => x && { n: x.n, nEff: x.nEff, hit: x.hit, base: x.base, ic: x.ic }), verdict: verdict(all, subs, r) };
+    stats[k] = { ...all, sub: subs.map(x => x && { n: x.n, nEff: x.nEff, hit: x.hit, base: x.base, rel: x.rel, ic: x.ic }), verdict: verdict(all, subs, r) };
   }
   // ohne Vorgriff: Gewichte jährlich aus gleichen Startgewichten geschätzt
   const wf = walkForward(panel.filter(e => e.hz === hz), hz, { firstYear, shrink: 0.5, equal: true });
   const P = categorize(wf.preds.filter(e => e.score != null));
   const oos = {};
-  for (const [k, g] of groups(P)) { const a = compactAccuracy(accuracy(g, hz)); if (a) oos[k] = { n: a.n, nEff: a.nEff, hit: a.hit, lo: a.lo, hi: a.hi, base: a.base, ic: a.ic, icLo: a.icLo, from: a.from }; }
+  for (const [k, g] of groups(P)) { const a = compactAccuracy(accuracy(g, hz)); if (a) oos[k] = { n: a.n, nEff: a.nEff, hit: a.hit, lo: a.lo, hi: a.hi, base: a.base, rel: a.rel, relLo: a.relLo, relHi: a.relHi, ic: a.ic, icLo: a.icLo, from: a.from }; }
   const latest = Object.fromEntries(Object.entries(wf.fits).map(([k, f]) => [k, Object.fromEntries(Object.entries(f[f.length - 1].w).map(([p, w]) => [p, r3(w)]))]));
   // je Anlage
   const rows = {};
   for (const id of [...new Set(E.map(e => e.id))]) {
     const a = compactAccuracy(accuracy(E.filter(e => e.id === id), hz));
-    if (a) rows[id] = { n: a.n, nDir: a.nDir, nEff: a.nEff, hit: a.hit, lo: a.lo, hi: a.hi, base: a.base, up: a.up, ic: a.ic, from: a.from, cats: a.cats.map(c => [c[1], c[2]]) };
+    if (a) rows[id] = { n: a.n, nDir: a.nDir, nEff: a.nEff, hit: a.hit, lo: a.lo, hi: a.hi, base: a.base, rel: a.rel, relBase: a.relBase, nRel: a.nRel, up: a.up, ic: a.ic, from: a.from, cats: a.cats.map(c => [c[1], c[2]]) };
   }
   const months = new Set(E.map(e => e.t)).size;
   return { hz, months, from: stats.all && stats.all.from, to: stats.all && stats.all.to, stats, oos, wfWeights: latest,

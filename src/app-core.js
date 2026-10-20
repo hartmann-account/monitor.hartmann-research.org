@@ -562,7 +562,7 @@ function renderVerdict() {
       "Schulden und Zinsen: Treasury-Daten (Schulden in Händen der Öffentlichkeit ÷ BIP; Nettozinsen ÷ Einnahmen).",
       "Stadien: regelbasierte Markerprüfung im Schuldenzyklus und in der inneren Ordnung.",
       "Phase: Musteranpassung an den Archetyp (siehe Grafik im Lagebild).",
-      "Anlagebarometer: die drei am höchsten und die drei am niedrigsten eingestuften Anlagen mit Stufe positiv bzw. negativ."],
+      "Anlagebarometer: die drei am höchsten und die drei am niedrigsten eingestuften Anlagen mit Stufe über bzw. unter üblich (Ertrag gegenüber dem Durchschnitt der Anlage, nicht die Richtung der Kurse)."],
     r: [`Machtindex USA ${fmt(lu[1], 1)}, China ${fmt(lc[1], 1)}, Abstand ${fmt(lu[1] - lc[1], 1)} (2000: ${fmt(gap2000, 1)})`,
       L.mts_net_interest ? `Zinsen ÷ Einnahmen = ${fmt(L.mts_net_interest.current, 1)} ÷ ${fmt(L.mts_ytd.current.rcpt, 1)} × 100 = ${fmt(100 * L.mts_net_interest.current / L.mts_ytd.current.rcpt, 1)} %` : null] }, "Lagetext"));
 }

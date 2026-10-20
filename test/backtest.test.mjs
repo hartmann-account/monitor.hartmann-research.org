@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { forward, logistic, categorize, accuracy, verdict, compactAccuracy, monthEnds, randomTest, buildBacktestLive, runPanel, applyVintages, applyAlfred, ALFRED_SERIES } from "../worker/backtest.js";
+import { forward, logistic, categorize, accuracy, verdict, compactAccuracy, monthEnds, randomTest, buildBacktestLive, runPanel, applyVintages, applyAlfred, ALFRED_SERIES, addUsual, prepWeo, applyWeo } from "../worker/backtest.js";
 const require = createRequire(import.meta.url);
 const { SIG } = require("../src/signals.js");
 
@@ -185,4 +185,47 @@ test("ALFRED: Baugenehmigungen und Aktienanteil zum Stichtag im damals gültigen
   // Aktienanteil: 2005 aus den damaligen Z.1-Werten 50 %, 2006 nach der Revision 60 %
   assert.equal(lastAt("aiae_us", "2005-06-30").v, 50);
   assert.equal(lastAt("aiae_us", "2006-06-30").v, 60);
+});
+
+test("Üblicher Ertrag: nur Renditen, die zum Stichtag abgelaufen waren; Treffer gegen üblich", () => {
+  // eine Anlage, 12-Monats-Renditen an 30 Monatsenden: abwechselnd 10 % und 2 % (Mittel 6 %)
+  const cuts = monthEnds("2000-01", day("2002-06-30"));
+  const E = cuts.map((t, i) => ({ id: "x", kind: "equity", t, score: i % 2 ? -0.5 : 0.5, vol: 0.15, r12: i % 2 ? 0.02 : 0.1 }));
+  addUsual(E, "y1");
+  // Ende Dezember 2001 (Index 23): abgelaufen sind die Renditen der Stichtage Januar bis Dezember 2000 (12 Stück, die
+  // Mindestzahl); Ende November 2001 erst elf
+  assert.equal(E[22].mu, null);
+  assert.ok(Math.abs(E[23].mu - 0.06) < 1e-12);
+  assert.ok(Math.abs(E[24].mu - (7 * 0.1 + 6 * 0.02) / 13) < 1e-12);
+  categorize(E);
+  const a = accuracy(E, "y1");
+  // Stufe über üblich bei 10 %, unter üblich bei 2 %: immer auf der richtigen Seite des Mittels
+  assert.equal(a.nRel, 30 - 23);
+  assert.equal(a.hitRel, 1);
+  // Richtung: alle Renditen positiv, die Stufen unter üblich gelten als falsch
+  assert.ok(a.hit < 1);
+  const c = compactAccuracy(a);
+  assert.equal(c.rel, 1);
+  assert.equal(c.nRel, 7);
+});
+
+test("WEO-Ausgaben: jüngste erschienene Ausgabe, Fehlendes aus der Ausgabe davor, Modell liest sie", () => {
+  const W = prepWeo({
+    "2019-10": { growth_usa: [2018, [2.9, 2.4, 2.1, 1.7]], debt_usa: [2018, [104, 106, 108, 110]] },
+    "2020-04": { growth_usa: [2018, [2.9, 2.3, -5.9, 4.7]] },
+  });
+  const L = { s: { growth_usa: { pts: [2014, 2015, 2016, 2017, 2018, 2019].map((y, i) => ({ x: y, v: 2 + i / 10 })) } }, weoVint: W, pitYear: 2019 };
+  applyWeo(L, day("2020-03-31"));
+  assert.equal(L.weoEd, "2019-10");
+  assert.equal(SIG.yv(L, "growth_usa", 2020), 2.1);
+  applyWeo(L, day("2020-04-30"));
+  assert.equal(L.weoEd, "2020-04");
+  assert.equal(SIG.yv(L, "growth_usa", 2020), -5.9);
+  // Kennzahl fehlt in der verkürzten Ausgabe: Stand der Ausgabe davor
+  assert.equal(L.weoAt.debt_usa[2020], 108);
+  // Jahr fehlt in allen Ausgaben: naive Fortschreibung (Mittel der letzten fünf Jahre bis 2019)
+  assert.ok(Math.abs(SIG.yv(L, "growth_usa", 2022) - (2.1 + 2.2 + 2.3 + 2.4 + 2.5) / 5) < 1e-12);
+  // vor der ersten Ausgabe: keine WEO-Werte
+  applyWeo(L, day("2019-09-30"));
+  assert.equal(L.weoAt, null);
 });

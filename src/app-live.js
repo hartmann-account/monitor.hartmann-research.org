@@ -315,7 +315,7 @@ function detailPanel(r) {
 function gridHead(extra = true) {
   return h("div", { class: "pg-group pg-hgroup" }, h("div", { class: "pg-glabel gl-h" }),
     h("div", { class: "pg-head" },
-      h("div", { class: "pg-scale-h" }, h("span", { text: "negativ −" }), h("span", { text: "neutral o" }), h("span", { text: "positiv +" })),
+      h("div", { class: "pg-scale-h", title: "Stufe gegenüber dem üblichen Ertrag der Anlage" }, h("span", { text: "unter −" }), h("span", { text: "üblich o" }), h("span", { text: "über +" })),
       extra ? h("div", { class: "h spark-h", text: "6 Monate" }) : h("div"), extra ? h("div", { class: "h num-h m1-h", text: "1 Monat" }) : h("div"),
       extra ? h("div", { class: "h num-h", text: "12 Monate" }) : h("div"), h("div")));
 }
@@ -361,7 +361,9 @@ function renderBarometer() {
     host.replaceChildren();
     if (view === "scale") {
       const bt = backtestFor(BARO.hz);
-      const btNote = bt ? `; im Backtest seit ${yr(bt.from)} ${pc0(bt.stats.all.hit)} Richtungstreffer (Mehrheitsregel ${pc0(bt.stats.all.base)})` : "";
+      const ba = bt && bt.stats.all;
+      const btNote = !ba ? "" : ba.rel != null ? `; im Backtest seit ${yr(bt.from)} in ${pc0(ba.rel)} der Fälle richtig gegenüber dem üblichen Ertrag (Mehrheitsregel ${pc0(ba.relBase)})`
+        : `; im Backtest seit ${yr(bt.from)} ${pc0(ba.hit)} Richtungstreffer (Mehrheitsregel ${pc0(ba.base)})`;
       const sh = sheet(host, { title: `Monatsübersicht der Signale · ${BARO.horizon.title}`, sub: `Einstufung zum ${deShort(SIG.isoOf(BARO.tNow))}${btNote}; Zeile antippen für Säulen, Wahrscheinlichkeit und Treffsicherheit. Gold, Silber und Gold im Vergleich: eigene Übersicht unten`, info: baroInfo });
       const grid = h("div", { class: "pgrid" }, gridHead(true));
       for (const g of BARO.groups) {
@@ -439,10 +441,11 @@ function heatTable(rows) {
 function baroInfo() {
   const H = BARO.horizon;
   return {
-    d: [`Für jede Anlage ein Signal von klar negativ bis klar positiv. ${H.desc}`, `Säulen in diesem Horizont: ${BARO.pillars.map(p => p.label).join(", ")}. Der Umschalter über der Übersicht wechselt zwischen 1 Monat, 12 Monaten und 5–10 Jahren; mit dem Horizont wechseln Säulen und Gewichte.`],
+    d: [`Für jede Anlage eine Stufe von klar unter bis klar über dem üblichen Ertrag: Sie sagt, ob die Anlage im gewählten Horizont voraussichtlich besser oder schlechter abschneidet als im Durchschnitt ihrer Geschichte. Ob die Kurse steigen, zeigt die Wahrscheinlichkeit in den Details jeder Zeile. ${H.desc}`, `Säulen in diesem Horizont: ${BARO.pillars.map(p => p.label).join(", ")}. Der Umschalter über der Übersicht wechselt zwischen 1 Monat, 12 Monaten und 5–10 Jahren; mit dem Horizont wechseln Säulen und Gewichte.`],
     f: ["Jede Säule rechnet Rohwerte (Renditen, Zinsänderungen, Bewertungsabstände, Prognosen …) in z-Werte um und begrenzt sie weich auf −2 bis +2.",
       "Gesamtwert = gewichtetes Mittel der Säulen; die Gewichte hängen von Anlageart und Horizont ab (Methodik unten).",
-      "Stufen: bis −0,9 klar negativ, bis −0,3 negativ, bis +0,3 neutral, bis +0,9 positiv, darüber klar positiv; Toleranzband 0,1 gegenüber dem Vormonat.",
+      "Stufen: bis −0,9 klar unter üblich, bis −0,3 unter üblich, bis +0,3 wie üblich, bis +0,9 über üblich, darüber klar über üblich; Toleranzband 0,1 gegenüber dem Vormonat.",
+      "Üblich = mittlerer Ertrag der Anlage im gewählten Horizont. Aktien und Anleihen steigen meistens; „unter üblich“ heißt bei ihnen deshalb oft nur schwächere, nicht fallende Kurse.",
       "Pfeilbalken: Stufe hat sich gegenüber dem Vormonat geändert (Datenstand vor 30 Tagen, Monatsreihen nach ihrer Veröffentlichungsfrist).",
       "1 Monat und 12 Monate: letzter Kurs ÷ Kurs vor 30 bzw. 365 Tagen − 1. „Stand …“: jüngster Wert älter als eine Woche oder nur als Monatswert verfügbar."],
     s: "Rechenweg je Anlage: Zeile antippen, dann ⓘ an der Säule oder am Gesamtwert. Keine Anlageberatung.",
@@ -541,12 +544,12 @@ function renderGold() {
     h("div", { class: "value" }, x.value, x.unit ? h("small", { text: x.unit }) : null),
     h("div", { class: "meta" }, ...x.meta.filter(Boolean).map(m => h("span", { text: m })))))));
   const grid = h("div", { class: "pgrid" }, gridHead(true), h("div", { class: "pg-group" },
-    h("div", { class: "pg-glabel" }, "Gold und Silber", h("small", { text: "positiv = steigend erwartet" })),
+    h("div", { class: "pg-glabel" }, "Gold und Silber", h("small", { text: "über = besser als üblich" })),
     h("div", { class: "pg-rows" }, ...rows.flatMap(r => gridRow(r, "gold-")))));
   sh.body.append(h("div", { style: "overflow-x:auto" }, grid));
   fitBars(grid);
   if (g) {
-    sh.body.append(h("h4", { class: "gold-sub" }, `Treiber des Goldsignals (${BARO.horizon.label})`, info(() => ({ t: "Treiber des Goldsignals", d: "Die Säulen des Signals für Gold in US-Dollar einzeln: positiv = stützt den Goldpreis, negativ = belastet ihn.", f: [`Säulen und Gewichte im Horizont ${BARO.horizon.title}: ${BARO.pillars.filter(p => BARO.weights.gold[p.id]).map(p => `${p.label} ${fmt(100 * BARO.weights.gold[p.id], 0)} %`).join(", ")}.`, "Rechenweg je Säule: ⓘ am Säulennamen."], r: `Gesamtwert ${signed(g.now.score, 2)} → ${g.now.cat.label}` }), "Treiber des Goldsignals")));
+    sh.body.append(h("h4", { class: "gold-sub" }, `Treiber des Goldsignals (${BARO.horizon.label})`, info(() => ({ t: "Treiber des Goldsignals", d: "Die Säulen des Signals für Gold in US-Dollar einzeln: positiv = spricht für einen Ertrag über dem üblichen, negativ = darunter.", f: [`Säulen und Gewichte im Horizont ${BARO.horizon.title}: ${BARO.pillars.filter(p => BARO.weights.gold[p.id]).map(p => `${p.label} ${fmt(100 * BARO.weights.gold[p.id], 0)} %`).join(", ")}.`, "Rechenweg je Säule: ⓘ am Säulennamen."], r: `Gesamtwert ${signed(g.now.score, 2)} → ${g.now.cat.label}` }), "Treiber des Goldsignals")));
     const drv = BARO.pillars.filter(p => BARO.weights.gold[p.id]).map(p => ({ p, now: g.now.pillars[p.id] ? g.now.pillars[p.id].s : null, prev: g.prev && g.prev.pillars[p.id] ? g.prev.pillars[p.id].s : null }));
     const dg = h("div", { class: "pgrid" },
       h("div", { class: "pg-group pg-hgroup no-label" }, h("div", { class: "pg-head score drv" }, h("div"),
@@ -607,19 +610,20 @@ function backtestLine(r) {
   const H = BARO.horizon, v = ks && VERDICT_DE[ks.verdict];
   const spec = () => ({
     t: `${r.row.label}: Wahrscheinlichkeit und Treffsicherheit (${H.label})`,
-    d: "Wie oft das Modell in der Vergangenheit mit der Richtung recht hatte und wie wahrscheinlich steigende Kurse beim heutigen Gesamtwert sind. Grundlage: Backtest mit monatlichen Stichtagen seit 1970, jeweils nur mit den damals veröffentlichten Daten.",
+    d: "Wie wahrscheinlich steigende Kurse beim heutigen Gesamtwert sind und wie oft die Stufe in der Vergangenheit stimmte. Grundlage: Backtest mit monatlichen Stichtagen seit 1970, jeweils nur mit den damals veröffentlichten Daten.",
     f: ["Wahrscheinlichkeit = 1 ÷ (1 + e^−(a + b × Gesamtwert)); a und b aus einer logistischen Regression über alle Monatsenden der Anlageart (Ergebnis: Kurs nach Ablauf des Horizonts höher oder nicht).",
       "Üblich = Anteil der Monatsenden, nach denen die Kurse der Anlageart stiegen (Grundhäufigkeit).",
-      "Trefferquote = Anteil der positiven bzw. negativen Stufen, deren Richtung eintraf; neutrale Stufen zählen nicht. 95-%-Intervall nach Wilson auf der effektiven Stichprobe (überlappende Zeiträume zählen anteilig).",
-      "Mehrheitsregel = Trefferquote, wenn man bei denselben Fällen immer die häufigere Richtung getippt hätte."],
+      "Treffer gegen üblich = Anteil der Stufen über bzw. unter üblich, nach denen die Rendite tatsächlich über bzw. unter dem üblichen Ertrag lag (Mittel aller Renditen der Anlage, die zum Stichtag schon bekannt waren); „wie üblich“ zählt nicht. Vergleich: die häufigere Seite derselben Fälle (Mehrheitsregel), meist um 50 %.",
+      "Richtung = Anteil der Stufen über bzw. unter üblich, nach denen die Kurse stiegen bzw. fielen; Mehrheitsregel = Trefferquote, wenn man bei denselben Fällen immer die häufigere Richtung getippt hätte. 95-%-Intervalle nach Wilson auf der effektiven Stichprobe (überlappende Zeiträume zählen anteilig)."],
     r: [pu ? `a = ${fmt(pu.a, 3)}, b = ${fmt(pu.b, 3)}${pu.own ? "" : " (alle Anlagen)"}; Gesamtwert ${signed(r.now.score, 2)} → ${fmt(100 * pu.p, 1)} %` : null,
-      rs ? `${r.row.label}: ${rs.nDir} Richtungssignale seit ${yr(rs.from)}, ${pc0(rs.hit)} richtig (95 %-KI ${ci0(rs.lo, rs.hi)}), Mehrheitsregel ${pc0(rs.base)}, Rangkorrelation ${rs.ic == null ? "–" : fmt(rs.ic, 2)}` : null,
+      rs ? `${r.row.label}: ${rs.nDir} Einstufungen über oder unter üblich seit ${yr(rs.from)}${rs.rel != null ? `, gegen den üblichen Ertrag ${pc0(rs.rel)} richtig` : ""}, Richtung ${pc0(rs.hit)} richtig (95 %-KI ${ci0(rs.lo, rs.hi)}), Mehrheitsregel ${pc0(rs.base)}, Rangkorrelation ${rs.ic == null ? "–" : fmt(rs.ic, 2)}` : null,
       ks ? `${KIND_DE[r.row.kind]}: Trefferquote ${pc0(ks.hit)} gegenüber ${pc0(ks.base)}, Rangkorrelation ${fmt(ks.ic, 2)} (95 %-KI ${fmt(ks.icLo, 2)} bis ${fmt(ks.icHi, 2)}) → ${v.t}` : null],
     s: "Vergangene Treffer sind keine Garantie für künftige. Keine Anlageberatung.",
   });
   return h("p", { class: "small bt-line" },
     pu ? h("span", { class: "bt-prob" }, `Wahrscheinlichkeit steigender Kurse (${H.label}): `, h("b", { text: fmt(100 * pu.p, 0) + " %" }), ` · üblich ${fmt(100 * pu.base, 0)} %. `) : null,
-    rs ? `Backtest seit ${yr(rs.from)}: ${rs.nDir} Richtungssignale, ${pc0(rs.hit)} richtig (Mehrheitsregel ${pc0(rs.base)}). ` : "",
+    rs ? (rs.rel != null ? `Backtest seit ${yr(rs.from)}: Stufe in ${pc0(rs.rel)} der ${rs.nRel} Fälle richtig gegenüber dem üblichen Ertrag${rs.relBase != null ? ` (Mehrheitsregel ${pc0(rs.relBase)})` : ""}; Richtung ${pc0(rs.hit)} (Mehrheitsregel ${pc0(rs.base)}). `
+      : `Backtest seit ${yr(rs.from)}: ${rs.nDir} Richtungssignale, ${pc0(rs.hit)} richtig (Mehrheitsregel ${pc0(rs.base)}). `) : "",
     v ? h("span", { class: `bt-verdict ${v.cls}`, text: `${v.sym} Prognosekraft ${KIND_DE[r.row.kind]}: ${v.t}` }) : null,
     info(spec, `Treffsicherheit ${r.row.label}`));
 }
@@ -645,8 +649,9 @@ function renderAccuracy() {
     sub: `${B.months} Monatsenden von ${deMonth(B.from)} bis ${deMonth(B.to)}: jede Anlage mit dem damals veröffentlichten Datenstand eingestuft und mit der Kursentwicklung der folgenden ${months === 1 ? "Monats" : months === 12 ? "zwölf Monate" : "fünf Jahre"} verglichen`,
     info: () => ({
       d: ["Rückrechnung des unveränderten Modells zu jedem Monatsende seit 1970 mit der Historie aus der D1-Datenbank: für jede Anlage die Einstufung, die das Modell damals gezeigt hätte, und die tatsächliche Rendite danach.",
-        "Nur Daten, die zum Stichtag veröffentlicht waren (übliche Fristen je Reihe, OECD-Frühindikatoren 45 Tage); die Frühindikatoren ab 2001 in dem Stand, den die OECD damals veröffentlicht hat (Revisionsdatenbank), nicht in der heute revidierten Fassung. IWF-Prognosen werden durch einfache Fortschreibungen ersetzt, weil alte Prognosestände nicht vorliegen."],
-      f: ["Trefferquote: Anteil der positiven und negativen Stufen, deren Richtung eintraf (neutral = keine Aussage).",
+        "Nur Daten, die zum Stichtag veröffentlicht waren (übliche Fristen je Reihe, OECD-Frühindikatoren 45 Tage); die Frühindikatoren ab 2001 in dem Stand, den die OECD damals veröffentlicht hat (Revisionsdatenbank), nicht in der heute revidierten Fassung. IWF-Zahlen ab April 2008 aus der damals jüngsten Ausgabe des World Economic Outlook (34 Ausgaben über DBnomics), davor durch einfache Fortschreibungen ersetzt, ebenso die Bevölkerungsprojektionen der Weltbank."],
+      f: ["Treffer gegen üblich: Anteil der Stufen über bzw. unter üblich, nach denen die Rendite über bzw. unter dem üblichen Ertrag der Anlage lag (Mittel der Renditen, die zum Stichtag schon bekannt waren); „wie üblich“ = keine Aussage.",
+        "Richtungstreffer: Anteil der Stufen über bzw. unter üblich, nach denen die Kurse stiegen bzw. fielen.",
         `Effektive Stichprobe: überlappende Zeiträume zählen anteilig, je Anlage ein unabhängiger Fall je ${months === 1 ? "Monat" : months === 12 ? "zwölf Monate" : "fünf Jahre"}; daraus das 95-%-Intervall (Wilson).`,
         "Mehrheitsregel („steigt immer“): bei denselben Fällen immer die häufigere Richtung tippen – der Maßstab, den ein Modell schlagen muss.",
         "Rangkorrelation (IC): Spearman-Korrelation zwischen Gesamtwert und späterer, um die Schwankung bereinigter Rendite; 0 = keine Prognosekraft, 95-%-Intervall über Fisher-z.",
@@ -654,13 +659,19 @@ function renderAccuracy() {
         "Brier-Skill: Güte der Wahrscheinlichkeiten ohne Vorgriff im Vergleich zur bloßen Grundhäufigkeit (0 = nicht besser, 1 = perfekt).",
         "Zufallstest: alle Einstufungen gemeinsam zeitlich gegen die Renditen verschoben; p = Anteil der Verschiebungen, die das Modell erreichen.",
         "Urteil „belegt“: Rangkorrelation mit 95 % Sicherheit über null, in jeder der drei Teilperioden (1970–89, 1990–2007, ab 2008) positiv und im Zufallstest p < 0,05; „nicht belegt“: nicht positiv oder Zufall mindestens halb so oft ebenso gut (p ≥ 0,5); sonst „schwach“."],
-      r: [`${A.n} Einstufungen, davon ${A.nDir} mit Richtung (${pc0(A.cov)}), effektiv ${A.nEff} unabhängige Fälle`, `Trefferquote ${fmt(100 * A.hit, 1)} % (95 %-KI ${ci0(A.lo, A.hi)}), Mehrheitsregel ${fmt(100 * A.base, 1)} %`],
+      r: [`${A.n} Einstufungen, davon ${A.nDir} über oder unter üblich (${pc0(A.cov)}), effektiv ${A.nEff} unabhängige Fälle`,
+        A.rel != null ? `Treffer gegen üblich ${fmt(100 * A.rel, 1)} % (95 %-KI ${ci0(A.relLo, A.relHi)}), häufigere Seite ${fmt(100 * A.relBase, 1)} %` : null,
+        `Richtungstreffer ${fmt(100 * A.hit, 1)} % (95 %-KI ${ci0(A.lo, A.hi)}), Mehrheitsregel ${fmt(100 * A.base, 1)} %`],
       s: `Rohdaten: /api/backtest (Kennzahlen) und /api/backtest?h=${BARO.hz}&id=eq_us (Einzelwerte, auch &format=csv). Stand der Rechnung: ${B.at ? deShort(B.at) : "mitgelieferte Datei"}.`,
     }),
   });
   const tiles = h("div", { class: "gold-facts acc-tiles" },
+    A.rel != null ? accTile("Treffer gegen üblich", fmt(100 * A.rel, 0), "%", [`95 %-KI ${ci0(A.relLo, A.relHi)}`, `Mehrheitsregel ${pc0(A.relBase)}`],
+      { t: "Treffer gegen den üblichen Ertrag", d: "Das, was die Stufe aussagt: Schneidet eine Anlage nach „über üblich“ besser ab als in ihrem Durchschnitt, nach „unter üblich“ schlechter?",
+        f: ["Üblicher Ertrag = Mittel aller Renditen derselben Anlage über denselben Horizont, die zum Stichtag schon bekannt waren (mindestens zwölf); so fließt keine Zukunft ein.", "Treffer = Rendite danach auf derselben Seite des üblichen Ertrags wie die Stufe; „wie üblich“ zählt nicht.", "Vergleich: Mehrheitsregel, also immer die häufigere Seite derselben Fälle tippen (bei 1 und 12 Monaten um 50 %; über 5–10 Jahre höher, weil sich der übliche Ertrag selbst verschiebt, etwa bei Anleihen nach Jahrzehnten fallender Zinsen)."],
+        r: `${A.nRel} Einstufungen über oder unter üblich mit bekanntem Durchschnitt` }) : null,
     accTile("Richtungstreffer", fmt(100 * A.hit, 0), "%", [`95 %-KI ${ci0(A.lo, A.hi)}`, `„steigt immer“ ${pc0(A.base)}`],
-      { t: "Trefferquote der Richtung", f: ["Anteil der Einstufungen „positiv“/„klar positiv“, nach denen die Kurse stiegen, und „negativ“/„klar negativ“, nach denen sie fielen.", "Vergleich: Mehrheitsregel auf denselben Fällen."], r: `${A.nDir} Richtungssignale, effektiv ${A.nEff} unabhängige Fälle` }),
+      { t: "Trefferquote der Richtung", f: ["Anteil der Einstufungen „über üblich“/„klar über üblich“, nach denen die Kurse stiegen, und „unter üblich“/„klar unter üblich“, nach denen sie fielen.", "Das sagt die Stufe nicht aus: Bei Aktien und Anleihen, die meistens steigen, bedeutet „unter üblich“ oft nur schwächere Kurse. Für die Richtung gilt die Wahrscheinlichkeit steigender Kurse in den Zeilen des Barometers.", "Vergleich: Mehrheitsregel auf denselben Fällen."], r: `${A.nDir} Einstufungen über oder unter üblich, effektiv ${A.nEff} unabhängige Fälle` }),
     RT ? accTile("Gegen den Zufall", signed(100 * (RT.hit - RT.hitRand), 0), "Pp.", [`Treffer ${pc0(RT.hit)} statt ${pc0(RT.hitRand)}`, pTxt(RT.pHit)],
       { t: "Vergleich mit dem Zufall", d: "Wie gut wären dieselben Einstufungen, wenn sie zeitlich nichts mit den späteren Kursen zu tun hätten? Dazu werden alle Einstufungen gemeinsam gegen die Renditen verschoben (um mindestens einen Horizont, zyklisch über den ganzen Zeitraum). So bleiben Trends, Gleichlauf der Anlagen und die Häufigkeit der Stufen erhalten; nur der zeitliche Zusammenhang geht verloren.",
         f: ["Je Verschiebung: Trefferquote der Richtung und Rangkorrelation.", "p = Anteil der Verschiebungen, die das Modell erreichen oder übertreffen (einschließlich der echten Zuordnung); p < 0,05 heißt: Zufall erreicht das höchstens in 5 % der Fälle."],
@@ -686,24 +697,26 @@ function renderAccuracy() {
         h("span", { class: "acc-n small", text: `Ø ${signed(100 * m, 1)} % · n ${n}` }));
     }));
   sh.body.append(tiles,
-    h("h4", { class: "gold-sub" }, "Anteil steigender Kurse nach Stufe", info({ t: "Anteil steigender Kurse nach Stufe", d: "Wie oft die Kurse nach einer Einstufung stiegen, über alle Anlagen. Steigt der Anteil von „klar negativ“ bis „klar positiv“ an, trennt das Modell gute von schlechten Aussichten.", f: ["Balken = Anteil der Fälle mit höherem Kurs nach Ablauf des Horizonts; Strich = Anteil über alle Fälle (Grundhäufigkeit).", "Ø = mittlere Rendite danach (nicht annualisiert); n = Anzahl der Fälle."], r: `Grundhäufigkeit ${fmt(100 * A.up, 1)} %` }, "Anteil steigender Kurse nach Stufe")),
+    h("h4", { class: "gold-sub" }, "Anteil steigender Kurse nach Stufe", info({ t: "Anteil steigender Kurse nach Stufe", d: "Wie oft die Kurse nach einer Einstufung stiegen, über alle Anlagen. Steigt der Anteil von „klar unter üblich“ bis „klar über üblich“ an, trennt das Modell gute von schlechten Aussichten.", f: ["Balken = Anteil der Fälle mit höherem Kurs nach Ablauf des Horizonts; Strich = Anteil über alle Fälle (Grundhäufigkeit).", "Ø = mittlere Rendite danach (nicht annualisiert); n = Anzahl der Fälle."], r: `Grundhäufigkeit ${fmt(100 * A.up, 1)} %` }, "Anteil steigender Kurse nach Stufe")),
     bars);
   // Tabelle je Anlageart
   const kinds = Object.keys(B.stats).filter(k => k !== "all");
   const tbl = h("table", { class: "acc-table" },
-    h("thead", null, h("tr", null, ...["Anlageart", "Signale (effektiv)", "Treffer", "95 %-KI", "Mehrheit", "Rangkorr.", "1970–89 · 1990–2007 · ab 2008", "Zufallstest p", "Ohne Vorgriff", "Urteil"].map(t => h("th", { text: t })))),
+    h("thead", null, h("tr", null, ...["Anlageart", "Signale (effektiv)", "Gegen üblich", "Richtung", "95 %-KI", "Mehrheit", "Rangkorr.", "1970–89 · 1990–2007 · ab 2008", "Zufallstest p", "Ohne Vorgriff", "Urteil"].map(t => h("th", { text: t })))),
     h("tbody", null, ...["all", ...kinds].map(k => {
       const a = B.stats[k], o = B.oos && B.oos[k], vv = VERDICT_DE[a.verdict], rr = B.random && B.random[k];
       return h("tr", { class: k === "all" ? "acc-all" : null },
-        h("td", { text: KIND_DE[k] || k }), h("td", { text: `${a.nDir} (${a.nEff})` }), h("td", { text: pc0(a.hit) }), h("td", { text: ci0(a.lo, a.hi) }), h("td", { text: pc0(a.base) }),
+        h("td", { text: KIND_DE[k] || k }), h("td", { text: `${a.nDir} (${a.nEff})` }), h("td", { text: pc0(a.rel) }), h("td", { text: pc0(a.hit) }), h("td", { text: ci0(a.lo, a.hi) }), h("td", { text: pc0(a.base) }),
         h("td", { text: fmt(a.ic, 2) }), h("td", { text: a.sub.map(x => (x && x.ic != null ? fmt(x.ic, 2) : "–")).join(" · ") }), h("td", { text: rr ? fmtP(rr.pIc) : "–" }),
         h("td", { text: o ? `${fmt(o.ic, 2)} / ${pc0(o.hit)}` : "–" }), h("td", null, h("span", { class: `bt-verdict ${vv.cls}`, text: `${vv.sym} ${vv.t}` })));
     })));
   sh.body.append(h("h4", { class: "gold-sub" }, "Je Anlageart"), h("div", { style: "overflow-x:auto" }, stackTable(tbl)));
   const eq = B.stats.equity;
   sh.body.append(h("div", { class: "acc-notes small" },
-    h("p", null, h("b", { text: "Was die Zahlen heißen. " }), "Das Modell trifft die Richtung häufiger als der Zufall und – über alle Anlagen – häufiger als die Mehrheitsregel. Nahezu sichere Prognosen sind an Märkten nicht möglich: Auch nach „klar positiv“ fielen die Kurse in einem Teil der Fälle. Aussagekräftiger als die Stufe allein ist deshalb die Wahrscheinlichkeit steigender Kurse in den Zeilen des Barometers."),
-    eq && eq.base > eq.hit ? h("p", null, h("b", { text: "Aktien. " }), `Aktien steigen meistens (${pc0(eq.base)} der Fälle in diesem Horizont). „Negativ“ bedeutet hier unterdurchschnittliche Aussichten, nicht zwingend fallende Kurse – deshalb liegt die Trefferquote der Richtung unter der Mehrheitsregel, obwohl die Rangkorrelation positiv ist.`) : null,
+    h("p", null, h("b", { text: "Was die Zahlen heißen. " }), A.rel != null
+      ? `Die Stufe sagt, ob eine Anlage besser oder schlechter abschneidet als üblich; das traf in ${pc0(A.rel)} der Fälle zu, ${A.rel > A.relBase ? `häufiger als die Mehrheitsregel (${pc0(A.relBase)})` : `nicht häufiger als die Mehrheitsregel (${pc0(A.relBase)}): Über so lange Zeiträume verschiebt sich der übliche Ertrag selbst, aussagekräftiger ist hier die Rangfolge der Anlagen (Rangkorrelation ${fmt(A.ic, 2)})`}. Nahezu sichere Prognosen sind an Märkten nicht möglich. Ob die Kurse steigen, zeigt die Wahrscheinlichkeit steigender Kurse in den Zeilen des Barometers; sie berücksichtigt, wie oft eine Anlage ohnehin steigt.`
+      : "Das Modell trifft die Richtung häufiger als der Zufall und – über alle Anlagen – häufiger als die Mehrheitsregel. Nahezu sichere Prognosen sind an Märkten nicht möglich: Auch nach „klar über üblich“ fielen die Kurse in einem Teil der Fälle. Aussagekräftiger als die Stufe allein ist deshalb die Wahrscheinlichkeit steigender Kurse in den Zeilen des Barometers."),
+    eq && eq.base > eq.hit ? h("p", null, h("b", { text: "Aktien. " }), `Aktien steigen meistens (${pc0(eq.base)} der Fälle in diesem Horizont). „Unter üblich“ bedeutet hier unterdurchschnittliche Aussichten, nicht zwingend fallende Kurse – deshalb liegt die Trefferquote der Richtung unter der Mehrheitsregel${eq.rel != null ? `, während die Stufe gegen den üblichen Ertrag in ${pc0(eq.rel)} der Fälle stimmt` : ", obwohl die Rangkorrelation positiv ist"}.`) : null,
     h("p", null, h("b", { text: "Grenzen. " }), "Die Bausteine des Modells wurden mit Kenntnis der Geschichte seit 1970 ausgewählt. Ganz ausschließen lässt sich Rückschaufehler nicht; der Monitor prüft deshalb zusätzlich an Daten, die bei der Entwicklung keine Rolle spielten (unten), und mit dem Zufallstest. Die eigentliche Bewährungsprobe bleibt die Echtzeit-Bilanz. Konjunkturdaten außer den Frühindikatoren (etwa Baugenehmigungen, Kreditlücken, Fed Z.1) liegen nur im heutigen, revidierten Stand vor. Beim Horizont 5–10 Jahre gibt es seit 1970 nur wenige unabhängige Zeiträume; die Intervalle sind breit.")));
   renderRobustness(sh.body, BARO.hz);
 }
@@ -880,14 +893,14 @@ function renderBaroMethod() {
   const cur = BARO.horizon;
   const others = SIG.cfg.horizons.filter(x => x.id !== cur.id);
   host.replaceChildren(
-    h("p", { text: "Jede Säule wird auf eine Skala von −2 (klar negativ) bis +2 (klar positiv) abgebildet. Rohwerte werden dazu durch eine typische Schwankungsbreite geteilt und weich begrenzt (2·tanh(z/2)). Die Gesamtnote ist das gewichtete Mittel der verfügbaren Säulen; fehlt eine Säule, werden die übrigen Gewichte hochgerechnet. Die Einstufung des Vormonats entsteht aus derselben Rechnung mit dem Datenstand von vor 30 Tagen; Monatsreihen zählen dabei erst nach ihrer üblichen Veröffentlichungsfrist." }),
+    h("p", { text: "Jede Säule wird auf eine Skala von −2 (spricht klar für einen Ertrag unter dem üblichen) bis +2 (klar darüber) abgebildet. Rohwerte werden dazu durch eine typische Schwankungsbreite geteilt und weich begrenzt (2·tanh(z/2)). Die Gesamtnote ist das gewichtete Mittel der verfügbaren Säulen; fehlt eine Säule, werden die übrigen Gewichte hochgerechnet. Die Einstufung des Vormonats entsteht aus derselben Rechnung mit dem Datenstand von vor 30 Tagen; Monatsreihen zählen dabei erst nach ihrer üblichen Veröffentlichungsfrist." }),
     h("p", null, h("b", { text: "Drei Horizonte. " }), SIG.cfg.horizons.map(x => `${x.title}: ${x.desc}`).join(" ")),
     h("ul", { style: "margin:0;padding-left:18px;display:grid;gap:4px" }, ...BARO.pillars.map(p => h("li", null, h("b", { text: p.label + ": " }), p.desc))),
     weightTable(cur),
     h("details", { class: "more" }, h("summary", { text: `Säulen und Gewichte der anderen Horizonte (${others.map(x => x.label).join(", ")})` }),
       ...others.flatMap(x => [h("ul", { style: "margin:8px 0 0;padding-left:18px;display:grid;gap:4px" }, ...x.pillars.map(SIG.pillarDef).map(p => h("li", null, h("b", { text: `${x.label}, ${p.label}: ` }), p.desc))), weightTable(x)])),
     h("p", { text: `Einstufung nach Gesamtwert: ${SIG.cfg.cats.map((c, i) => `${c.sym} ${c.label} ${c.max === Infinity ? `über ${fmt(SIG.cfg.cats[i - 1].max, 1)}` : `bis ${fmt(c.max, 1)}`}`).join(" · ")}. Gegenüber der Vormonatsstufe gilt ein Toleranzband von ${fmt(SIG.cfg.hyst, 1)}: Die Stufe wechselt erst, wenn der Gesamtwert die Schwelle um mehr als diesen Betrag überschreitet. Das verhindert, dass Werte nahe einer Schwelle jeden Monat hin- und herspringen.` }),
-    h("p", { text: "Anleihekurse werden aus der Rendite zehnjähriger Staatsanleihen geschätzt (Duration 8,5, Konvexität 85, laufender Kupon). Währungen sind als Preis der Währung in US-Dollar notiert; ein positives Signal bedeutet erwartete Aufwertung gegenüber dem Dollar. Der Spannungsmonitor (GDELT) erscheint in der Säule Risikoappetit bei den betroffenen Märkten zur Information (etwa China bei Spannungen mit den USA oder um Taiwan, Öl bei Spannungen im Nahen Osten), geht aber nicht in den Gesamtwert ein: Ohne lange Historie lässt er sich nicht im Backtest prüfen. Die langfristigen Säulen nutzen IWF-Projektionen (World Economic Outlook), Bevölkerungsprojektionen der Weltbank und die Reservewährungsstatistik COFER." }),
+    h("p", { text: "Anleihekurse werden aus der Rendite zehnjähriger Staatsanleihen geschätzt (Duration 8,5, Konvexität 85, laufender Kupon). Währungen sind als Preis der Währung in US-Dollar notiert; „über üblich“ bedeutet, dass sich die Währung gegenüber dem Dollar voraussichtlich besser entwickelt als üblich. Der Spannungsmonitor (GDELT) erscheint in der Säule Risikoappetit bei den betroffenen Märkten zur Information (etwa China bei Spannungen mit den USA oder um Taiwan, Öl bei Spannungen im Nahen Osten), geht aber nicht in den Gesamtwert ein: Ohne lange Historie lässt er sich nicht im Backtest prüfen. Die langfristigen Säulen nutzen IWF-Projektionen (World Economic Outlook), Bevölkerungsprojektionen der Weltbank und die Reservewährungsstatistik COFER." }),
     h("p", { text: "Die Gewichte wurden anhand von Rückrechnungen seit 1970 gesetzt: Für jede Säule wurde geprüft, ob sie die spätere Rendite in allen drei Teilperioden (1970–89, 1990–2007, ab 2008) vorhergesagt hätte. Säulen ohne belegte Prognosekraft erhalten wenig oder kein Gewicht, etwa die Schuldensäule bei Gold und Anleihen im Horizont 5–10 Jahre. Neu aufgenommen wurde der Aktienanteil am Anlegervermögen der USA (Fed-Finanzierungsrechnung Z.1 seit 1945), der die Renditen von Aktien und Gold über ein bis fünf Jahre deutlich besser vorhersagte als das Shiller-KGV. Die Treffsicherheit jedes Horizonts steht in der Übersicht „Treffsicherheit im Backtest“." }),
     h("p", { class: "small", text: "Darstellung und Säulen lehnen sich an die monatliche Asset-Allocation-Übersicht von Pictet Asset Management an (Konjunkturzyklus, Liquidität, Bewertung, Technik und Stimmung); die langfristigen Säulen folgen Dalios großem Zyklus. Der Monitor verwendet keine Daten oder Einschätzungen von Pictet; Regeln, Schwellen und Gewichte sind Setzungen dieses Monitors, geprüft an der Geschichte. Keine Anlageberatung." }));
 }
