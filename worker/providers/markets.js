@@ -98,18 +98,28 @@ export async function bundesbank(F, key, start) {
 
 /* ---------------------------------------------------------------- Bank of England (IADB-CSV) */
 const MON = { Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06", Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12" };
-export async function boe(F, codes, startDate) {
+export async function boe(F, codes, startDate, wait = 2500) {
   const d = new Date(startDate + "T00:00:00Z");
   const from = `${String(d.getUTCDate()).padStart(2, "0")}/${Object.keys(MON)[d.getUTCMonth()]}/${d.getUTCFullYear()}`;
   const url = `https://www.bankofengland.co.uk/boeapps/database/_iadb-fromshowcolumns.asp?csv.x=yes&Datefrom=${from}&Dateto=now&SeriesCodes=${codes.join(",")}&CSVF=TN&UsingCodes=Y&VPD=Y&VFD=N`;
-  let txt;
-  for (let attempt = 0; attempt < 3; attempt++) { // erster Aufruf nach Ruhepause landet oft auf einer Fehlerseite
-    if (attempt) await new Promise(r => setTimeout(r, 2500 * attempt));
-    txt = await F.text(url, { timeout: 30000 });
+  // Der erste Aufruf nach einer Ruhepause landet oft auf einer Fehlerseite („Access denied“, Umleitung auf
+  // ErrorPage.asp; von Cloudflare aus als HTTP 500), wenige Sekunden später kommen die Daten. Deshalb bis zu drei
+  // Versuche, auch nach HTTP-Fehlern; Zeitüberschreitungen und andere Fehler brechen sofort ab.
+  let txt, err;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await new Promise(r => setTimeout(r, wait * attempt));
+    try {
+      txt = await F.text(url, { timeout: 30000 });
+    } catch (e) {
+      if (!e.status) throw e;
+      err = e;
+      txt = null;
+      continue;
+    }
     if (!/<html/i.test(txt.slice(0, 500))) break;
     txt = null;
   }
-  if (!txt) throw new Error("Bank of England: Fehlerseite statt Daten");
+  if (!txt) throw err || new Error("Bank of England: Fehlerseite statt Daten");
   const { header, rows } = parseCsv(txt);
   const out = {};
   for (let j = 1; j < header.length; j++) out[header[j]] = [];

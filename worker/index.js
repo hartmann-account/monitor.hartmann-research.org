@@ -24,7 +24,7 @@ import { readHistory, ensureSchema } from "./jobs-signals.js";
 import { archiveSummary, readSeries, ensureArchive } from "./archive.js";
 import { dbnomicsSummary, dbnomicsSearch, dbnomicsDatasets } from "./dbnomics.js";
 import { INBOX, PREVIEW } from "./inbox.js";
-import { gate, privateHeaders } from "./auth.js";
+import { gate, privateHeaders, securityHeaders } from "./auth.js";
 import { readBacktest } from "./jobs-backtest.js";
 
 const CORS = {
@@ -241,8 +241,8 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
     // Passwortschutz der ganzen Seite (aktiv mit dem Secret SITE_PASSWORD)
     const denied = await gate(request, env);
-    if (denied) return denied;
-    return privateHeaders(await route(request, env, ctx), env);
+    if (denied) return securityHeaders(denied);
+    return securityHeaders(privateHeaders(await route(request, env, ctx), env));
   },
 
   async scheduled(controller, env, ctx) {

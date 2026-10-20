@@ -34,6 +34,11 @@
   "r2_buckets": [
     { "binding": "ARCHIVE", "bucket_name": "monitor", "jurisdiction": "eu" }
   ],
+  // Bremse für Passwortversuche (Anmeldeformular und Bearer-Token): höchstens 20 je Minute und Adresse, zählt auch
+  // parallele Anfragen (worker/auth.js). namespace_id ist eine frei gewählte, im Konto eindeutige Kennung des Zählers.
+  "ratelimits": [
+    { "name": "AUTH_LIMIT", "namespace_id": "20261020", "simple": { "limit": 20, "period": 60 } }
+  ],
   // Reserve für den ersten Archivlauf (ganze Historie der Quellen) und die Rückrechnung der drei Horizonte
   "limits": { "cpu_ms": 60000 },
   "triggers": {

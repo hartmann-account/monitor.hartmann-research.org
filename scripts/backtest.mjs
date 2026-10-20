@@ -31,8 +31,17 @@ async function loadLocal() {
   for (const id of btSeriesIds(catalog.map(r => r.id))) raw[id] = { freq: freq[id], points: db.prepare(freq[id] === "D" ? THIN_SQL : FULL_SQL).all(id).map(r => [r.d, r.v]) };
   return raw;
 }
-const headers = process.env.SITE_PASSWORD ? { authorization: `Bearer ${process.env.SITE_PASSWORD}` } : {};
+// passwortgeschützte Seite: einmal anmelden und das Sitzungscookie für alle Abfragen nutzen (die Seite bremst
+// Passwortversuche je Adresse; ein Bearer-Token je Abfrage würde bei rund 75 Abfragen die Grenze erreichen)
+async function login(base) {
+  const pw = process.env.SITE_PASSWORD;
+  if (!pw) return {};
+  const r = await fetch(`${base}/login`, { method: "POST", redirect: "manual", body: new URLSearchParams({ passwort: pw, ziel: "/" }) });
+  const c = /bcm_sitzung=[^;]+/.exec((r.headers.getSetCookie ? r.headers.getSetCookie() : []).join(";"));
+  return c ? { cookie: c[0] } : { authorization: `Bearer ${pw}` };
+}
 async function loadApi(base) {
+  const headers = await login(base);
   const c = await fetch(`${base}/api/archive`, { headers });
   if (!c.ok) throw new Error(`API ${c.status} für /api/archive${c.status === 401 ? " (Passwort in SITE_PASSWORD angeben)" : ""}`);
   const cat = await c.json();

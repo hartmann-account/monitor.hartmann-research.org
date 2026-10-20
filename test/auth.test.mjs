@@ -1,7 +1,7 @@
 /* Passwortschutz der Seite: Sitzung, Anmeldung, Sperre und Durchlass */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { gate, authorized, sessionToken, validSession, privateHeaders } from "../worker/auth.js";
+import { gate, authorized, sessionToken, validSession, privateHeaders, securityHeaders } from "../worker/auth.js";
 
 const kv = () => { const m = new Map(); return { m, get: async k => m.get(k) ?? null, put: async (k, v) => { m.set(k, v); } }; };
 const env = (extra = {}) => ({ SITE_PASSWORD: "geheim-123", ADMIN_TOKEN: "admin-xyz", DATA: kv(), ...extra });
@@ -64,6 +64,29 @@ test("Maschinen: Bearer mit Passwort oder ADMIN_TOKEN; nach zehn Fehlversuchen P
   assert.equal(r.status, 429);
 });
 
+test("Bremse: falsche Bearer-Token zählen, Sperre gilt auch für richtige, Bindung AUTH_LIMIT, Cookie ohne Bremse", async () => {
+  const e = env();
+  const bearer = (t, ip = "5.6.7.8", extra = {}) => req("/api/snapshot", { headers: { authorization: "Bearer " + t, "cf-connecting-ip": ip, ...extra } });
+  assert.equal((await gate(bearer("falsch"), e)).status, 401);
+  assert.equal(e.DATA.m.get("auth:fehl:5.6.7.8"), "1");
+  e.DATA.m.set("auth:fehl:5.6.7.8", "10");
+  const locked = await gate(bearer("geheim-123"), e);
+  assert.equal(locked.status, 429);
+  assert.equal(locked.headers.get("retry-after"), "900");
+  // andere Adresse unberührt
+  assert.equal(await gate(bearer("geheim-123", "9.9.9.9"), e), null);
+  // Bindung meldet zu viele Versuche: Bearer und Formular gesperrt, angemeldeter Browser nicht
+  const keys = [];
+  const full = env({ AUTH_LIMIT: { limit: async ({ key }) => { keys.push(key); return { success: false }; } } });
+  assert.equal((await gate(bearer("geheim-123", "1.1.1.1"), full)).status, 429);
+  const form = req("/login", { method: "POST", headers: { "cf-connecting-ip": "1.1.1.1" }, body: new URLSearchParams({ passwort: "geheim-123", ziel: "/" }) });
+  assert.equal((await gate(form, full)).status, 429);
+  assert.deepEqual(keys, ["1.1.1.1", "1.1.1.1"]);
+  const c = `bcm_sitzung=${await sessionToken("geheim-123")}`;
+  assert.equal(await gate(bearer("falsch", "1.1.1.1", { cookie: c }), full), null);
+  assert.deepEqual(keys, ["1.1.1.1", "1.1.1.1"]);
+});
+
 test("Abmelden löscht das Cookie; Antworten werden privat", async () => {
   const r = await gate(req("/logout"), env());
   assert.equal(r.status, 303);
@@ -73,4 +96,17 @@ test("Abmelden löscht das Cookie; Antworten werden privat", async () => {
   assert.equal(res.headers.get("x-robots-tag"), "noindex, nofollow");
   const open = privateHeaders(new Response("x", { headers: { "cache-control": "public, max-age=600" } }), {});
   assert.equal(open.headers.get("cache-control"), "public, max-age=600");
+});
+
+test("Sicherheits-Header nur für HTML: CSP ohne fremde Quellen, keine Einbettung", async () => {
+  const page = securityHeaders(new Response("<!doctype html>", { headers: { "content-type": "text/html; charset=utf-8" } }));
+  const csp = page.headers.get("content-security-policy");
+  assert.match(csp, /default-src 'self'/);
+  assert.match(csp, /script-src 'self';/);
+  assert.match(csp, /frame-ancestors 'none'/);
+  assert.equal(page.headers.get("x-frame-options"), "DENY");
+  const login = securityHeaders(await gate(req("/login"), env()));
+  assert.match(login.headers.get("content-security-policy"), /form-action 'self'/);
+  const data = securityHeaders(new Response("{}", { headers: { "content-type": "application/json" } }));
+  assert.equal(data.headers.get("content-security-policy"), null);
 });

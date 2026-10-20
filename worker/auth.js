@@ -4,7 +4,8 @@
      alle Geräte ab), Abmeldung unter /logout
    - Maschinen (GitHub-Workflow, Skripte) melden sich mit "Authorization: Bearer <SITE_PASSWORD>" an; POST /api/run
      weiterhin mit ADMIN_TOKEN
-   - nach zehn falschen Versuchen je Adresse 15 Minuten Pause (Zähler in KV) */
+   - Bremse für Passwortversuche über Formular und Bearer: höchstens 20 je Minute und Adresse (Rate-Limiting-Bindung
+     AUTH_LIMIT, zählt auch parallele Anfragen), nach zehn Fehlversuchen 15 Minuten Pause (Zähler in KV) */
 const COOKIE = "bcm_sitzung";
 const DAYS = 30;
 const MAX_FAILS = 10, LOCK_S = 900;
@@ -41,18 +42,31 @@ const cookieOf = (req, name) => {
   return null;
 };
 
-/* Ist die Anfrage angemeldet? (ohne SITE_PASSWORD immer) */
+// Bearer-Token: das Seitenpasswort (Skripte, GitHub-Workflow) oder ADMIN_TOKEN
+const bearerOk = async (env, t) => (await samePassword(env.SITE_PASSWORD, t)) || (!!env.ADMIN_TOKEN && same(t, env.ADMIN_TOKEN));
+
+/* Ist die Anfrage angemeldet? (ohne SITE_PASSWORD immer; zählt keine Versuche, das übernimmt gate) */
 export async function authorized(req, env) {
   const secret = env.SITE_PASSWORD;
   if (!secret) return true;
   const auth = req.headers.get("authorization") || "";
-  if (auth.startsWith("Bearer ")) {
-    const t = auth.slice(7);
-    if (await samePassword(secret, t)) return true;
-    if (env.ADMIN_TOKEN && same(t, env.ADMIN_TOKEN)) return true;
-  }
+  if (auth.startsWith("Bearer ") && (await bearerOk(env, auth.slice(7)))) return true;
   return validSession(secret, cookieOf(req, COOKIE));
 }
+
+const ipOf = req => req.headers.get("cf-connecting-ip") || "unbekannt";
+const failKey = ip => `auth:fehl:${ip}`;
+/* Darf diese Adresse gerade ein Passwort probieren? Jeder Versuch zählt bei der Bindung AUTH_LIMIT (atomar je
+   Cloudflare-Standort, auch bei parallelen Anfragen); nach zehn Fehlversuchen sperrt der KV-Zähler 15 Minuten */
+async function blocked(env, ip) {
+  if (env.AUTH_LIMIT && !(await env.AUTH_LIMIT.limit({ key: ip })).success) return true;
+  return env.DATA ? +((await env.DATA.get(failKey(ip))) || 0) >= MAX_FAILS : false;
+}
+async function failed(env, ip) {
+  if (env.DATA) await env.DATA.put(failKey(ip), String(+((await env.DATA.get(failKey(ip))) || 0) + 1), { expirationTtl: LOCK_S });
+  await new Promise(r => setTimeout(r, 800));
+}
+const jsonErr = (msg, status, extra = {}) => new Response(JSON.stringify({ error: msg }), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...extra } });
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // nur Pfade dieser Seite als Ziel nach der Anmeldung
@@ -91,26 +105,48 @@ export async function gate(req, env) {
   }
   if (url.pathname === "/login") {
     if (req.method !== "POST") return loginPage(safeTarget(url.searchParams.get("ziel")));
-    const ip = req.headers.get("cf-connecting-ip") || "unbekannt", key = `auth:fehl:${ip}`;
-    const fails = env.DATA ? +((await env.DATA.get(key)) || 0) : 0;
+    const ip = ipOf(req);
     const form = await req.formData().catch(() => null);
     const target = safeTarget(form && form.get("ziel"));
-    if (fails >= MAX_FAILS) return loginPage(target, "Zu viele Versuche. Bitte in 15 Minuten erneut versuchen.", 429);
+    if (await blocked(env, ip)) return loginPage(target, "Zu viele Versuche. Bitte in 15 Minuten erneut versuchen.", 429);
     const given = form ? String(form.get("passwort") || "") : "";
     if (given && (await samePassword(secret, given))) {
       return new Response(null, { status: 303, headers: { location: target,
         "set-cookie": `${COOKIE}=${await sessionToken(secret)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${DAYS * 86400}`, "cache-control": "no-store" } });
     }
-    if (env.DATA) await env.DATA.put(key, String(fails + 1), { expirationTtl: LOCK_S });
-    await new Promise(r => setTimeout(r, 800));
+    await failed(env, ip);
     return loginPage(target, "Passwort falsch.", 401);
   }
   if (url.pathname === "/favicon.svg") return null;
-  if (await authorized(req, env)) return null;
+  // angemeldeter Browser: gültiges Sitzungscookie (zählt nicht als Versuch)
+  if (await validSession(secret, cookieOf(req, COOKIE))) return null;
+  // Skripte: Bearer-Token mit derselben Bremse wie das Formular
+  const auth = req.headers.get("authorization") || "";
+  if (auth.startsWith("Bearer ")) {
+    const ip = ipOf(req);
+    if (await blocked(env, ip)) return jsonErr("Zu viele Versuche, bitte in 15 Minuten erneut versuchen", 429, { "retry-after": String(LOCK_S) });
+    if (await bearerOk(env, auth.slice(7))) return null;
+    await failed(env, ip);
+    return jsonErr("Anmeldung erforderlich", 401);
+  }
   // Seitenaufruf: zur Anmeldung; Daten und Dateien: 401
   const wantsHtml = req.method === "GET" && (req.headers.get("accept") || "").includes("text/html");
   if (wantsHtml) return new Response(null, { status: 302, headers: { location: `/login?ziel=${encodeURIComponent(url.pathname + url.search)}`, "cache-control": "no-store" } });
-  return new Response(JSON.stringify({ error: "Anmeldung erforderlich" }), { status: 401, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
+  return jsonErr("Anmeldung erforderlich", 401);
+}
+
+/* Sicherheits-Header für HTML-Seiten (auch die Anmeldung): nur eigene Skripte, Daten, Bilder und Schriften, keine
+   Einbettung in fremde Seiten (Schutz vor Clickjacking). Inline-Stile bleiben erlaubt, die Seite setzt style-Attribute. */
+const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; " +
+  "object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+export function securityHeaders(res) {
+  if (!(res.headers.get("content-type") || "").includes("text/html")) return res;
+  const r = new Response(res.body, res);
+  r.headers.set("content-security-policy", CSP);
+  r.headers.set("x-frame-options", "DENY");
+  r.headers.set("x-content-type-options", "nosniff");
+  r.headers.set("referrer-policy", "strict-origin-when-cross-origin");
+  return r;
 }
 
 /* Antworten hinter der Sperre nicht in fremden Zwischenspeichern ablegen und nicht indexieren */

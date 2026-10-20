@@ -332,6 +332,7 @@ export function progress(st, run = null) {
   const c = st.cur;
   return { round: st.round, startedAt: st.startedAt, doneAt: st.doneAt, planned: !!st.planned, datasets: st.queue.length, at: st.i,
     changed: st.changed, skipped: st.skipped, failed: (st.failed || []).length,
+    failedList: (st.failed || []).slice(-10).map(x => ({ ds: x.k, error: String(x.error || "").slice(0, 160), at: x.at })),
     current: c ? { ds: keyOf(st.queue[st.i]), offset: c.offset, found: c.found, stand: c.stand } : null,
     nextRound: st.doneAt ? new Date(Date.parse(st.doneAt) + REFRESH_DAYS * 864e5).toISOString() : null, run };
 }
