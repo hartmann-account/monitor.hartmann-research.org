@@ -180,9 +180,12 @@ function simulateDebt(p, opts) {
     if (hitI) crossInt++;
     if (hitD) crossDebt++;
   }
-  const pct = (arr, q) => { const a = Array.from(arr).sort((x, y) => x - y); const i = (a.length - 1) * q; const lo = Math.floor(i), hi = Math.ceil(i); return a[lo] + (a[hi] - a[lo]) * (i - lo); };
+  // Quantile je Jahr: die Pfade einmal numerisch sortieren (Float64Array), dann alle fünf Quantile ablesen
   const qs = [0.05, 0.25, 0.5, 0.75, 0.95];
-  const band = arrs => arrs.map(a => qs.map(q => pct(a, q)));
+  const band = arrs => arrs.map(arr => {
+    const a = Float64Array.from(arr).sort();
+    return qs.map(q => { const i = (a.length - 1) * q, lo = Math.floor(i), hi = Math.ceil(i); return a[lo] + (a[hi] - a[lo]) * (i - lo); });
+  });
   return { debt: band(debt), intRev: band(intRev), rate: band(effRate), pInt10: crossInt / opts.paths, pDebt10: crossDebt / opts.paths };
 }
 

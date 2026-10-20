@@ -123,6 +123,9 @@ main { display: block; }
 
 /* Hero */
 .hero { padding-block: 40px 48px; }
+/* solange die Daten laden: Platz für Lage und Kennzahlen freihalten, damit das Barometer nicht erst sichtbar ist und dann
+   nach unten rutscht (app-boot.js entfernt die Klasse) */
+.hero.laedt { min-height: 100vh; min-height: 100svh; }
 .hero-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 28px; align-items: start; }
 @media (max-width: 980px) { .hero-grid { grid-template-columns: 1fr; } }
 .hero-title { display: grid; gap: 14px; max-width: 980px; }

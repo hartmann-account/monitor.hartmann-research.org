@@ -140,14 +140,16 @@ function barEl(label, short, n, prevN, title) {
   return el;
 }
 function fitBars(root) { // Namen, die nicht in den Balken passen, durch die Kurzform ersetzen
-  const run = () => root.querySelectorAll(".pg-bar").forEach(b => {
-    const t = b.querySelector("b");
-    if (!t.dataset.full) t.dataset.full = t.textContent;
-    t.textContent = t.dataset.full;
-    if (t.scrollWidth > t.clientWidth + 1 && b.dataset.short) t.textContent = b.dataset.short;
-  });
-  new ResizeObserver(run).observe(root);
-  requestAnimationFrame(run);
+  // erst alle Namen setzen, dann alle Breiten lesen, dann kürzen: ein Layout statt eines je Balken
+  const run = () => {
+    const bars = [...root.querySelectorAll(".pg-bar")].map(b => ({ b, t: b.querySelector("b") }));
+    for (const { t } of bars) { if (!t.dataset.full) t.dataset.full = t.textContent; t.textContent = t.dataset.full; }
+    const long = bars.filter(({ b, t }) => b.dataset.short && t.scrollWidth > t.clientWidth + 1);
+    for (const { b, t } of long) t.textContent = b.dataset.short;
+  };
+  // der Beobachter meldet sich auch gleich nach dem Einhängen; nur bei geänderter Breite neu prüfen
+  let w = -1;
+  new ResizeObserver(() => { if (root.clientWidth !== w) { w = root.clientWidth; run(); } }).observe(root);
 }
 function perfDiv(v, cls) {
   if (v == null || !isFinite(v)) return h("div", { class: "pg-num " + cls, text: "–" });
@@ -328,8 +330,12 @@ function gridRow(r, prefix = "baro-") {
     h("div", { class: "pg-spark" }, sparkline(r.spark, "--ink-2")),
     perfDiv(r.perf.m1, "m1"), perfDiv(r.perf.y1, "y1"),
     h("div", { class: "pg-caret", "aria-hidden": "true", text: "▸" }));
-  const det = detailPanel(r);
-  const toggle = () => { det.hidden = !det.hidden; row.setAttribute("aria-expanded", String(!det.hidden)); row.lastChild.textContent = det.hidden ? "▸" : "▾"; };
+  // Details (Säulen, Verlauf, Treffsicherheit) erst beim ersten Aufklappen bauen; bis dahin ein leerer Platzhalter
+  let det = h("div", { class: "pg-detail", hidden: true });
+  const toggle = () => {
+    if (!det.firstChild) { const full = detailPanel(r); det.replaceWith(full); det = full; }
+    det.hidden = !det.hidden; row.setAttribute("aria-expanded", String(!det.hidden)); row.lastChild.textContent = det.hidden ? "▸" : "▾";
+  };
   row.addEventListener("click", toggle);
   row.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
   return [row, det];

@@ -11,8 +11,10 @@ function setupNav() {
   }, { rootMargin: "-45% 0px -50% 0px" });
   secs.forEach(s => s && io.observe(s));
 }
+// ohne cache: "no-cache": der Snapshot darf fünf Minuten, data/* eine Viertelstunde aus dem Browser-Speicher kommen
+// (Cache-Control von Worker und public/_headers); so greifen auch die Vorab-Ladeanweisungen im Kopf der Seite
 async function fetchJson(url) {
-  const r = await fetch(url, { cache: "no-cache" });
+  const r = await fetch(url);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
@@ -43,6 +45,7 @@ async function boot() {
   BT_SEED = bt;
   ROBUST = rob;
   if (hist.__error) {
+    document.getElementById("lage").classList.remove("laedt");
     document.getElementById("verdict").replaceChildren(h("span", { class: "err", text: `Die Datendatei data/bigcycle.json konnte nicht geladen werden (${hist.__error.message}). Lokal die Seite über einen Webserver öffnen, etwa mit npx wrangler dev.` }));
     return;
   }
@@ -52,11 +55,27 @@ async function boot() {
   }
   const st = [liveStamp(), "Historie " + deShort(D.meta.generated.slice(0, 10))].filter(Boolean).join(" · ");
   document.getElementById("stamp").textContent = "Datenstand: " + st;
-  const steps = [renderArchetype, renderKpis, renderMovers, renderBarometer, renderCycleClock, renderMacro, renderMarkets, renderRiskTiles,
-    renderDebtWorld, renderPower, renderDebt, renderInternal, renderTension, renderPredictions, renderUncertainty, renderExternal,
-    renderDemography, renderNatureLive, renderNature, renderSim, renderMethods, renderDataStatus, renderForces, renderCompare, renderVerdict, renderLeads];
-  for (const f of steps) { try { f(); } catch (e) { console.error(f.name, e); } }
-  if (location.hash) { const el = document.querySelector(location.hash); if (el) el.scrollIntoView(); }
+  const run = f => { try { f(); } catch (e) { console.error(f.name, e); } };
+  // oberer Teil (Lage, Kräfte, Kennzahlen, Barometer) in einem Zug, damit dort nichts nachrutscht
+  [estimateStages, renderArchetype, renderVerdict, renderMovers, renderForces, renderKpis, renderCompare, renderBarometer].forEach(run);
+  document.getElementById("lage").classList.remove("laedt");
+  // übrige Abschnitte einzeln, dazwischen zeichnet der Browser und reagiert auf Eingaben
+  let moved = false;
+  const mark = () => { moved = true; };
+  const evs = ["wheel", "touchstart", "keydown", "pointerdown"];
+  evs.forEach(t => addEventListener(t, mark, { once: true, passive: true }));
+  for (const f of [renderCycleClock, renderMacro, renderMarkets, renderRiskTiles, renderDebtWorld, renderPower, renderDebt, renderInternal,
+    renderTension, renderPredictions, renderUncertainty, renderExternal, renderDemography, renderNatureLive, renderNature, renderSim,
+    renderMethods, renderDataStatus, renderLeads]) { await yieldToBrowser(); run(f); }
+  evs.forEach(t => removeEventListener(t, mark));
+  // Sprungziel aus der Adresse erst jetzt anfahren (Abschnitte darüber sind fertig), aber nicht gegen den Nutzer
+  if (location.hash && !moved) { const el = document.querySelector(location.hash); if (el) el.scrollIntoView(); }
+}
+// kurz an den Browser abgeben; scheduler.yield, sonst eine Nachricht über MessageChannel (anders als setTimeout in
+// Hintergrund-Tabs nicht auf eine Sekunde gedrosselt)
+function yieldToBrowser() {
+  if (globalThis.scheduler && typeof scheduler.yield === "function") return scheduler.yield();
+  return new Promise(r => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(null); });
 }
 function renderLeads() {
   const C = D.curated || {};
@@ -168,7 +187,13 @@ function apiBase() { const m = document.querySelector('meta[name="live-api"]'); 
 function renderArchive(host) {
   const box = h("div");
   host.append(box);
-  fetch(apiBase() + "/api/archive", { cache: "no-cache" }).then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))).then(A => {
+  // das Verzeichnis (rund 180 KB) erst laden, wenn der Abschnitt in die Nähe kommt
+  if (typeof IntersectionObserver !== "function") return loadArchive(box);
+  const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { io.disconnect(); loadArchive(box); } }, { rootMargin: "800px 0px" });
+  io.observe(box);
+}
+function loadArchive(box) {
+  fetch(apiBase() + "/api/archive").then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))).then(A => {
     const t = A.totals || {};
     if (!t.series) throw new Error("leer");
     const base = apiBase();
@@ -202,8 +227,10 @@ function renderArchive(host) {
       stackTable(tbl); // auf dem Telefon als Karten
     };
     q.addEventListener("input", fill);
-    fill();
-    sh.body.append(h("details", { class: "more" }, h("summary", { text: `Alle ${fmt(A.series.length, 0)} archivierten Reihen anzeigen` }), q, h("div", { style: "overflow-x:auto" }, tbl)));
+    // die Tabelle (Tausende Elemente) erst beim Aufklappen bauen
+    const more = h("details", { class: "more" }, h("summary", { text: `Alle ${fmt(A.series.length, 0)} archivierten Reihen anzeigen` }), q, h("div", { style: "overflow-x:auto" }, tbl));
+    more.addEventListener("toggle", () => { if (more.open && !tb.firstChild) fill(); });
+    sh.body.append(more);
     if (A.dbnomics && A.dbnomics.providers) renderDbnomics(box, A.dbnomics, base);
   }).catch(() => {
     box.append(h("p", { class: "note-box", text: "Das Datenarchiv (Cloudflare D1) ist über den Worker erreichbar, sobald die Datenbank gebunden ist und die ersten Abrufe gespeichert sind; in der statischen Vorschau gibt es kein Archiv." }));
@@ -230,6 +257,10 @@ function renderDbnomics(box, D, base) {
   sh.body.append(h("div", { class: "arch-sum" },
     ...[["Datensätze", fmt(t.datasets || 0, 0), ""], ["Reihen", fmt(t.series || 0, 0), ""], ["Beobachtungen", fmt(t.obs || 0, 0), ""], ["Import", prog[0], prog[1]]]
       .map(([l, v, m]) => h("div", { class: "tile" }, h("div", { class: "label", text: l }), h("div", { class: "value", text: v }), h("div", { class: "meta" }, h("span", { text: m }))))));
+  // fehlgeschlagene Datensätze mit Namen und Fehler (der Job versucht sie im nächsten Durchgang erneut)
+  const fl = P && P.failedList ? P.failedList : [];
+  if (fl.length) sh.body.append(h("p", { class: "small" }, h("b", { text: `${fl.length === 1 ? "Ein Datensatz" : fl.length + " Datensätze"} nicht übernommen` }),
+    " (neuer Versuch im nächsten Durchgang): ", ...fl.flatMap((x, i) => [i ? "; " : "", h("span", { class: "mono", text: x.ds }), x.error ? ` – ${x.error}` : ""])));
   const pt = h("table", { class: "sources ds-table" },
     h("thead", null, h("tr", null, h("th", { text: "Anbieter" }), h("th", { text: "Datensätze" }), h("th", { text: "Reihen" }), h("th", { text: "Beobachtungen" }), h("th", { text: "Zuletzt übernommen" }))),
     h("tbody", null, ...(D.providers || []).map(r => h("tr", null,

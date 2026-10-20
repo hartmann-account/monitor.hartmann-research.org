@@ -43,6 +43,8 @@ const html = `<!doctype html>
 <meta name="live-api" content="/api/snapshot">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preload" href="fonts/archivo-latin-wdth-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/api/snapshot" as="fetch" crossorigin>
+<link rel="preload" href="data/bigcycle.json" as="fetch" crossorigin>
 <link rel="stylesheet" href="app.css?v=${hash(css)}">
 </head>
 <body>

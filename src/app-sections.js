@@ -80,7 +80,9 @@ function statusPill(ok) {
 }
 
 /* ------------------------------------------------------------------ Schuldenzyklus */
-function renderDebt() {
+/* Kennzahlen und Marker des Schuldenzyklus; auch für Lagetext, fünf Kräfte und Vergleich oben auf der Seite, die vor
+   dem Abschnitt selbst entstehen */
+function debtInputs() {
   const C = D.curated || {};
   const L = D.latest;
   const fyGdp = L.fy_gdp_est ? L.fy_gdp_est.value : null;
@@ -101,6 +103,17 @@ function renderDebt() {
   const dp5 = valAt(dp, 2021);
   const stagesDef = (C.framework && C.framework.debtStages) || [];
   const markers = DEBT_MARKERS({ intRevNow, ir5, defNow, realShort, tenMinusFF, goldRealNow, goldRealPrevMax, fedAssets, usdNow, usd10, dp5, L, C });
+  return { C, L, intRevNow, defNow, ir, stagesDef, markers };
+}
+/* Stadien von Schuldenzyklus und innerer Ordnung vorab schätzen, mit derselben Rechnung wie die Abschnitte */
+function estimateStages() {
+  const C = D.curated || {};
+  const d = debtInputs(), ist = (C.framework && C.framework.internalStages) || [];
+  ST.debtStage = d.stagesDef.length ? estimateStage(evalMarkers(d.markers), d.stagesDef, 1) : null;
+  ST.intStage = ist.length ? estimateStage(evalMarkers(INTERNAL_MARKERS(C)), ist, 3) : null;
+}
+function renderDebt() {
+  const { C, L, intRevNow, defNow, ir, stagesDef, markers } = debtInputs();
   const est = stagesDef.length ? renderStagePanel("debt-stage", {
     title: "Schuldenzyklus der USA: Stadienschätzung", sub: "Regelbasierte Prüfung beobachtbarer Marker; ein Stadium gilt als erreicht, wenn mindestens die Hälfte seiner Marker erfüllt ist",
     stages: stagesDef, markers, source: C.framework.debtSource, baseline: 1,

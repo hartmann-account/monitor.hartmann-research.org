@@ -6,7 +6,14 @@ const NS = "http://www.w3.org/2000/svg";
 const LOCALE = "de-DE";
 const Charts = new Set();
 
-function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+// Farbwerte der CSS-Variablen zwischengespeichert (getComputedStyle bei jedem Aufruf ist teuer); ein Wechsel des
+// Farbschemas leert den Speicher (onThemeChange unten)
+const CSS_VARS = new Map();
+function cssVar(name) {
+  let v = CSS_VARS.get(name);
+  if (v === undefined) CSS_VARS.set(name, (v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()));
+  return v;
+}
 function h(tag, attrs, ...kids) {
   const e = document.createElement(tag);
   if (attrs) for (const [k, v] of Object.entries(attrs)) {
@@ -27,9 +34,13 @@ function sv(tag, attrs) {
   if (attrs) for (const [k, v] of Object.entries(attrs)) if (v != null) e.setAttribute(k, v);
   return e;
 }
+// ein Zahlenformat je Zahl der Nachkommastellen (toLocaleString mit Optionen baut bei jedem Aufruf ein neues)
+const NUM_FMT = new Map();
 function fmt(v, d = 1) {
   if (v == null || !isFinite(v)) return "–";
-  return Number(v).toLocaleString(LOCALE, { minimumFractionDigits: d, maximumFractionDigits: d });
+  let f = NUM_FMT.get(d);
+  if (!f) NUM_FMT.set(d, (f = new Intl.NumberFormat(LOCALE, { minimumFractionDigits: d, maximumFractionDigits: d })));
+  return f.format(Number(v));
 }
 function fmtAuto(v) {
   if (v == null || !isFinite(v)) return "–";
@@ -136,6 +147,24 @@ function valueAt(data, x, tol) {
   return bd <= tol ? best : null;
 }
 
+/* Punkte einer Linie für das Zeichnen verdichten: je halber Pixelspalte nur der erste, kleinste, größte und letzte
+   Wert. Das Bild bleibt gleich (Spitzen bleiben erhalten), die Pfade werden bei langen Tagesreihen viel kürzer. */
+function perPixel(pts, X) {
+  if (pts.length < 600) return pts;
+  const out = [];
+  let col = null, first, lo, hi, last;
+  const flush = () => { if (first) out.push(...[first, lo, hi, last].filter((p, i, a) => a.indexOf(p) === i).sort((a, b) => a[0] - b[0])); };
+  for (const p of pts) {
+    if (first && p[0] < last[0]) return pts; // nur für zeitlich geordnete Reihen
+    const c = Math.floor(X(p[0]) * 2);
+    if (c !== col) { flush(); col = c; first = lo = hi = last = p; continue; }
+    if (p[1] < lo[1]) lo = p;
+    if (p[1] > hi[1]) hi = p;
+    last = p;
+  }
+  flush();
+  return out;
+}
 class LineChart {
   constructor(host, o) {
     this.o = Object.assign({
@@ -153,7 +182,8 @@ class LineChart {
     this.root.append(this.legendEl);
     this.tableEl = h("div", { class: "table-wrap", hidden: true });
     this.root.append(this.tableEl);
-    this.ro = new ResizeObserver(() => this.render());
+    // nur bei geänderter Breite neu zeichnen: der erste Aufruf nach observe() folgt sonst direkt auf update()
+    this.ro = new ResizeObserver(() => { if (Math.round(this.root.clientWidth) !== this.drawnW) this.render(); });
     this.ro.observe(this.root);
     Charts.add(this);
   }
@@ -190,6 +220,7 @@ class LineChart {
   render() {
     const o = this.o;
     const W = Math.round(this.root.clientWidth);
+    this.drawnW = W;
     if (W < 60) return;
     const H = o.height;
     const vis = o.series.filter(s => !this.hidden.has(s.id));
@@ -280,18 +311,19 @@ class LineChart {
     const lineG = sv("g", { fill: "none", "stroke-linejoin": "round", "stroke-linecap": "round" });
     for (const s of vis) {
       const col = this.color(s);
-      let d = "", pen = false, areaD = "", seg = [];
+      let areaD = "", seg = [];
       const segs = [];
-      for (const [x, y] of s.data) {
+      for (const p of s.data) {
+        const [x, y] = p;
         if (!inX(x)) continue;
-        if (y == null || !isFinite(y) || (o.log && y <= 0)) { pen = false; if (seg.length) { segs.push(seg); seg = []; } continue; }
-        d += (pen ? "L" : "M") + X(x).toFixed(1) + "," + Y(y).toFixed(1);
-        seg.push([x, y]);
-        pen = true;
+        if (y == null || !isFinite(y) || (o.log && y <= 0)) { if (seg.length) { segs.push(seg); seg = []; } continue; }
+        seg.push(p);
       }
       if (seg.length) segs.push(seg);
+      const thin = segs.map(sg => perPixel(sg, X));
+      const d = thin.map(sg => "M" + sg.map(([x, y]) => X(x).toFixed(1) + "," + Y(y).toFixed(1)).join("L")).join("");
       if (s.area) {
-        for (const sg of segs) {
+        for (const sg of thin) {
           areaD += "M" + sg.map(([x, y]) => `${X(x).toFixed(1)},${Y(y).toFixed(1)}`).join("L") + `L${X(sg[sg.length - 1][0]).toFixed(1)},${baseY}L${X(sg[0][0]).toFixed(1)},${baseY}Z`;
         }
         svg.append(sv("path", { d: areaD, fill: col, "fill-opacity": 0.1, stroke: "none" }));
@@ -337,7 +369,8 @@ class LineChart {
       }
     }
     // Interaktion: Fadenkreuz
-    const allX = [...new Set(vis.flatMap(s => s.data.filter(p => p[1] != null && inX(p[0])).map(p => +p[0].toFixed(4))))].sort((a, b) => a - b);
+    let allXs = null;
+    const allX = () => allXs || (allXs = [...new Set(vis.flatMap(s => s.data.filter(p => p[1] != null && inX(p[0])).map(p => +p[0].toFixed(4))))].sort((a, b) => a - b));
     const cross = sv("line", { class: "crosshair", y1: m.t, y2: m.t + ph, visibility: "hidden" });
     const dots = sv("g", { visibility: "hidden" });
     svg.append(cross, dots);
@@ -346,9 +379,10 @@ class LineChart {
     const tol = o.freq === "D" ? 0.012 : o.freq === "M" ? 0.05 : o.freq === "Q" ? 0.15 : 0.6;
     let idx = -1;
     const show = (i, px, py) => {
-      if (i < 0 || i >= allX.length) return;
+      const xs = allX();
+      if (i < 0 || i >= xs.length) return;
       idx = i;
-      const x = allX[i];
+      const x = xs[i];
       cross.setAttribute("x1", X(x)); cross.setAttribute("x2", X(x)); cross.setAttribute("visibility", "visible");
       dots.replaceChildren(); dots.setAttribute("visibility", "visible");
       const rows = [];
@@ -386,14 +420,14 @@ class LineChart {
       const r = svg.getBoundingClientRect();
       const sx = (ev.clientX - r.left) * (W / r.width), sy = (ev.clientY - r.top) * (H / r.height);
       const x = x0 + (sx - m.l) / pw * (x1 - x0);
-      show(nearestIdx(allX, x), sx, sy);
+      show(nearestIdx(allX(), x), sx, sy);
     });
     overlay.addEventListener("pointerleave", hide);
     overlay.addEventListener("blur", hide);
-    overlay.addEventListener("focus", () => show(allX.length - 1));
+    overlay.addEventListener("focus", () => show(allX().length - 1));
     overlay.addEventListener("keydown", ev => {
       if (ev.key === "ArrowLeft") { show(Math.max(0, idx - 1)); ev.preventDefault(); }
-      else if (ev.key === "ArrowRight") { show(Math.min(allX.length - 1, idx + 1)); ev.preventDefault(); }
+      else if (ev.key === "ArrowRight") { show(Math.min(allX().length - 1, idx + 1)); ev.preventDefault(); }
       else if (ev.key === "Escape") hide();
     });
     this.plot.replaceChildren(svg, this.tip);
@@ -432,7 +466,7 @@ class HeatStrip {
     this.plot = h("div", { style: "position:relative" });
     this.tip = h("div", { class: "tooltip", hidden: true });
     this.root.append(this.plot);
-    this.ro = new ResizeObserver(() => this.render());
+    this.ro = new ResizeObserver(() => { if (Math.round(this.root.clientWidth) !== this.drawnW) this.render(); });
     this.ro.observe(this.root);
     Charts.add(this);
   }
@@ -449,6 +483,7 @@ class HeatStrip {
   render() {
     const o = this.o;
     const W = Math.round(this.root.clientWidth);
+    this.drawnW = W;
     if (W < 60 || !o.rows) return;
     const labW = Math.min(170, Math.max(...o.rows.map(r => textW(r.label, 12, 500))) + 14);
     const m = { l: labW, r: 8, t: 6, b: 24 };
@@ -526,4 +561,4 @@ function onThemeChange(fn) {
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", fn);
   new MutationObserver(fn).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 }
-onThemeChange(() => { for (const c of Charts) c.render(); });
+onThemeChange(() => { CSS_VARS.clear(); for (const c of Charts) c.render(); });
