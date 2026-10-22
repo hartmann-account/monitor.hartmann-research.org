@@ -134,7 +134,7 @@ const GROUP_LABELS = { klassen: "Anlageklassen", aktien: "Aktien", anleihen: "St
 function barEl(label, short, n, prevN, title) {
   const chg = prevN != null && prevN !== n;
   const sym = (SIG.cfg.cats.find(c => c.n === n) || {}).sym || "";
-  const el = h("span", { class: `pg-bar c${n}${chg ? " chg " + (n > prevN ? "up" : "down") : ""}`, style: `left:${(n + 2) * 16.6667}%`, title, "data-short": short || "", "data-sym": sym },
+  const el = h("span", { class: `pg-bar c${n}${chg ? " chg " + (n > prevN ? "up" : "down") : ""}`, style: `--p:${n + 2}`, title, "data-short": short || "", "data-sym": sym },
     chg ? h("i", { "aria-hidden": "true" }) : null, h("b", { text: label }));
   if (chg) el.style.setProperty("box-shadow", "none"), el.style.setProperty("background", `var(--o${n})`);
   return el;
@@ -290,7 +290,8 @@ function detailPanel(r) {
     if (!w[p.id]) return null;
     const pp = r.now.pillars[p.id];
     return h("div", { class: "pillar" },
-      h("h5", null, h("span", null, p.label, info(pillarInfo(r, p), `${p.label} für ${r.row.label}`), h("span", { class: "nowrap", text: ` · Gewicht ${fmt(100 * w[p.id], 0)} %` })), h("span", null, pp ? signed(pp.s, 2) : "keine Daten", " ", pillarBar(pp ? pp.s : null))),
+      h("h5", null, h("span", { class: "pl-name" }, p.label, info(pillarInfo(r, p), `${p.label} für ${r.row.label}`), h("small", { text: `Gewicht ${fmt(100 * w[p.id], 0)} %` })),
+        h("span", { class: "pl-val" }, h("b", { text: pp ? signed(pp.s, 2) : "keine Daten" }), pillarBar(pp ? pp.s : null))),
       pp ? h("ul", null, ...pp.parts.filter(q => q.v != null || q.s != null).map(q => h("li", { class: q.sub ? "sub" : null }, h("span", { text: q.k + (q.d ? ` (${q.d})` : "") }), h("span", { class: "v", text: q.v == null ? (q.s != null ? signed(q.s, 2) : "") : fmtPart(q) }))))
         : h("p", { class: "small", text: "Für diese Säule liegen keine Daten vor; sie entfällt, die übrigen Gewichte werden hochgerechnet." }));
   }).filter(Boolean);
@@ -317,7 +318,7 @@ function gridHead(extra = true) {
     h("div", { class: "pg-head" },
       h("div", { class: "pg-scale-h", title: "Stufe gegenüber dem üblichen Ertrag der Anlage" }, h("span", { text: "unter −" }), h("span", { text: "üblich o" }), h("span", { text: "über +" })),
       extra ? h("div", { class: "h spark-h", text: "6 Monate" }) : h("div"), extra ? h("div", { class: "h num-h m1-h", text: "1 Monat" }) : h("div"),
-      extra ? h("div", { class: "h num-h", text: "12 Monate" }) : h("div"), h("div")));
+      extra ? h("div", { class: "h num-h", "data-kurz": "12 Mt.", text: "12 Monate" }) : h("div"), h("div")));
 }
 function gridRow(r, prefix = "baro-") {
   const c = r.now.cat, pc = r.prev && r.prev.cat ? r.prev.cat.n : null;
@@ -428,11 +429,15 @@ function collectIds(spec) {
   if (spec.inv) return collectIds(spec.inv);
   return (spec.ratio || spec.product || spec.basket || []).flatMap(collectIds);
 }
+// Spaltenköpfe der Säulen auf Telefonen (je Anlage eine Zeile mit allen Werten nebeneinander)
+const SAEULE_KURZ = { cycle: "Konj.", cycle12: "Konj.", value: "Bew.", valueLT: "Bew.", liquidity: "Liqu.", risk: "Risiko", risk12: "Stimm.", mom12: "Mom.",
+  growth: "Wachst.", debt: "Schuld.", power: "Macht", trendLT: "Trend" };
 function heatTable(rows) {
   const P = BARO.pillars;
   const cell = s => h("td", null, h("div", { class: "heat-cell", style: `background:${heatColor(s)};color:${heatInk(s)}`, text: s == null ? "–" : signed(s, 1) }));
-  return h("table", { class: "baro-table" },
-    h("thead", null, h("tr", null, h("th", { text: "Anlage" }), ...P.map(p => h("th", { style: "text-align:center", title: p.desc, text: p.label })), h("th", { style: "text-align:center", text: "Gesamt" }), h("th", { style: "text-align:center", text: "Vormonat" }))),
+  const kopf = (lang, kurz, title) => h("th", { style: "text-align:center", title }, h("span", { class: "lang", text: lang }), h("span", { class: "kurz", text: kurz }));
+  return h("table", { class: "baro-table", style: `--n:${P.length + 2}` },
+    h("thead", null, h("tr", null, h("th", { text: "Anlage" }), ...P.map(p => kopf(p.label, SAEULE_KURZ[p.id] || p.label, p.desc)), kopf("Gesamt", "Ges."), kopf("Vormonat", "Vorm."))),
     h("tbody", null, ...rows.map(r => h("tr", null,
       h("td", { class: "name" }, h("b", { text: r.row.label }), r.row.sub ? h("span", { class: "small", text: r.row.sub }) : null),
       ...P.map(p => (BARO.weights[r.row.kind][p.id] ? cell(r.now.pillars[p.id] ? r.now.pillars[p.id].s : null) : h("td", null, h("div", { class: "heat-cell", style: "color:var(--muted)", text: "·" })))),

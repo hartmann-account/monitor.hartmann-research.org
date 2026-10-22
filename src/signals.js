@@ -311,7 +311,7 @@ const SIG = (() => {
     { id: "eq_jp", group: "aktien", label: "Japan", sub: "Nikkei 225", kind: "equity", region: "JP", beta: "equity", price: "eq_jp", geo: [["cn_jp", -0.3]] },
     { id: "eq_cn", group: "aktien", label: "China", sub: "Shanghai Composite", kind: "equity", region: "CN", beta: "em", price: "eq_cn", geo: [["us_cn", -0.5], ["cn_tw", -0.4]] },
     { id: "eq_in", group: "aktien", label: "Indien", sub: "Nifty 50", kind: "equity", region: "IN", beta: "em", price: "eq_in", geo: [["in_pk", -0.3]] },
-    { id: "eq_em", group: "aktien", label: "Schwellenländer", short: "EM", sub: "Nasdaq Emerging Markets Index in US-Dollar (mit Taiwan; Korea zählt Nasdaq seit 2015 zu den Industrieländern); ohne Tagesdaten Korb aus China und Indien", kind: "equity", region: "EM", beta: "em", price: "eq_em", fallback: { basket: [["eq_cn", 0.6], ["eq_in", 0.4]] }, geo: [["us_cn", -0.3]] },
+    { id: "eq_em", group: "aktien", label: "Schwellenländer", short: "Schwellenl.", sub: "Nasdaq Emerging Markets Index in US-Dollar (mit Taiwan; Korea zählt Nasdaq seit 2015 zu den Industrieländern); ohne Tagesdaten Korb aus China und Indien", kind: "equity", region: "EM", beta: "em", price: "eq_em", fallback: { basket: [["eq_cn", 0.6], ["eq_in", 0.4]] }, geo: [["us_cn", -0.3]] },
 
     { id: "bd_us", group: "anleihen", label: "USA", sub: "Treasuries, 10 Jahre", kind: "bond", region: "US", beta: "safeBond", price: { bond: "y10_us" }, yieldId: "y10_us" },
     { id: "bd_de", group: "anleihen", label: "Deutschland", short: "DE", sub: "Bundesanleihen, 10 Jahre", kind: "bond", region: "EA", beta: "safeBond", price: { bond: "y10_de" }, yieldId: "y10_de", mix: { DE: 1 } },
