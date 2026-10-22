@@ -44,6 +44,13 @@
   "triggers": {
     "crons": ["*/10 * * * *"]
   },
+  // Variablen aus dem Dashboard (etwa MAIL_EMPFANG) beim Deploy behalten; die hier eingetragenen setzt der Deploy
+  "keep_vars": true,
+  // E-Mail-Versand über Cloudflare Email Service (Monatsmail des Anlagebarometers, worker/mail-barometer.js); Absender
+  // noreply@monitor.hartmann.id (Domain im Konto für den Versand eingerichtet)
+  "send_email": [
+    { "name": "EMAIL" }
+  ],
   "vars": {
     // Höchstzahl Abrufjobs je Cron-Lauf (Workers Paid: 30 s CPU je Lauf, ein voller Umlauf dauert so rund 50 Minuten)
     "MAX_JOBS_PER_RUN": "8",

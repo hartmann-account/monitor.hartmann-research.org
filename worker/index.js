@@ -16,6 +16,8 @@
                         die Einzelwerte einer Anlage (Monatsende, Gesamtwert, Stufe, Rendite danach), ?format=csv
    GET  /api/events     archivierte Meldungen (GDACS): ?from=
    POST /api/run        Abruf sofort anstoßen (nur mit Secret ADMIN_TOKEN; ?jobs=a,b für bestimmte Jobs)
+   GET  /barometer-mail Monatsmail des Anlagebarometers im Browser (heutiger Stand)
+   POST /api/mail/test  Monatsmail jetzt als Vorschau an MAIL_EMPFANG senden (höchstens alle zwei Minuten)
    Mit dem Secret SITE_PASSWORD ist alles passwortgeschützt (Anmeldung unter /login, Abmeldung /logout; worker/auth.js).
    Alles andere liefert die statische Seite aus public/. Der Cron-Trigger ruft scheduled() auf. */
 import { runDueJobs, META_KEY, SNAP_KEY } from "./runner.js";
@@ -26,6 +28,8 @@ import { dbnomicsSummary, dbnomicsSearch, dbnomicsDatasets } from "./dbnomics.js
 import { INBOX, PREVIEW } from "./inbox.js";
 import { gate, privateHeaders, securityHeaders } from "./auth.js";
 import { readBacktest } from "./jobs-backtest.js";
+import { erstelleMail, versendeMail } from "./mail-barometer.js";
+import { mailBereit } from "./lib/mail.js";
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -218,8 +222,32 @@ async function manualRun(request, env, ctx) {
   return json(result);
 }
 
+/* Monatsmail: Vorschau im Browser und Testversand (hinter dem Passwortschutz der Seite) */
+const assetSeed = env => async p => { const r = env.ASSETS ? await env.ASSETS.fetch(new Request(`https://assets.invalid/${p}`)) : null; return r && r.ok ? r.json() : null; };
+async function mailVorschau(request, env) {
+  const m = await erstelleMail(env, { seed: assetSeed(env) });
+  return new Response(m.html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+}
+async function mailTest(request, env) {
+  const o = request.headers.get("origin");
+  if (o && o !== new URL(request.url).origin) return json({ error: "nur von dieser Seite" }, 403);
+  if (!mailBereit(env)) return json({ error: "Kein Versand eingerichtet: Bindung EMAIL und Variable MAIL_EMPFANG" }, 409);
+  const last = +((await env.DATA.get("mail:test")) || 0);
+  if (Date.now() - last < 120000) return json({ error: "Höchstens ein Testversand alle zwei Minuten" }, 429);
+  await env.DATA.put("mail:test", String(Date.now()), { expirationTtl: 300 });
+  const m = await erstelleMail(env, { seed: assetSeed(env), vorschau: true });
+  try {
+    const r = await versendeMail(env, m);
+    return json({ gesendet: r.an, fehler: r.fehler, betreff: m.betreff });
+  } catch (e) {
+    return json({ gesendet: 0, fehler: [String((e && e.message) || e)] }, 502);
+  }
+}
+
 async function route(request, env, ctx) {
   const url = new URL(request.url);
+  if (url.pathname === "/barometer-mail" && request.method === "GET") return mailVorschau(request, env);
+  if (url.pathname === "/api/mail/test" && request.method === "POST") return mailTest(request, env);
   if (url.pathname === "/api/snapshot" && request.method === "GET") return snapshot(request, env, ctx);
   if (url.pathname === "/api/status" && request.method === "GET") return status(env);
   if (url.pathname === "/api/signals" && request.method === "GET") return signals(request, env, ctx);

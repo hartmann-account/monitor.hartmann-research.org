@@ -130,6 +130,28 @@ Im Dashboard unter Worker → **Einstellungen** → **Variablen und Secrets**, o
 | `GDELT_FILES_PER_RUN` | Variable | GDELT-Dateien je Lauf (Standard 3) |
 | `MAX_JOBS_PER_RUN`, `SUBREQUEST_BUDGET` | Variable | Jobs und Subrequests je Cron-Lauf (in `wrangler.jsonc`: 8 und 80); der DBnomics-Import hat ein eigenes Budget von 300 Abrufen je Lauf |
 | `DBNOMICS_MIRROR` | Variable | schaltet den Job `dbnomics_mirror` ein: Anbieterkennungen mit Komma (etwa `Eurostat,OECD`) oder `*` für alle; lädt deren Datensätze nur als Rohdaten nach R2 |
+| `MAIL_EMPFANG` | Variable (Text) | Empfänger der Monatsmail des Anlagebarometers, mehrere mit Komma (siehe unten). Ohne sie verschickt der Worker nichts |
+| `MAIL_VON` | Variable (Text) | anderer Absender als `noreply@monitor.hartmann.id` (Domain muss im Cloudflare Email Service eingerichtet sein) |
+
+Variablen aus dem Dashboard bleiben bei jedem Deploy erhalten (`"keep_vars": true` in `wrangler.jsonc`); Variablen, die
+in `wrangler.jsonc` stehen, setzt der Deploy auf den Wert der Datei.
+
+### Monatsmail des Anlagebarometers
+
+Am Ersten jedes Monats um 7 Uhr (Europe/Berlin) schickt der Job `barometer_mail` (`worker/mail-barometer.js`) die
+Übersicht des Barometers an die Adressen in `MAIL_EMPFANG`, erstmals am 1. November 2026: Kurzfassung (Anlageklassen im
+Ausblick 1 Monat, Stufenwechsel gegenüber dem Vormonat, Stufen klar über oder unter üblich), dann je Gruppe alle Anlagen
+mit der Stufe in den drei Horizonten (1 Monat, 12 Monate, 5–10 Jahre; ▲▼ bei geänderter Stufe) und dem Ertrag über
+zwölf Monate, dazu die Treffsicherheit im Backtest. Gerechnet wird mit demselben Modell wie die Seite aus dem aktuellen
+Snapshot. Die Mail ist für E-Mail-Programme gebaut (Tabellen, Stile inline, keine Bilder oder Skripte, höchstens 640 Pixel
+breit, Stufen mit Zeichen und Wort) und kommt zusätzlich als reiner Text.
+
+Versand über [Cloudflare Email Service](https://developers.cloudflare.com/email-service/): Bindung `send_email` mit dem
+Namen `EMAIL` in `wrangler.jsonc`, Absender `noreply@monitor.hartmann.id` (Domain im Konto für den Versand eingerichtet),
+kein API-Schlüssel; jede Adresse bekommt eine eigene Nachricht. Vorschau im Browser: `/barometer-mail` (heutiger Stand);
+Testversand an alle Empfänger: `curl -X POST -H "Authorization: Bearer <Passwort>" <Adresse>/api/mail/test` (höchstens
+alle zwei Minuten). Scheitert der Versand, versucht der Job es mit wachsendem Abstand erneut, bis die Mail des Monats
+draußen ist.
 
 ### 5. Passwortschutz (erledigt)
 
